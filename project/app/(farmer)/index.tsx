@@ -1,10 +1,12 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-import { Camera, Shield, Calendar, MapPin, MessageCircle, TrendingUp } from 'lucide-react-native';
+import { Camera, Shield, Calendar, MapPin, MessageCircle, TrendingUp, Sun, Droplets, Wind } from 'lucide-react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
+import { colors, spacing, borderRadius, shadows } from '@/utils/designSystem';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -64,17 +66,36 @@ export default function FarmerHomeScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>{getGreeting()}</Text>
-          <Text style={styles.userName}>{user?.name || 'Farmer'}</Text>
+      {/* Enhanced Header with Gradient */}
+      <LinearGradient
+        colors={['#22C55E', '#16A34A']}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.greetingSection}>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.userName}>{user?.name || 'Farmer'}</Text>
+            <Text style={styles.headerSubtext}>Welcome back to your farm</Text>
+          </View>
+          <View style={styles.weatherCard}>
+            <Sun color="#F59E0B" size={32} />
+            <Text style={styles.temperature}>28°C</Text>
+            <Text style={styles.weatherDesc}>Sunny</Text>
+            <View style={styles.weatherDetails}>
+              <View style={styles.weatherItem}>
+                <Droplets color="#3B82F6" size={16} />
+                <Text style={styles.weatherSmall}>65%</Text>
+              </View>
+              <View style={styles.weatherItem}>
+                <Wind color="#6B7280" size={16} />
+                <Text style={styles.weatherSmall}>12 km/h</Text>
+              </View>
+            </View>
+          </View>
         </View>
-        <View style={styles.weatherCard}>
-          <Text style={styles.temperature}>28°C</Text>
-          <Text style={styles.weatherDesc}>Sunny</Text>
-        </View>
-      </View>
+      </LinearGradient>
 
       {/* Quick Actions */}
       <View style={styles.section}>
@@ -176,130 +197,141 @@ export default function FarmerHomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.bg.secondary,
   },
   content: {
-    padding: 16,
-    paddingTop: 60,
+    paddingBottom: spacing['2xl'],
   },
   header: {
+    paddingTop: 60,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 8,
+    alignItems: 'flex-start',
+  },
+  greetingSection: {
+    flex: 1,
   },
   greeting: {
     fontSize: 16,
-    color: '#6B7280',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 4,
   },
   userName: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#111827',
+    color: 'white',
+    marginBottom: 4,
+  },
+  headerSubtext: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   weatherCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    minWidth: 100,
+    ...shadows.lg,
   },
   temperature: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#22C55E',
+    color: colors.text.primary,
+    marginTop: 4,
   },
   weatherDesc: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    color: colors.text.secondary,
     marginTop: 2,
+    marginBottom: 8,
+  },
+  weatherDetails: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  weatherItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  weatherSmall: {
+    fontSize: 12,
+    color: colors.text.secondary,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.base,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 16,
-    paddingHorizontal: 8,
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: spacing.base,
   },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    paddingHorizontal: 8,
+    gap: spacing.md,
   },
   actionCard: {
-    width: (screenWidth - 64) / 2,
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
+    width: (screenWidth - 56) / 2,
+    backgroundColor: colors.bg.primary,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...shadows.lg,
   },
   actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.md,
+    ...shadows.md,
   },
   actionText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
+    fontWeight: '600',
+    color: colors.text.primary,
     textAlign: 'center',
   },
   chartCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: colors.bg.primary,
+    borderRadius: borderRadius.xl,
+    padding: spacing.base,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...shadows.md,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    paddingHorizontal: 8,
+    gap: spacing.md,
   },
   statCard: {
-    width: (screenWidth - 64) / 2,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+    width: (screenWidth - 56) / 2,
+    backgroundColor: colors.bg.primary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...shadows.lg,
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#22C55E',
+    color: colors.primary,
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 13,
+    color: colors.text.secondary,
     textAlign: 'center',
+    fontWeight: '500',
   },
 });

@@ -9,10 +9,12 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-import { User, Mail, Phone, MapPin, Globe, Moon, Bell, Shield, LogOut, CreditCard as Edit3, Save, X } from 'lucide-react-native';
+import { User, Mail, Phone, MapPin, Globe, Moon, Bell, Shield, LogOut, CreditCard as Edit3, Save, X, Camera } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
+import { colors, spacing, borderRadius, shadows } from '@/utils/designSystem';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -126,42 +128,51 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Enhanced Gradient Header */}
+      <LinearGradient
+        colors={['#22C55E', '#16A34A']}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
         <View style={styles.headerContent}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <User color="white" size={32} />
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatar}>
+                <User color="white" size={40} />
+              </View>
+              <TouchableOpacity style={styles.cameraButton}>
+                <Camera color="white" size={16} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.onlineIndicator} />
+            
+            <View style={styles.userInfo}>
+              <Text style={styles.userName}>{user?.name}</Text>
+              <Text style={styles.userRole}>
+                {user?.role === 'farmer' ? '🌾 Farmer' : '👨‍💼 Administrator'}
+              </Text>
+              <Text style={styles.userLocation}>📍 {user?.location}</Text>
+            </View>
           </View>
-          
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{user?.name}</Text>
-            <Text style={styles.userRole}>
-              {user?.role === 'farmer' ? 'Farmer' : 'Administrator'}
-            </Text>
-            <Text style={styles.userLocation}>{user?.location}</Text>
-          </View>
-        </View>
 
-        <View style={styles.headerActions}>
-          {isEditing ? (
-            <View style={styles.editActions}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setIsEditing(false)}>
-                <X color="#6B7280" size={20} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Save color="white" size={20} />
-              </TouchableOpacity>
-            </View>
+          <View style={styles.headerActions}>
+            {isEditing ? (
+              <View style={styles.editActions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setIsEditing(false)}>
+                  <X color="#6B7280" size={20} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                  <Save color="white" size={20} />
+                </TouchableOpacity>
+              </View>
           ) : (
             <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(true)}>
               <Edit3 color="#22C55E" size={20} />
             </TouchableOpacity>
           )}
         </View>
-      </View>
+        </View>
+      </LinearGradient>
 
       {/* Farm Statistics */}
       <View style={styles.statsContainer}>
@@ -276,64 +287,69 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.bg.secondary,
   },
   content: {
-    paddingTop: 60,
+    paddingBottom: spacing['2xl'],
   },
   header: {
-    backgroundColor: 'white',
-    padding: 20,
-    paddingBottom: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingTop: 60,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   headerContent: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+  },
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: spacing.base,
   },
   avatarContainer: {
     position: 'relative',
-    marginRight: 16,
+    marginBottom: spacing.base,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#22C55E',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 4,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
-  onlineIndicator: {
+  cameraButton: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#10B981',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 3,
     borderColor: 'white',
+    ...shadows.md,
   },
   userInfo: {
-    flex: 1,
+    alignItems: 'center',
   },
   userName: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 2,
+    color: 'white',
+    marginBottom: 4,
   },
   userRole: {
-    fontSize: 14,
-    color: '#22C55E',
-    fontWeight: '500',
-    marginBottom: 2,
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontWeight: '600',
+    marginBottom: 4,
   },
   userLocation: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.85)',
   },
   headerActions: {
     position: 'absolute',
