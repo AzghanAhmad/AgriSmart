@@ -1,0 +1,10 @@
+flask
+flask-cors
+torch
+ultralytics
+pillow
+pandas
+tqdm
+seaborn
+SQLAlchemy
+python-dotenv

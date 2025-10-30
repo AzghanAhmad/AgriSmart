@@ -9,11 +9,18 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Camera, Upload, Scan, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Wheat, Leaf, ArrowLeft } from 'lucide-react-native';
+import { Camera  as CameraIcon , Upload, Scan, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Wheat, Leaf, ArrowLeft } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
 import { ErrorAlert } from '@/components/ErrorAlert';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import { Camera } from 'expo-camera';
+
+import axios from 'axios';
+import { useAuth } from '@/contexts/AuthContext';
+import { getApiBaseUrl } from '@/utils/env';
+
 
 type CropType = 'wheat' | 'rice' | 'cotton' | null;
 
@@ -28,13 +35,14 @@ interface Crop {
 }
 
 export default function DiseaseDetectionScreen() {
+  const { user } = useAuth();
   const [selectedCrop, setSelectedCrop] = useState<CropType>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [showError, setShowError] = useState(false);
-  const { language, cropDiseases } = useApp();
+  const { language, cropDiseases, addRecentDetection } = useApp();
 
   const crops: Crop[] = [
     {
@@ -66,27 +74,50 @@ export default function DiseaseDetectionScreen() {
     }
   ];
 
-  const handleCameraCapture = () => {
-    Alert.alert(
-      `Scan ${selectedCrop?.toUpperCase()}`,
-      'Camera functionality would be implemented using expo-camera',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Mock Capture', onPress: () => mockImageAnalysis() },
-      ]
-    );
+  const handleCameraCapture = async () => {
+    const permission = await Camera.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission Denied', 'Camera access is required');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setSelectedImage(uri);
+      await analyzeImage(uri);
+    }
   };
 
-  const handleImageUpload = () => {
-    Alert.alert(
-      `Upload ${selectedCrop?.toUpperCase()} Image`,
-      'Image picker functionality would be implemented using expo-image-picker',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Mock Upload', onPress: () => mockImageAnalysis() },
-      ]
-    );
+  const handleImageUpload = async () => {
+  try {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission Denied', 'You need to allow access to photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setSelectedImage(uri);
+      await analyzeImage(uri);
+    }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to upload image');
+    }
   };
+
 
   const mockImageAnalysis = async () => {
     try {
@@ -161,6 +192,78 @@ export default function DiseaseDetectionScreen() {
       setIsAnalyzing(false);
     }
   };
+
+  const analyzeImage = async (uri: string) => {
+  try {
+    if (!selectedCrop) {
+      Alert.alert('Error', 'Please select a crop type first.');
+      return;
+    }
+
+    setIsAnalyzing(true);
+
+    const formData = new FormData();
+
+    // Attach image
+    formData.append('file', {
+      uri,
+      name: 'crop.jpg',
+      type: 'image/jpeg',
+    } as any);
+
+    // Attach crop type from selection
+    formData.append('cropType', selectedCrop);
+    if (user?.id) {
+      formData.append('farmerId', user.id);
+    }
+
+    console.log('📤 Sending crop type to backend:', selectedCrop);
+
+    // Let fetch handle Content-Type automatically; use configured API base URL
+    const API_BASE_URL = getApiBaseUrl();
+    const response = await fetch(`${API_BASE_URL}/api/farmer/detections`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const text = await response.text();
+    console.log('📦 Raw backend response:', text);
+
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = { error: 'Invalid JSON response' };
+    }
+
+    if (!response.ok || data?.error) {
+      const backendError = typeof data?.error === 'string' ? data.error : 'Prediction failed';
+      setError(backendError);
+      setShowError(true);
+      setResult(null);
+      return;
+    }
+
+    setResult(data);
+
+    // Update recent detections list in app context
+    const detectedAt = new Date().toISOString();
+    addRecentDetection({
+      id: data.detectionId || String(Date.now()),
+      name: data.disease || 'Unknown',
+      severity: (data.severity || 'Low').toLowerCase(),
+      treatment: data.treatment || '',
+      imageUrl: data.imageUrl || selectedImage || '',
+      detectedAt,
+    });
+  } catch (err) {
+    console.error('❌ Error analyzing image:', err);
+    setError('Network or prediction error');
+    setShowError(true);
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
 
   const resetAnalysis = () => {
     setSelectedImage(null);
@@ -241,7 +344,7 @@ export default function DiseaseDetectionScreen() {
               style={[styles.optionButton, { backgroundColor: crops.find(c => c.id === selectedCrop)?.color || '#22C55E' }]} 
               onPress={handleCameraCapture}
             >
-              <Camera color="white" size={40} />
+              <CameraIcon color="white" size={40} />
               <Text style={styles.optionText}>Scan with Camera</Text>
               <Text style={styles.optionSubtext}>Take a photo now</Text>
             </TouchableOpacity>

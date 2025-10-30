@@ -26,6 +26,9 @@
     },
     "android": {
       "package": "com.anonymous.boltexponativewind"
+    },
+    "extra": {
+      "API_BASE_URL": ""
     }
   }
 }
