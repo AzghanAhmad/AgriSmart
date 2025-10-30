@@ -5,6 +5,7 @@ interface AppContextType {
   language: 'en' | 'ur';
   setLanguage: (lang: 'en' | 'ur') => void;
   cropDiseases: CropDisease[];
+  addRecentDetection: (d: CropDisease) => void;
   farmingTasks: FarmingTask[];
   subsidyPrograms: SubsidyProgram[];
   isOffline: boolean;
@@ -28,6 +29,7 @@ interface AppProviderProps {
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [language, setLanguage] = useState<'en' | 'ur'>('en');
   const [isOffline, setIsOffline] = useState(false);
+  const [recentDetections, setRecentDetections] = useState<CropDisease[]>([]);
 
   const mockCropDiseases: CropDisease[] = [
     {
@@ -86,10 +88,15 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     }
   ];
 
+  const addRecentDetection = (d: CropDisease) => {
+    setRecentDetections(prev => [d, ...prev].slice(0, 20));
+  };
+
   const value: AppContextType = {
     language,
     setLanguage,
-    cropDiseases: mockCropDiseases,
+    cropDiseases: recentDetections.length ? recentDetections : mockCropDiseases,
+    addRecentDetection,
     farmingTasks: mockFarmingTasks,
     subsidyPrograms: mockSubsidyPrograms,
     isOffline,

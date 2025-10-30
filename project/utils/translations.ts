@@ -97,6 +97,8 @@ export const translations = {
   }
 };
 
-export const translate = (key: string, language: 'en' | 'ur'): string => {
-  return translations[language][key as keyof typeof translations.en] || key;
+export type TranslationKeys = keyof typeof translations.en;
+
+export const translate = (key: TranslationKeys, language: 'en' | 'ur'): string => {
+  return translations[language][key] || key;
 };
