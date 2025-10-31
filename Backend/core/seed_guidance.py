@@ -126,6 +126,14 @@ SEED_DATA: List[Dict[str, str]] = [
         'notes': 'Monitor and spray early',
     },
     {
+        'crop': 'wheat', 'name': 'Spot Blotch(Sep)', 'type': 'Fungal disease',
+        'symptoms': 'Irregular dark brown lesions; coalescing blight on leaves',
+        'cultural_controls': 'Use tolerant varieties; rotate crops; avoid excess nitrogen; remove crop debris',
+        'chemical_control': 'Propiconazole or tebuconazole at first signs; mancozeb for protection',
+        'brands': 'Tilt (Propiconazole); Dithane (Mancozeb)',
+        'notes': 'Spray early and rotate fungicide modes of action',
+    },
+    {
         'crop': 'wheat', 'name': 'Powdery mildew', 'type': 'Fungal disease',
         'symptoms': 'White powdery growth on leaf surface',
         'cultural_controls': 'Resistant varieties; avoid dense canopy; sulfur dusting',

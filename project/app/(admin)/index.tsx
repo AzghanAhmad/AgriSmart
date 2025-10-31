@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image } from 'react-native';
 import { Users, FileText, MapPin, TrendingUp, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, DollarSign } from 'lucide-react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAdminDetections } from '@/hooks/useAdmin';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -20,8 +21,9 @@ const chartConfig = {
 
 export default function AdminDashboardScreen() {
   const { user } = useAuth();
+  const { total, items } = useAdminDetections(1, 10);
 
-  const statsCards = [
+  const statsCards = useMemo(() => ([
     {
       title: 'Total Farmers',
       value: '2,847',
@@ -32,7 +34,7 @@ export default function AdminDashboardScreen() {
     },
     {
       title: 'Reports Submitted',
-      value: '1,236',
+      value: String(total || 0),
       change: '+8%',
       icon: FileText,
       color: '#3B82F6',
@@ -54,7 +56,7 @@ export default function AdminDashboardScreen() {
       color: '#F59E0B',
       bgColor: '#FFFBEB'
     }
-  ];
+  ]), [total]);
 
   // Mock data for charts
   const farmerRegistrationData = {
@@ -223,6 +225,29 @@ export default function AdminDashboardScreen() {
               </View>
             );
           })}
+        </View>
+      </View>
+
+      {/* Recent Detections from Backend */}
+      <View style={styles.activitiesSection}>
+        <Text style={styles.sectionTitle}>Recent Detections</Text>
+        <View style={styles.activitiesCard}>
+          {items.map((d) => (
+            <View key={d.detectionId} style={styles.detectionItem}>
+              <Image source={{ uri: d.imageUrl || '' }} style={styles.detectionImage} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detectionTitle}>Detection #{d.detectionId.slice(0, 8)}</Text>
+                <Text style={styles.detectionMeta}>
+                  Farmer: {d.farmerId || 'N/A'}  •  Confidence: {d.confidence ?? '-'}%
+                </Text>
+                <Text style={styles.detectionMeta}>Status: {d.status || 'pending'}</Text>
+                <Text style={styles.detectionMeta}>{d.timestamp || ''}</Text>
+              </View>
+            </View>
+          ))}
+          {items.length === 0 && (
+            <Text style={styles.detectionEmpty}>No detections yet.</Text>
+          )}
         </View>
       </View>
 
@@ -442,5 +467,30 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginTop: 8,
     textAlign: 'center',
+  },
+  detectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  detectionImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
+  },
+  detectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  detectionMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  detectionEmpty: {
+    fontSize: 13,
+    color: '#6B7280',
   },
 });

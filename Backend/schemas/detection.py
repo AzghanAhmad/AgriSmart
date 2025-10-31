@@ -1,6 +1,9 @@
 from sqlalchemy import Column, String, DateTime, Float, Text
 from sqlalchemy.sql import func
-from ..db import Base
+try:
+    from ..db import Base
+except ImportError:
+    from db import Base
 
 class Detection(Base):
     __tablename__ = 'Detections'

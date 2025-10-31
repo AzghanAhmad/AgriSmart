@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
 
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { getApiBaseUrl } from '@/utils/env';
 
@@ -203,13 +204,18 @@ export default function DiseaseDetectionScreen() {
     setIsAnalyzing(true);
 
     const formData = new FormData();
-
-    // Attach image
-    formData.append('file', {
-      uri,
-      name: 'crop.jpg',
-      type: 'image/jpeg',
-    } as any);
+    // Prepare file for mobile vs web
+    if (Platform.OS === 'web') {
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      formData.append('file', blob, 'crop.jpg');
+    } else {
+      formData.append('file', {
+        uri,
+        name: 'crop.jpg',
+        type: 'image/jpeg',
+      } as any);
+    }
 
     // Attach crop type from selection
     formData.append('cropType', selectedCrop);
@@ -219,29 +225,45 @@ export default function DiseaseDetectionScreen() {
 
     console.log('📤 Sending crop type to backend:', selectedCrop);
 
-    // Let fetch handle Content-Type automatically; use configured API base URL
     const API_BASE_URL = getApiBaseUrl();
-    const response = await fetch(`${API_BASE_URL}/api/farmer/detections`, {
-      method: 'POST',
-      body: formData,
+    const axiosResp = await axios.post(`${API_BASE_URL}/api/farmer/detections`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      transformRequest: (data) => data, // keep FormData as-is
     });
 
-    const text = await response.text();
-    console.log('📦 Raw backend response:', text);
+    let data = axiosResp.data;
 
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      data = { error: 'Invalid JSON response' };
-    }
-
-    if (!response.ok || data?.error) {
-      const backendError = typeof data?.error === 'string' ? data.error : 'Prediction failed';
-      setError(backendError);
-      setShowError(true);
-      setResult(null);
-      return;
+    // Enrich with cure guidance if any field missing
+    const needsGuidance = !data?.treatment || !data?.symptoms || !data?.prevention;
+    if (needsGuidance && data?.disease && selectedCrop) {
+      try {
+        const normalizedDisease = data.disease.replace(/[_-]+/g, ' ').trim();
+        const resp = await fetch(
+          `${API_BASE_URL}/api/guidance?crop=${encodeURIComponent(selectedCrop)}&disease=${encodeURIComponent(normalizedDisease)}`
+        );
+        const j = await resp.json();
+        const item = (j?.items && j.items[0]) || null;
+        if (item) {
+          const treatmentParts: string[] = [];
+          if (item.chemicalControl) treatmentParts.push(item.chemicalControl);
+          if (item.brands) treatmentParts.push(`e.g., ${item.brands}`);
+          const enriched = {
+            ...data,
+            treatment: data.treatment || (treatmentParts.length ? treatmentParts.join(' — ') : undefined),
+            symptoms:
+              data.symptoms ||
+              (item.symptoms
+                ? item.symptoms.replace(' and ', ';').replace(/,/g, ';').split(';').map((s: string) => s.trim()).filter(Boolean)
+                : undefined),
+            prevention:
+              data.prevention ||
+              (item.culturalControls
+                ? item.culturalControls.replace(' and ', ';').replace(/,/g, ';').split(';').map((s: string) => s.trim()).filter(Boolean)
+                : undefined),
+          };
+          data = enriched;
+        }
+      } catch {}
     }
 
     setResult(data);

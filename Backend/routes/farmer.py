@@ -2,6 +2,7 @@ import os
 import uuid
 from flask import Blueprint, request, jsonify, current_app, url_for
 from PIL import Image
+from sqlalchemy import func
 import io
 try:
     from ..db import SessionLocal
@@ -82,12 +83,14 @@ def create_detection():
         finally:
             db.close()
 
-        # Try to enrich with guidance from DB
+        # Try to enrich with guidance from DB (normalize names to handle underscores/hyphens/case)
         db = SessionLocal()
         try:
+            norm_crop = crop_type.strip().lower()
+            norm_disease = disease_name.strip().lower().replace('_', ' ').replace('-', ' ')
             guidance = db.query(DiseaseGuidance).filter(
-                DiseaseGuidance.crop == crop_type,
-                DiseaseGuidance.name == disease_name
+                func.lower(DiseaseGuidance.crop) == norm_crop,
+                func.replace(func.replace(func.lower(DiseaseGuidance.name), '_', ' '), '-', ' ') == norm_disease
             ).first()
         finally:
             db.close()
