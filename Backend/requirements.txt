@@ -8,3 +8,4 @@ tqdm
 seaborn
 SQLAlchemy
 python-dotenv
+psycopg2-binary>=2.9

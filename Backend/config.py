@@ -24,3 +24,7 @@ def get_upload_root() -> str:
     return os.getenv('UPLOAD_ROOT', os.path.join('static', 'uploads'))
 
 
+def get_secret_key() -> str:
+    return os.getenv('SECRET_KEY', 'dev-insecure')
+
+

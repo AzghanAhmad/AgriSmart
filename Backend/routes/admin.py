@@ -1,6 +1,11 @@
 from flask import Blueprint, request, jsonify
-from ..db import SessionLocal
-from ..schemas.detection import Detection
+try:
+    from ..db import SessionLocal
+    from ..schemas.detection import Detection
+except ImportError:
+    # Fallback when running as a script: python Backend/app.py
+    from db import SessionLocal
+    from schemas.detection import Detection
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
