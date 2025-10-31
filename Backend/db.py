@@ -1,7 +1,11 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, scoped_session
-from .config import get_database_url
+try:
+    from .config import get_database_url
+except ImportError:
+    # Fallback for running as a script: python Backend/app.py
+    from config import get_database_url
 
 DB_URL = get_database_url()
 

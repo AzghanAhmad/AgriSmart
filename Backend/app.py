@@ -8,15 +8,21 @@ try:
     from .db import Base, engine
     from .routes.farmer import farmer_bp
     from .routes.admin import admin_bp
+    from .routes.auth import auth_bp
+    from .routes.guidance import guidance_bp
     from .core.yolo import get_model_for_crop
-    from .config import get_allowed_origins, get_upload_root
+    from .config import get_allowed_origins, get_upload_root, get_secret_key
+    from .core.seed_guidance import seed_guidance_if_needed
 except ImportError:
     # Fallback for running as a script: python Backend/app.py
     from db import Base, engine
     from routes.farmer import farmer_bp
     from routes.admin import admin_bp
+    from routes.auth import auth_bp
+    from routes.guidance import guidance_bp
     from core.yolo import get_model_for_crop
-    from config import get_allowed_origins, get_upload_root
+    from config import get_allowed_origins, get_upload_root, get_secret_key
+    from core.seed_guidance import seed_guidance_if_needed
 
 app = Flask(__name__)
 # Configure CORS via env; default to permissive in dev
@@ -33,14 +39,22 @@ if not os.path.isabs(uploads_root):
     uploads_root = os.path.join(app.static_folder, 'uploads')
 os.makedirs(uploads_root, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = uploads_root
+app.config['SECRET_KEY'] = get_secret_key()
 
 # Initialize DB
 with app.app_context():
     Base.metadata.create_all(bind=engine)
+    # Seed disease guidance table (idempotent)
+    try:
+        seed_guidance_if_needed()
+    except Exception as se:
+        print('⚠️ Guidance seeding skipped:', se)
 
 # Register blueprints
 app.register_blueprint(farmer_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(guidance_bp)
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}

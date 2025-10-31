@@ -3,9 +3,17 @@ import uuid
 from flask import Blueprint, request, jsonify, current_app, url_for
 from PIL import Image
 import io
-from ..db import SessionLocal
-from ..schemas.detection import Detection
-from ..core.yolo import get_model_for_crop
+try:
+    from ..db import SessionLocal
+    from ..schemas.detection import Detection
+    from ..schemas.guidance import DiseaseGuidance
+    from ..core.yolo import get_model_for_crop
+except ImportError:
+    # Fallback when running as a script: python Backend/app.py
+    from db import SessionLocal
+    from schemas.detection import Detection
+    from schemas.guidance import DiseaseGuidance
+    from core.yolo import get_model_for_crop
 
 farmer_bp = Blueprint('farmer', __name__, url_prefix='/api/farmer')
 
@@ -74,6 +82,32 @@ def create_detection():
         finally:
             db.close()
 
+        # Try to enrich with guidance from DB
+        db = SessionLocal()
+        try:
+            guidance = db.query(DiseaseGuidance).filter(
+                DiseaseGuidance.crop == crop_type,
+                DiseaseGuidance.name == disease_name
+            ).first()
+        finally:
+            db.close()
+
+        # Map guidance fields to UI fields
+        treatment = None
+        symptoms_list = None
+        prevention_list = None
+        if guidance:
+            treatment_parts = []
+            if guidance.chemical_control:
+                treatment_parts.append(guidance.chemical_control)
+            if guidance.brands:
+                treatment_parts.append(f"e.g., {guidance.brands}")
+            treatment = ' — '.join(treatment_parts) if treatment_parts else None
+            if guidance.symptoms:
+                symptoms_list = [s.strip() for s in guidance.symptoms.replace(' and ', ';').replace(',', ';').split(';') if s.strip()]
+            if guidance.cultural_controls:
+                prevention_list = [s.strip() for s in guidance.cultural_controls.replace(' and ', ';').replace(',', ';').split(';') if s.strip()]
+
         severity = 'High' if confidence > 80 else ('Medium' if confidence > 50 else 'Low')
         return jsonify({
             'detectionId': detection_id,
@@ -82,6 +116,9 @@ def create_detection():
             'confidence': confidence,
             'severity': severity,
             'imageUrl': image_url,
+            'treatment': treatment or 'Follow integrated management: monitor regularly; use resistant varieties; apply labeled products as needed.',
+            'symptoms': symptoms_list or ['Lesions or discoloration detected on leaves'],
+            'prevention': prevention_list or ['Use resistant crop variety', 'Avoid overwatering', 'Balanced fertilization'],
         }), 201
 
     except Exception as e:
