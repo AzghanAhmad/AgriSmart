@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContextType, User, SignupData } from '@/types';
+import { apiGet } from '@/utils/api';
+import { apiPost } from '@/utils/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -29,7 +31,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = await AsyncStorage.getItem('user');
       const token = await AsyncStorage.getItem('authToken');
       
-      if (userData && token) {
+      if (token) {
+        try {
+          const me = await apiGet<User>('/api/auth/me');
+          setUser(me);
+          await AsyncStorage.setItem('user', JSON.stringify(me));
+        } catch (e) {
+          await AsyncStorage.removeItem('user');
+          await AsyncStorage.removeItem('authToken');
+          setUser(null);
+        }
+      } else if (userData) {
         setUser(JSON.parse(userData));
       }
     } catch (error) {
@@ -61,25 +73,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setIsLoading(true);
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const resp = await apiPost<{ token: string; user: User }>(
+        '/api/auth/login',
+        { email, password }
+      );
 
-      // Mock user data - in real app, this would come from API
-      const mockUser: User = {
-        id: '1',
-        name: email === 'admin@agrismart.com' ? 'Admin User' : 'Farmer Ali',
-        email,
-        role: email === 'admin@agrismart.com' ? 'admin' : 'farmer',
-        phone: '+92300123456',
-        location: 'Punjab, Pakistan'
-      };
-
-      const mockToken = 'mock_jwt_token_' + Date.now();
-
-      await AsyncStorage.setItem('user', JSON.stringify(mockUser));
-      await AsyncStorage.setItem('authToken', mockToken);
-      
-      setUser(mockUser);
+      await AsyncStorage.setItem('user', JSON.stringify(resp.user));
+      await AsyncStorage.setItem('authToken', resp.token);
+      setUser(resp.user);
     } catch (error) {
       throw error;
     } finally {
@@ -109,24 +110,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setIsLoading(true);
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const resp = await apiPost<{ token: string; user: User }>(
+        '/api/auth/signup',
+        { name, email, password, phone: userData.phone, location: userData.location, role }
+      );
 
-      const newUser: User = {
-        id: Date.now().toString(),
-        name,
-        email,
-        role,
-        phone: userData.phone,
-        location: userData.location
-      };
-
-      const mockToken = 'mock_jwt_token_' + Date.now();
-
-      await AsyncStorage.setItem('user', JSON.stringify(newUser));
-      await AsyncStorage.setItem('authToken', mockToken);
-      
-      setUser(newUser);
+      await AsyncStorage.setItem('user', JSON.stringify(resp.user));
+      await AsyncStorage.setItem('authToken', resp.token);
+      setUser(resp.user);
     } catch (error) {
       throw error;
     } finally {

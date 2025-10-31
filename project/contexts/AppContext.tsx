@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { CropDisease, FarmingTask, SubsidyProgram } from '@/types';
+import { useAuth } from './AuthContext';
+import { apiGet } from '@/utils/api';
 
 interface AppContextType {
   language: 'en' | 'ur';
@@ -30,6 +32,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [language, setLanguage] = useState<'en' | 'ur'>('en');
   const [isOffline, setIsOffline] = useState(false);
   const [recentDetections, setRecentDetections] = useState<CropDisease[]>([]);
+  const { user } = useAuth();
 
   const mockCropDiseases: CropDisease[] = [
     {
@@ -91,6 +94,29 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const addRecentDetection = (d: CropDisease) => {
     setRecentDetections(prev => [d, ...prev].slice(0, 20));
   };
+
+  useEffect(() => {
+    const loadRecent = async () => {
+      if (!user?.id) return;
+      try {
+        const data = await apiGet<{ detections: Array<{ id: string; name: string; severity: string; treatment: string; imageUrl: string; detectedAt: string }> }>(
+          `/api/farmer/detections/recent?farmerId=${encodeURIComponent(user.id)}`
+        );
+        const mapped: CropDisease[] = (data.detections || []).map(d => ({
+          id: d.id,
+          name: d.name,
+          severity: d.severity as any,
+          treatment: d.treatment || '',
+          imageUrl: d.imageUrl,
+          detectedAt: d.detectedAt,
+        }));
+        setRecentDetections(mapped);
+      } catch (e) {
+        // keep mocks on failure
+      }
+    };
+    loadRecent();
+  }, [user?.id]);
 
   const value: AppContextType = {
     language,
