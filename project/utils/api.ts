@@ -12,20 +12,69 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export async function apiJson<T = any>(path: string, options: { method?: HttpMethod; body?: any; headers?: Record<string, string> } = {}): Promise<T> {
   const base = getApiBaseUrl();
-  const headers = { ...(await getAuthHeaders()), 'Content-Type': 'application/json', ...(options.headers || {}) };
-  const res = await fetch(`${base}${path}`, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-  const text = await res.text();
-  let data: any;
-  try { data = text ? JSON.parse(text) : {}; } catch { data = { error: 'Invalid JSON' }; }
-  if (!res.ok || data?.error) {
-    const message = typeof data?.error === 'string' ? data.error : `Request failed (${res.status})`;
-    throw new Error(message);
+  const fullUrl = `${base}${path}`;
+  
+  console.log(`🌐 API Request: ${options.method || 'GET'} ${fullUrl}`);
+  
+  try {
+    const headers = { ...(await getAuthHeaders()), 'Content-Type': 'application/json', ...(options.headers || {}) };
+    
+    const res = await fetch(fullUrl, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    
+    console.log(`✅ API Response: ${res.status} ${res.statusText}`);
+    
+    const text = await res.text();
+    let data: any;
+    try { 
+      data = text ? JSON.parse(text) : {}; 
+    } catch { 
+      data = { error: 'Invalid JSON response' }; 
+    }
+    
+    if (!res.ok || data?.error) {
+      const message = typeof data?.error === 'string' ? data.error : `Request failed (${res.status})`;
+      throw new Error(message);
+    }
+    
+    return data as T;
+  } catch (error: any) {
+    console.error(`❌ API Error:`, error);
+    
+    // Handle network errors (connection refused, timeout, etc.)
+    if (error.message && (
+      error.message.includes('Network request failed') ||
+      error.message.includes('Failed to fetch') ||
+      error.message.includes('NetworkError') ||
+      error.message.includes('TypeError') ||
+      error.message.includes('Network request failed') ||
+      error.code === 'NETWORK_ERROR' ||
+      error.name === 'TypeError'
+    )) {
+      let helpfulMessage = `Network error: Unable to connect to server at ${base}\n\n`;
+      
+      if (base.includes('127.0.0.1') || base.includes('localhost')) {
+        helpfulMessage += `If you're using a physical device, you need to use your computer's IP address.\n`;
+        helpfulMessage += `Set EXPO_PUBLIC_API_BASE_URL=http://YOUR_COMPUTER_IP:5000\n\n`;
+        helpfulMessage += `Find your IP:\n`;
+        helpfulMessage += `- Windows: ipconfig (look for IPv4 Address)\n`;
+        helpfulMessage += `- Mac/Linux: ifconfig or ip addr`;
+      } else if (base.includes('10.0.2.2')) {
+        helpfulMessage += `Make sure:\n`;
+        helpfulMessage += `1. You're using Android Emulator (not physical device)\n`;
+        helpfulMessage += `2. Backend is running on your computer\n`;
+        helpfulMessage += `3. Backend is accessible at http://127.0.0.1:5000 on your computer`;
+      }
+      
+      throw new Error(helpfulMessage);
+    }
+    
+    // Re-throw other errors as-is
+    throw error;
   }
-  return data as T;
 }
 
 export async function apiGet<T = any>(path: string, headers?: Record<string, string>): Promise<T> {
