@@ -5,14 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/schemas/detection.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/schemas/detection.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/contexts/AppContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AppContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/models/wheat/best.onnx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/models/wheat/best.pt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/models/wheat/best.pt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/models/wheat/last.pt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/routes/farmer.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/farmer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,12 +37,14 @@
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
     "RunOnceActivity.cidr.known.project.marker": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.readMode.enableVisualFormatting": "true",
     "cf.first.check.clang-format": "false",
     "cidr.known.project.marker": "true",
-    "git-widget-placeholder": "Faisal",
+    "git-widget-placeholder": "talha",
+    "last_opened_file_path": "D:/Crop_Disease_Detect/AgriSmart",
     "settings.editor.selected.configurable": "AndroidSdkUpdater"
   }
 }]]></component>

@@ -9,12 +9,14 @@ try:
     from ..schemas.detection import Detection
     from ..schemas.guidance import DiseaseGuidance
     from ..core.yolo import get_model_for_crop
+    from ..core.preprocessing import preprocess_from_bytes
 except ImportError:
     # Fallback when running as a script: python Backend/app.py
     from db import SessionLocal
     from schemas.detection import Detection
     from schemas.guidance import DiseaseGuidance
     from core.yolo import get_model_for_crop
+    from core.preprocessing import preprocess_from_bytes
 
 farmer_bp = Blueprint('farmer', __name__, url_prefix='/api/farmer')
 
@@ -34,11 +36,28 @@ def create_detection():
         if not farmer_id:
             return jsonify({'error': 'Missing farmerId'}), 400
 
-        # Run prediction
-        model = get_model_for_crop(crop_type)
+        # Get image bytes and preprocess according to crop type
         image_bytes = file.read()
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        results = model.predict(image)
+        print(f"🔧 Preprocessing {crop_type} image before model inference...")
+        
+        # Preprocess image using crop-specific preprocessing pipeline
+        preprocessed_array = preprocess_from_bytes(image_bytes, crop_type)
+        
+        if preprocessed_array is None:
+            return jsonify({'error': 'Failed to preprocess image'}), 400
+        
+        # Convert preprocessed numpy array (BGR) to PIL Image (RGB) for YOLO
+        import cv2
+        preprocessed_rgb = cv2.cvtColor(preprocessed_array, cv2.COLOR_BGR2RGB)
+        preprocessed_image = Image.fromarray(preprocessed_rgb)
+        
+        # Also save original image for storage
+        original_image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        
+        # Run prediction with preprocessed image
+        print(f"🔍 Running inference on preprocessed {crop_type} image...")
+        model = get_model_for_crop(crop_type)
+        results = model.predict(preprocessed_image)
         detections = results[0]
 
         prediction_list = []
@@ -62,7 +81,8 @@ def create_detection():
         os.makedirs(uploads_dir, exist_ok=True)
         filename = f"{detection_id}.jpg"
         save_path = os.path.join(uploads_dir, filename)
-        image.save(save_path, format='JPEG')
+        # Save original image (not preprocessed) for storage
+        original_image.save(save_path, format='JPEG')
 
         # Construct URL for the saved image
         image_url = url_for('static', filename=f"uploads/detections/{filename}", _external=True)
