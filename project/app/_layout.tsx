@@ -4,11 +4,17 @@ import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { AppProvider } from '@/contexts/AppContext';
+import { testBackendConnection } from '@/utils/env';
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // Test backend connection on mount
+  useEffect(() => {
+    testBackendConnection().catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;

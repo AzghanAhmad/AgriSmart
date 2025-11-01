@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image, ActivityIndicator } from 'react-native';
 import { Camera, Shield, Calendar, MapPin, MessageCircle, TrendingUp, Sun, Droplets, Wind } from 'lucide-react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,24 +7,36 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
 import { colors, spacing, borderRadius, shadows } from '@/utils/designSystem';
+import { useRouter } from 'expo-router';
+import { apiGet } from '@/utils/api';
 
 const screenWidth = Dimensions.get('window').width;
 
 const chartConfig = {
-  backgroundColor: '#22C55E',
-  backgroundGradientFrom: '#22C55E',
-  backgroundGradientTo: '#16A34A',
-  decimalPlaces: 1,
-  color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+  backgroundColor: '#FFFFFF',
+  backgroundGradientFrom: '#FFFFFF',
+  backgroundGradientTo: '#FFFFFF',
+  decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(22, 163, 74, ${opacity})`,
   style: {
     borderRadius: 16,
+  },
+  propsForBackgroundLines: {
+    strokeDasharray: '', // solid lines
+    stroke: '#E5E7EB',
+    strokeWidth: 1,
   },
 };
 
 export default function FarmerHomeScreen() {
   const { user } = useAuth();
   const { language } = useApp();
+  const router = useRouter();
+  
+  const [healthData, setHealthData] = useState({ healthy: 75, atRisk: 15, diseased: 10, totalScans: 0 });
+  const [diseaseData, setDiseaseData] = useState({ wheat: 12, rice: 8, cotton: 15, corn: 5 });
+  const [loading, setLoading] = useState(true);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -33,36 +45,68 @@ export default function FarmerHomeScreen() {
     return translate('goodEvening', language);
   };
 
-  // Mock data for charts
+  // Fetch real data from backend
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!user?.id) return;
+      
+      try {
+        setLoading(true);
+        
+        // Fetch crop health stats
+        const health = await apiGet<any>(`/api/farmer/stats/health?farmerId=${encodeURIComponent(user.id)}`);
+        setHealthData(health);
+        
+        // Fetch disease incidence stats
+        const disease = await apiGet<any>(`/api/farmer/stats/disease-incidence?farmerId=${encodeURIComponent(user.id)}`);
+        setDiseaseData(disease);
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+        // Keep default mock data on error
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchStats();
+  }, [user?.id]);
+
+  // Mock data for weekly yield
   const yieldData = {
     labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
     datasets: [{
       data: [45, 52, 48, 61],
-      color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-      strokeWidth: 2,
+      color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+      strokeWidth: 3,
     }],
   };
 
+  // Dynamic crop health data from backend
   const cropHealthData = [
-    { name: 'Healthy', population: 75, color: '#22C55E', legendFontColor: '#374151', legendFontSize: 14 },
-    { name: 'At Risk', population: 15, color: '#F59E0B', legendFontColor: '#374151', legendFontSize: 14 },
-    { name: 'Diseased', population: 10, color: '#EF4444', legendFontColor: '#374151', legendFontSize: 14 },
+    { name: 'Healthy', population: healthData.healthy, color: '#22C55E', legendFontColor: '#16A34A', legendFontSize: 13 },
+    { name: 'At Risk', population: healthData.atRisk, color: '#F59E0B', legendFontColor: '#D97706', legendFontSize: 13 },
+    { name: 'Diseased', population: healthData.diseased, color: '#EF4444', legendFontColor: '#DC2626', legendFontSize: 13 },
   ];
 
-  const diseaseData = {
+  // Dynamic disease incidence data
+  const diseaseIncidenceData = {
     labels: ['Wheat', 'Rice', 'Cotton', 'Corn'],
     datasets: [{
-      data: [12, 8, 15, 5],
+      data: [diseaseData.wheat || 1, diseaseData.rice || 1, diseaseData.cotton || 1, diseaseData.corn || 1],
     }],
   };
 
   const quickActions = [
-    { title: translate('scanCrop', language), icon: Camera, color: '#22C55E' },
-    { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6' },
-    { title: translate('farmingSchedule', language), icon: Calendar, color: '#F59E0B' },
-    { title: translate('diseaseHeatmap', language), icon: MapPin, color: '#EF4444' },
-    { title: translate('chatbot', language), icon: MessageCircle, color: '#8B5CF6' },
+    { title: translate('scanCrop', language), icon: Camera, color: '#22C55E', route: '/disease-detection' },
+    { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6', route: '/disease-detection' },
+    { title: translate('farmingSchedule', language), icon: Calendar, color: '#F59E0B', route: '/schedule' },
+    { title: translate('diseaseHeatmap', language), icon: MapPin, color: '#EF4444', route: '/heatmap' },
+    { title: translate('chatbot', language), icon: MessageCircle, color: '#8B5CF6', route: '/chatbot' },
   ];
+
+  const handleQuickAction = (route: string) => {
+    router.push(route as any);
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -104,7 +148,12 @@ export default function FarmerHomeScreen() {
           {quickActions.map((action, index) => {
             const IconComponent = action.icon;
             return (
-              <TouchableOpacity key={index} style={styles.actionCard}>
+              <TouchableOpacity 
+                key={index} 
+                style={styles.actionCard}
+                onPress={() => handleQuickAction(action.route)}
+                activeOpacity={0.7}
+              >
                 <View style={[styles.actionIcon, { backgroundColor: action.color }]}>
                   <IconComponent color="white" size={24} />
                 </View>
@@ -117,18 +166,30 @@ export default function FarmerHomeScreen() {
 
       {/* Crop Health Summary */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{translate('cropHealthSummary', language)}</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{translate('cropHealthSummary', language)}</Text>
+          {healthData.totalScans > 0 && (
+            <Text style={styles.sectionSubtitle}>Based on {healthData.totalScans} scans</Text>
+          )}
+        </View>
         <View style={styles.chartCard}>
-          <PieChart
-            data={cropHealthData}
-            width={screenWidth - 48}
-            height={200}
-            chartConfig={chartConfig}
-            accessor="population"
-            backgroundColor="transparent"
-            paddingLeft="15"
-            absolute
-          />
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#22C55E" />
+              <Text style={styles.loadingText}>Loading statistics...</Text>
+            </View>
+          ) : (
+            <PieChart
+              data={cropHealthData}
+              width={screenWidth - 48}
+              height={220}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              absolute
+            />
+          )}
         </View>
       </View>
 
@@ -150,21 +211,29 @@ export default function FarmerHomeScreen() {
         </View>
       </View>
 
-      {/* Disease Incidence */}
+      {/* Disease Incidence - Redesigned */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{translate('diseaseIncidence', language)}</Text>
-        <View style={styles.chartCard}>
-          <BarChart
-            data={diseaseData}
-            width={screenWidth - 48}
-            height={220}
-            chartConfig={chartConfig}
-            verticalLabelRotation={30}
-            style={{
-              marginVertical: 8,
-              borderRadius: 16,
-            }}
-          />
+        <View style={styles.diseaseGrid}>
+          {[
+            { crop: 'Wheat', count: diseaseData.wheat, color: '#F59E0B', icon: '🌾' },
+            { crop: 'Rice', count: diseaseData.rice, color: '#10B981', icon: '🍚' },
+            { crop: 'Cotton', count: diseaseData.cotton, color: '#8B5CF6', icon: '☁️' },
+          ].map((item, index) => (
+            <View key={index} style={styles.diseaseCard}>
+              <View style={[styles.diseaseIconBg, { backgroundColor: item.color + '20' }]}>
+                <Text style={styles.diseaseIcon}>{item.icon}</Text>
+              </View>
+              <Text style={styles.diseaseCrop}>{item.crop}</Text>
+              <Text style={[styles.diseaseCount, { color: item.color }]}>{item.count}</Text>
+              <Text style={styles.diseaseLabel}>Cases</Text>
+              {item.count > 0 && (
+                <View style={[styles.diseaseBar, { backgroundColor: item.color }]}>
+                  <View style={[styles.diseaseBarFill, { width: `${Math.min((item.count / 20) * 100, 100)}%` }]} />
+                </View>
+              )}
+            </View>
+          ))}
         </View>
       </View>
 
@@ -217,13 +286,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greeting: {
-    fontSize: 16,
+    fontSize: 14,
     color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 4,
   },
   userName: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: 'white',
     marginBottom: 4,
   },
@@ -268,11 +337,29 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingHorizontal: spacing.base,
   },
+  sectionHeader: {
+    marginBottom: spacing.base,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: colors.text.primary,
-    marginBottom: spacing.base,
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.text.secondary,
   },
   actionsGrid: {
     flexDirection: 'row',
@@ -333,5 +420,56 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  diseaseGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  diseaseCard: {
+    width: (screenWidth - 56) / 2,
+    backgroundColor: colors.bg.primary,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    alignItems: 'center',
+    ...shadows.md,
+  },
+  diseaseIconBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  diseaseIcon: {
+    fontSize: 28,
+  },
+  diseaseCrop: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  diseaseCount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  diseaseLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginBottom: spacing.sm,
+  },
+  diseaseBar: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    opacity: 0.3,
+  },
+  diseaseBarFill: {
+    height: '100%',
+    backgroundColor: 'currentColor',
   },
 });

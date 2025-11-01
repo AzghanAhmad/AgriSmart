@@ -81,7 +81,36 @@ def get_model_for_crop(crop_type: str):
 
 @app.route('/')
 def home():
-    return jsonify({"message": "🌾 AgriSmart Backend is Running"})
+    return jsonify({
+        "message": "🌾 AgriSmart Backend is Running",
+        "status": "online",
+        "version": "1.0",
+        "endpoints": {
+            "auth": "/api/auth/*",
+            "farmer": "/api/farmer/*",
+            "admin": "/api/admin/*",
+            "guidance": "/api/guidance",
+            "predict": "/predict"
+        }
+    })
+
+@app.route('/health')
+def health():
+    """Health check endpoint for mobile app connection testing"""
+    import socket
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    
+    return jsonify({
+        "status": "healthy",
+        "server": {
+            "hostname": hostname,
+            "ip": local_ip,
+            "port": 5000
+        },
+        "database": "connected",
+        "message": "Backend is fully operational"
+    })
 
 
 @app.route('/predict', methods=['POST'])

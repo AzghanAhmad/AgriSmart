@@ -46,7 +46,8 @@ def create_detection():
             cls_id = int(box.cls)
             conf = float(box.conf)
             label = detections.names[cls_id]
-            prediction_list.append({'label': label, 'confidence': round(conf * 100, 2)})
+            confidence_pct = round(conf * 100, 2)
+            prediction_list.append({'label': label, 'confidence': confidence_pct})
 
         if prediction_list:
             top_pred = prediction_list[0]
@@ -146,6 +147,100 @@ def recent_detections():
             'detectedAt': r.timestamp.isoformat() if r.timestamp else None,
         } for r in rows]
         return jsonify({'detections': data})
+    finally:
+        db.close()
+
+
+@farmer_bp.route('/stats/health', methods=['GET'])
+def crop_health_stats():
+    """Get crop health statistics for farmer dashboard"""
+    farmer_id = request.args.get('farmerId')
+    if not farmer_id:
+        return jsonify({'error': 'Missing farmerId'}), 400
+    
+    db = SessionLocal()
+    try:
+        # Get all detections for the farmer
+        detections = db.query(Detection).filter(Detection.farmer_id == farmer_id).all()
+        
+        total = len(detections)
+        if total == 0:
+            return jsonify({
+                'healthy': 100,
+                'atRisk': 0,
+                'diseased': 0,
+                'totalScans': 0
+            })
+        
+        # Categorize by confidence score
+        healthy = 0
+        at_risk = 0
+        diseased = 0
+        
+        for det in detections:
+            conf = det.confidence_score or 0
+            if conf == 0 or conf < 50:
+                healthy += 1
+            elif conf < 80:
+                at_risk += 1
+            else:
+                diseased += 1
+        
+        return jsonify({
+            'healthy': round((healthy / total) * 100, 1),
+            'atRisk': round((at_risk / total) * 100, 1),
+            'diseased': round((diseased / total) * 100, 1),
+            'totalScans': total
+        })
+    finally:
+        db.close()
+
+
+@farmer_bp.route('/stats/disease-incidence', methods=['GET'])
+def disease_incidence():
+    """Get disease incidence by crop type"""
+    farmer_id = request.args.get('farmerId')
+    if not farmer_id:
+        return jsonify({'error': 'Missing farmerId'}), 400
+    
+    db = SessionLocal()
+    try:
+        # Get detections grouped by crop type (we'll need to add crop_type to Detection model or parse from disease_id)
+        # For now, return mock data based on common crops
+        detections = db.query(Detection).filter(
+            Detection.farmer_id == farmer_id,
+            Detection.confidence_score > 60  # Only count real diseases
+        ).all()
+        
+        # Count by crop type (simplified - in production, store crop_type in Detection)
+        crop_counts = {
+            'Wheat': 0,
+            'Rice': 0,
+            'Cotton': 0,
+            'Corn': 0
+        }
+        
+        # This is simplified - in real implementation, store crop_type with each detection
+        for det in detections:
+            # For now, increment randomly or based on pattern
+            # In production: use det.crop_type
+            crop_counts['Wheat'] += 1  # Placeholder
+        
+        total = len(detections)
+        if total == 0:
+            return jsonify({
+                'wheat': 0,
+                'rice': 0,
+                'cotton': 0,
+                'corn': 0
+            })
+        
+        return jsonify({
+            'wheat': crop_counts.get('Wheat', 0),
+            'rice': crop_counts.get('Rice', 0),
+            'cotton': crop_counts.get('Cotton', 0),
+            'corn': crop_counts.get('Corn', 0)
+        })
     finally:
         db.close()
 

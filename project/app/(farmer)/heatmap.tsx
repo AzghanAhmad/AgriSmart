@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image } from 'react-native';
 import { MapPin, TriangleAlert as AlertTriangle, Filter, Layers } from 'lucide-react-native';
 
 const screenWidth = Dimensions.get('window').width;
@@ -23,10 +23,10 @@ export default function HeatmapScreen() {
   ];
 
   const diseaseHotspots = [
-    { id: '1', name: 'Wheat Rust', location: 'Punjab - Sector A', severity: 'high', cases: 45 },
-    { id: '2', name: 'Rice Blast', location: 'Sindh - Zone B', severity: 'medium', cases: 23 },
-    { id: '3', name: 'Cotton Boll Rot', location: 'Punjab - Sector C', severity: 'high', cases: 67 },
-    { id: '4', name: 'Corn Smut', location: 'KPK - Region D', severity: 'low', cases: 12 },
+    { id: '1', name: 'Wheat Rust', location: 'Punjab - Sector A', severity: 'high', cases: 45, latitude: 31.5204, longitude: 74.3587 },
+    { id: '2', name: 'Rice Blast', location: 'Sindh - Zone B', severity: 'medium', cases: 23, latitude: 25.1967, longitude: 68.5247 },
+    { id: '3', name: 'Cotton Boll Rot', location: 'Punjab - Sector C', severity: 'high', cases: 67, latitude: 30.1575, longitude: 71.5249 },
+    { id: '4', name: 'Corn Smut', location: 'KPK - Region D', severity: 'low', cases: 12, latitude: 34.0151, longitude: 71.5249 },
   ];
 
   const getSeverityColor = (severity: string) => {
@@ -100,38 +100,38 @@ export default function HeatmapScreen() {
         </View>
       </View>
 
-      {/* Mock Map View */}
+      {/* Pakistan Map View */}
       <View style={styles.mapContainer}>
         <View style={styles.mapHeader}>
           <MapPin color="#22C55E" size={20} />
           <Text style={styles.mapTitle}>Pakistan Agricultural Map</Text>
         </View>
         
-        <View style={styles.mockMap}>
-          {/* Mock map regions with different severity levels */}
-          <View style={styles.mapRegions}>
-            <View style={[styles.region, styles.region1]} />
-            <View style={[styles.region, styles.region2]} />
-            <View style={[styles.region, styles.region3]} />
-            <View style={[styles.region, styles.region4]} />
+        <View style={styles.mapPlaceholder}>
+          <View style={styles.mapOverlay}>
+            {diseaseHotspots.map((hotspot, index) => (
+              <TouchableOpacity
+                key={hotspot.id}
+                style={[
+                  styles.mapMarker,
+                  {
+                    top: `${15 + index * 20}%`,
+                    left: `${20 + index * 15}%`,
+                    backgroundColor: getSeverityColor(hotspot.severity),
+                  }
+                ]}
+              >
+                <AlertTriangle color="white" size={20} />
+                <View style={styles.markerTooltip}>
+                  <Text style={styles.markerTitle}>{hotspot.name}</Text>
+                  <Text style={styles.markerSubtitle}>{hotspot.location}</Text>
+                  <Text style={styles.markerCases}>{hotspot.cases} cases</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
-          
-          {/* Mock hotspot markers */}
-          {diseaseHotspots.slice(0, 4).map((hotspot, index) => (
-            <View
-              key={hotspot.id}
-              style={[
-                styles.hotspotMarker,
-                { 
-                  backgroundColor: getSeverityColor(hotspot.severity),
-                  top: `${20 + index * 15}%`,
-                  left: `${25 + index * 20}%`
-                }
-              ]}
-            >
-              <AlertTriangle color="white" size={16} />
-            </View>
-          ))}
+          <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
+          <Text style={styles.mapSubtext}>Interactive map showing disease hotspots across regions</Text>
         </View>
 
         {/* Legend */}
@@ -326,61 +326,80 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
-  mockMap: {
-    height: 250,
-    backgroundColor: '#F3F4F6',
+  mapPlaceholder: {
+    height: 300,
+    backgroundColor: '#E0F2E9',
     borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     position: 'relative',
     overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#BBF7D0',
+    borderStyle: 'dashed',
   },
-  mapRegions: {
+  mapOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
   },
-  region: {
+  mapMarker: {
     position: 'absolute',
-    borderRadius: 8,
-  },
-  region1: {
-    top: '10%',
-    left: '20%',
-    width: 60,
-    height: 80,
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  region2: {
-    top: '20%',
-    right: '25%',
-    width: 50,
-    height: 60,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-  },
-  region3: {
-    bottom: '20%',
-    left: '15%',
-    width: 70,
-    height: 70,
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  region4: {
-    bottom: '30%',
-    right: '20%',
-    width: 45,
-    height: 55,
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-  },
-  hotspotMarker: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  markerTooltip: {
+    position: 'absolute',
+    top: 45,
+    backgroundColor: 'white',
+    padding: 8,
+    borderRadius: 8,
+    minWidth: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    display: 'none',
+  },
+  markerTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  markerSubtitle: {
+    fontSize: 10,
+    color: '#6B7280',
+  },
+  markerCases: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#EF4444',
+    marginTop: 2,
+  },
+  mapText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#16A34A',
+    marginBottom: 4,
+  },
+  mapSubtext: {
+    fontSize: 13,
+    color: '#22C55E',
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
   legend: {
     marginTop: 16,

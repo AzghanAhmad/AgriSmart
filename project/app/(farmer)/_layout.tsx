@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Chrome as Home, Camera, Calendar, MapPin, MessageCircle, User } from 'lucide-react-native';
+import { Home, Camera, Calendar, MapPin, MessageCircle, User } from 'lucide-react-native';
 
 export default function FarmerTabLayout() {
   return (
