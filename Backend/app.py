@@ -11,6 +11,7 @@ try:
     from .routes.auth import auth_bp
     from .routes.guidance import guidance_bp
     from .core.yolo import get_model_for_crop
+    from .core.preprocessing import preprocess_from_bytes
     from .config import get_allowed_origins, get_upload_root, get_secret_key
     from .core.seed_guidance import seed_guidance_if_needed
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
     from routes.auth import auth_bp
     from routes.guidance import guidance_bp
     from core.yolo import get_model_for_crop
+    from core.preprocessing import preprocess_from_bytes
     from config import get_allowed_origins, get_upload_root, get_secret_key
     from core.seed_guidance import seed_guidance_if_needed
 
@@ -129,15 +131,26 @@ def predict(path_crop: str | None = None):
 
         print(f"✅ Received crop type: {crop_type}")
 
+        # Read image bytes and preprocess according to crop type
+        image_bytes = file.read()
+        print(f"🔧 Preprocessing {crop_type} image before model inference...")
+        
+        # Preprocess image using crop-specific preprocessing pipeline
+        preprocessed_array = preprocess_from_bytes(image_bytes, crop_type)
+        
+        if preprocessed_array is None:
+            return jsonify({'error': 'Failed to preprocess image'}), 400
+        
+        # Convert preprocessed numpy array (BGR) to PIL Image (RGB) for YOLO
+        import cv2
+        preprocessed_rgb = cv2.cvtColor(preprocessed_array, cv2.COLOR_BGR2RGB)
+        preprocessed_image = Image.fromarray(preprocessed_rgb)
+
         # Load corresponding model
         model = get_model_for_crop(crop_type)
 
-        # Read image from request
-        image_bytes = file.read()
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-
-        print(f"🔍 Running inference on {crop_type} image...")
-        results = model.predict(image)
+        print(f"🔍 Running inference on preprocessed {crop_type} image...")
+        results = model.predict(preprocessed_image)
         detections = results[0]
 
         # Extract predictions
