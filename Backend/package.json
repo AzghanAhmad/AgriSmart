@@ -2,8 +2,8 @@
   "name": "agrismart-backend",
   "private": true,
   "scripts": {
-    "start": "python -m app.py",
-    "start:flask": "python -m flask --app Backend.app run --host 0.0.0.0 --port 5000"
+    "start": "python app.py",
+    "start:flask": "python -m flask --app app run --host 0.0.0.0 --port 5000"
   }
 }
 

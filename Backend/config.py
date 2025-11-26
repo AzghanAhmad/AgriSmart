@@ -28,3 +28,6 @@ def get_secret_key() -> str:
     return os.getenv('SECRET_KEY', 'dev-insecure')
 
 
+def get_weather_api_key() -> str:
+    return os.getenv('OPENWEATHER_API_KEY', '')
+

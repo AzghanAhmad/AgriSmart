@@ -8,4 +8,5 @@ tqdm
 seaborn
 SQLAlchemy
 python-dotenv
+requests
 psycopg2-binary>=2.9
