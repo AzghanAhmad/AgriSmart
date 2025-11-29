@@ -9,6 +9,7 @@ import { translate } from '@/utils/translations';
 import { colors, spacing, borderRadius, shadows } from '@/utils/designSystem';
 import { useRouter } from 'expo-router';
 import { apiGet } from '@/utils/api';
+import { getApiBaseUrl } from '@/utils/env';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -37,6 +38,13 @@ export default function FarmerHomeScreen() {
   const [healthData, setHealthData] = useState({ healthy: 75, atRisk: 15, diseased: 10, totalScans: 0 });
   const [diseaseData, setDiseaseData] = useState({ wheat: 12, rice: 8, cotton: 15, corn: 5 });
   const [loading, setLoading] = useState(true);
+  const [todayWeather, setTodayWeather] = useState<{
+    temp: number;
+    description: string;
+    humidity: number;
+    windSpeed: number;
+    icon: string;
+  } | null>(null);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -70,6 +78,42 @@ export default function FarmerHomeScreen() {
     
     fetchStats();
   }, [user?.id]);
+
+  // Fetch today's weather
+  useEffect(() => {
+    const fetchTodayWeather = async () => {
+      try {
+        // Default to Lahore, Pakistan coordinates
+        const lat = 31.5204;
+        const lon = 74.3587;
+        
+        const API_BASE_URL = getApiBaseUrl();
+        const response = await fetch(
+          `${API_BASE_URL}/api/farmer/schedule/weather?lat=${lat}&lon=${lon}`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          // Get today's weather (first day in forecast)
+          if (data.forecast && data.forecast.length > 0) {
+            const today = data.forecast[0];
+            setTodayWeather({
+              temp: Math.round(today.temp_max),
+              description: today.description,
+              humidity: today.humidity,
+              windSpeed: today.wind_speed,
+              icon: today.icon,
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching weather:', error);
+        // Keep default values on error
+      }
+    };
+    
+    fetchTodayWeather();
+  }, []);
 
   // Mock data for weekly yield
   const yieldData = {
@@ -125,16 +169,24 @@ export default function FarmerHomeScreen() {
           </View>
           <View style={styles.weatherCard}>
             <Sun color="#F59E0B" size={32} />
-            <Text style={styles.temperature}>28°C</Text>
-            <Text style={styles.weatherDesc}>Sunny</Text>
+            <Text style={styles.temperature}>
+              {todayWeather ? `${todayWeather.temp}°C` : '--°C'}
+            </Text>
+            <Text style={styles.weatherDesc}>
+              {todayWeather ? todayWeather.description : 'Loading...'}
+            </Text>
             <View style={styles.weatherDetails}>
               <View style={styles.weatherItem}>
                 <Droplets color="#3B82F6" size={16} />
-                <Text style={styles.weatherSmall}>65%</Text>
+                <Text style={styles.weatherSmall}>
+                  {todayWeather ? `${todayWeather.humidity}%` : '--%'}
+                </Text>
               </View>
               <View style={styles.weatherItem}>
                 <Wind color="#6B7280" size={16} />
-                <Text style={styles.weatherSmall}>12 km/h</Text>
+                <Text style={styles.weatherSmall}>
+                  {todayWeather ? `${todayWeather.windSpeed.toFixed(1)} m/s` : '-- m/s'}
+                </Text>
               </View>
             </View>
           </View>

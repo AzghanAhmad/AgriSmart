@@ -10,6 +10,7 @@ try:
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp
     from .routes.guidance import guidance_bp
+    from .routes.schedule import schedule_bp
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
     from .core.seed_guidance import seed_guidance_if_needed
@@ -20,6 +21,7 @@ except ImportError:
     from routes.admin import admin_bp
     from routes.auth import auth_bp
     from routes.guidance import guidance_bp
+    from routes.schedule import schedule_bp
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
     from core.seed_guidance import seed_guidance_if_needed
@@ -55,6 +57,7 @@ app.register_blueprint(farmer_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(guidance_bp)
+app.register_blueprint(schedule_bp)
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
@@ -90,6 +93,7 @@ def home():
             "farmer": "/api/farmer/*",
             "admin": "/api/admin/*",
             "guidance": "/api/guidance",
+            "schedule": "/api/farmer/schedule/*",
             "predict": "/predict"
         }
     })

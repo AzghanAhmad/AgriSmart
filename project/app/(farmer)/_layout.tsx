@@ -68,6 +68,12 @@ export default function FarmerTabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="weather"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }
