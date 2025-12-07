@@ -16,6 +16,7 @@ import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
 import { ErrorAlert } from '@/components/ErrorAlert';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { LocationPickerModal } from '@/components/LocationPickerModal';
 
 export default function SignupScreen() {
   const [formData, setFormData] = useState({
@@ -25,12 +26,15 @@ export default function SignupScreen() {
     confirmPassword: '',
     phone: '',
     location: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     role: 'farmer' as 'farmer' | 'admin'
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [showError, setShowError] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   
   const { signup, isLoading } = useAuth();
   const { language } = useApp();
@@ -51,8 +55,18 @@ export default function SignupScreen() {
     router.push('/auth/login');
   };
 
-  const updateFormData = (key: string, value: string) => {
+  const updateFormData = (key: string, value: string | number | null) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleLocationSelect = (location: {
+    latitude: number;
+    longitude: number;
+    address: string;
+  }) => {
+    updateFormData('latitude', location.latitude);
+    updateFormData('longitude', location.longitude);
+    updateFormData('location', location.address);
   };
 
   if (isLoading) {
@@ -126,7 +140,18 @@ export default function SignupScreen() {
                 value={formData.location}
                 onChangeText={(value) => updateFormData('location', value)}
               />
+              <TouchableOpacity 
+                style={styles.mapButton}
+                onPress={() => setShowLocationPicker(true)}
+              >
+                <MapPin color="#22C55E" size={20} fill="#22C55E" />
+              </TouchableOpacity>
             </View>
+            {formData.latitude && formData.longitude && (
+              <Text style={styles.coordsText}>
+                📍 {formData.latitude.toFixed(4)}, {formData.longitude.toFixed(4)}
+              </Text>
+            )}
           </View>
 
           <View style={styles.roleContainer}>
@@ -238,6 +263,17 @@ export default function SignupScreen() {
         onClose={() => setShowError(false)}
         onRetry={handleSignup}
       />
+
+      <LocationPickerModal
+        visible={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onSelect={handleLocationSelect}
+        initialLocation={
+          formData.latitude && formData.longitude
+            ? { latitude: formData.latitude, longitude: formData.longitude }
+            : undefined
+        }
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -297,6 +333,18 @@ const styles = StyleSheet.create({
   },
   eyeIcon: {
     padding: 4,
+  },
+  mapButton: {
+    padding: 8,
+    marginLeft: 4,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+  },
+  coordsText: {
+    fontSize: 12,
+    color: '#22C55E',
+    marginTop: 4,
+    marginLeft: 36,
   },
   roleContainer: {
     marginBottom: 16,

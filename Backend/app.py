@@ -45,12 +45,30 @@ app.config['SECRET_KEY'] = get_secret_key()
 
 # Initialize DB
 with app.app_context():
+    # First create all tables (this creates the database file if it doesn't exist)
+    print("📦 Creating database tables...")
     Base.metadata.create_all(bind=engine)
+    print("✅ Database tables created")
+    
+    # Run database migration to add new columns/tables
+    try:
+        print("🔄 Running database migrations...")
+        try:
+            from .migrate_db import run_migrations
+        except ImportError:
+            from migrate_db import run_migrations
+        run_migrations(engine)
+        print("✅ Database migrations completed")
+    except Exception as me:
+        print(f'⚠️ Database migration error: {me}')
+    
     # Seed disease guidance table (idempotent)
     try:
+        print("🌱 Seeding disease guidance data...")
         seed_guidance_if_needed()
+        print("✅ Guidance data seeded")
     except Exception as se:
-        print('⚠️ Guidance seeding skipped:', se)
+        print(f'⚠️ Guidance seeding error: {se}')
 
 # Register blueprints
 app.register_blueprint(farmer_bp)

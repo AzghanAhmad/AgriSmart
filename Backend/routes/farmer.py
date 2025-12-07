@@ -1,18 +1,20 @@
 import os
 import uuid
+import datetime
+import math
 from flask import Blueprint, request, jsonify, current_app, url_for
 from PIL import Image
 from sqlalchemy import func
 import io
 try:
     from ..db import SessionLocal
-    from ..schemas.detection import Detection
+    from ..schemas.detection import Detection, OutbreakAlert
     from ..schemas.guidance import DiseaseGuidance
     from ..core.yolo import get_model_for_crop
 except ImportError:
     # Fallback when running as a script: python Backend/app.py
     from db import SessionLocal
-    from schemas.detection import Detection
+    from schemas.detection import Detection, OutbreakAlert
     from schemas.guidance import DiseaseGuidance
     from core.yolo import get_model_for_crop
 
@@ -26,6 +28,8 @@ def create_detection():
         crop_type = (request.form.get('cropType') or request.args.get('cropType') or request.headers.get('X-Crop-Type') or '').lower()
         farmer_id = request.form.get('farmerId') or request.args.get('farmerId')
         land_id = request.form.get('landId') or request.args.get('landId')
+        lat_raw = request.form.get('latitude') or request.args.get('latitude')
+        lng_raw = request.form.get('longitude') or request.args.get('longitude')
 
         if not file:
             return jsonify({'error': 'Missing file field'}), 400
@@ -70,6 +74,9 @@ def create_detection():
 
         db = SessionLocal()
         try:
+            latitude = float(lat_raw) if lat_raw is not None else None
+            longitude = float(lng_raw) if lng_raw is not None else None
+
             det = Detection(
                 detection_id=detection_id,
                 farmer_id=farmer_id,
@@ -78,9 +85,57 @@ def create_detection():
                 image_ref=image_url,
                 confidence_score=confidence,
                 status='pending',
+                latitude=latitude,
+                longitude=longitude,
+                alert_generated='no',
             )
             db.add(det)
             db.commit()
+
+            # --- Geo-based outbreak detection (inline, minimal) ---
+            if disease_name != 'Healthy Crop' and latitude is not None and longitude is not None:
+                # Simple haversine distance in km
+                def _haversine_km(lat1, lng1, lat2, lng2):
+                    r = 6371.0
+                    d_lat = math.radians(lat2 - lat1)
+                    d_lng = math.radians(lng2 - lng1)
+                    a = (
+                        math.sin(d_lat / 2) ** 2
+                        + math.cos(math.radians(lat1))
+                        * math.cos(math.radians(lat2))
+                        * math.sin(d_lng / 2) ** 2
+                    )
+                    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+                    return r * c
+
+                two_weeks_ago = datetime.datetime.utcnow() - datetime.timedelta(days=14)
+                recent = db.query(Detection).filter(
+                    Detection.disease_id == det.disease_id,
+                    Detection.timestamp >= two_weeks_ago,
+                    Detection.latitude.isnot(None),
+                    Detection.longitude.isnot(None),
+                ).all()
+
+                nearby = [
+                    d for d in recent
+                    if _haversine_km(latitude, longitude, d.latitude, d.longitude) <= 10.0
+                ]
+
+                if len(nearby) >= 3:
+                    alert_id = str(uuid.uuid4())
+                    alert = OutbreakAlert(
+                        alert_id=alert_id,
+                        disease_id=det.disease_id or 'unknown',
+                        status='pending',
+                        center_lat=latitude,
+                        center_lng=longitude,
+                        radius_km=10.0,
+                    )
+                    db.add(alert)
+                    for d in nearby:
+                        d.alert_generated = 'pending'
+                    det.alert_generated = 'pending'
+                    db.commit()
         finally:
             db.close()
 
@@ -123,6 +178,8 @@ def create_detection():
             'treatment': treatment or 'Follow integrated management: monitor regularly; use resistant varieties; apply labeled products as needed.',
             'symptoms': symptoms_list or ['Lesions or discoloration detected on leaves'],
             'prevention': prevention_list or ['Use resistant crop variety', 'Avoid overwatering', 'Balanced fertilization'],
+            'latitude': latitude,
+            'longitude': longitude,
         }), 201
 
     except Exception as e:
@@ -147,6 +204,9 @@ def recent_detections():
             'detectedAt': r.timestamp.isoformat() if r.timestamp else None,
         } for r in rows]
         return jsonify({'detections': data})
+    except Exception as e:
+        print('❌ Error fetching recent detections:', str(e))
+        return jsonify({'error': 'Failed to fetch detections', 'details': str(e)}), 500
     finally:
         db.close()
 
@@ -192,6 +252,9 @@ def crop_health_stats():
             'diseased': round((diseased / total) * 100, 1),
             'totalScans': total
         })
+    except Exception as e:
+        print('❌ Error fetching crop health stats:', str(e))
+        return jsonify({'error': 'Failed to fetch stats', 'details': str(e)}), 500
     finally:
         db.close()
 
