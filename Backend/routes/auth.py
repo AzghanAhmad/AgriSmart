@@ -34,8 +34,13 @@ def signup():
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
     phone = (data.get('phone') or '').strip()
-    location = (data.get('location') or '').strip()
     role = (data.get('role') or 'farmer').strip().lower()
+    
+    # Accept coordinates for geotagging
+    lat_raw = data.get('latitude')
+    lng_raw = data.get('longitude')
+    latitude = float(lat_raw) if lat_raw is not None else None
+    longitude = float(lng_raw) if lng_raw is not None else None
 
     if not name or not email or not password:
         return jsonify({'error': 'name, email and password are required'}), 400
@@ -54,7 +59,8 @@ def signup():
             email=email,
             password_hash=generate_password_hash(password),
             phone=phone or None,
-            location=location or None,
+            latitude=latitude,
+            longitude=longitude,
             role=role,
         )
         db.add(user)
@@ -68,7 +74,8 @@ def signup():
                 'name': user.name,
                 'email': user.email,
                 'phone': user.phone,
-                'location': user.location,
+                'latitude': latitude,
+                'longitude': longitude,
                 'role': user.role,
             }
         }), 201
@@ -98,7 +105,8 @@ def login():
                 'name': user.name,
                 'email': user.email,
                 'phone': user.phone,
-                'location': user.location,
+                'latitude': user.latitude,
+                'longitude': user.longitude,
                 'role': user.role,
             }
         })
@@ -132,7 +140,8 @@ def me():
             'name': user.name,
             'email': user.email,
             'phone': user.phone,
-            'location': user.location,
+            'latitude': user.latitude,
+            'longitude': user.longitude,
             'role': user.role,
         })
     finally:
