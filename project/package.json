@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.100.187:5000 expo start --offline",
-    "dev:online": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.100.187:5000 expo start",
+    "dev": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.56.1:5000 expo start --offline",
+    "dev:online": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.100.21:5000 expo start",
     "build:web": "expo export --platform web",
     "lint": "expo lint",
     "android": "expo run:android",
@@ -46,7 +46,7 @@
     "react-native-chart-kit": "^6.12.0",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-image-picker": "^8.2.1",
-    "react-native-maps": "^1.26.0",
+    "react-native-maps": "1.20.1",
     "react-native-modal": "^14.0.0-rc.1",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "^5.3.0",
@@ -62,5 +62,11 @@
     "@types/react": "~19.0.10",
     "cross-env": "^10.0.0",
     "typescript": "~5.8.3"
-  }
+  },
+  "plugins": [
+  "expo-router",
+  "expo-font",
+  "expo-web-browser",
+  "react-native-maps"
+]
 }

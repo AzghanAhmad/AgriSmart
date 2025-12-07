@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { apiGet } from '@/utils/api';
+import { useEffect, useState, useCallback } from 'react';
+import { apiGet, apiPost } from '@/utils/api';
 
 export interface AdminDetectionItem {
   detectionId: string;
@@ -10,6 +10,19 @@ export interface AdminDetectionItem {
   confidence: number | null;
   status: string | null;
   timestamp: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  alertGenerated?: string | null;
+}
+
+export interface OutbreakAlertItem {
+  alertId: string;
+  diseaseId: string;
+  status: string;
+  createdAt: string | null;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
 }
 
 export function useAdminDetections(page: number = 1, pageSize: number = 10) {
@@ -44,4 +57,52 @@ export function useAdminDetections(page: number = 1, pageSize: number = 10) {
   return { items, total, loading, error };
 }
 
+export function useOutbreakAlerts(status: string | null = 'pending') {
+  const [items, setItems] = useState<OutbreakAlertItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      const data = await apiGet<{ items: OutbreakAlertItem[] }>(`/api/admin/alerts${qs}`);
+      setItems(Array.isArray(data.items) ? data.items : []);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load alerts');
+    } finally {
+      setLoading(false);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!cancelled) {
+        await refresh();
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
+
+  const approveAlert = useCallback(
+    async (alertId: string) => {
+      try {
+        setError(null);
+        await apiPost(`/api/admin/alerts/${encodeURIComponent(alertId)}/approve`, {});
+        await refresh();
+      } catch (e: any) {
+        setError(e?.message || 'Failed to approve alert');
+        throw e; // Re-throw so caller can handle if needed
+      }
+    },
+    [refresh]
+  );
+
+  return { items, loading, error, refresh, approveAlert };
+}
 

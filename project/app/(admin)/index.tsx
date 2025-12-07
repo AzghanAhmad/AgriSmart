@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image
 import { Users, FileText, MapPin, TrendingUp, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, DollarSign } from 'lucide-react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAdminDetections } from '@/hooks/useAdmin';
+import { useAdminDetections, useOutbreakAlerts } from '@/hooks/useAdmin';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -21,7 +21,8 @@ const chartConfig = {
 
 export default function AdminDashboardScreen() {
   const { user } = useAuth();
-  const { total, items } = useAdminDetections(1, 10);
+  const { total, items, error: detectionsError } = useAdminDetections(1, 10);
+  const { items: pendingAlerts, approveAlert, error: alertsError } = useOutbreakAlerts('pending');
 
   const statsCards = useMemo(() => ([
     {
@@ -245,8 +246,48 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
           ))}
-          {items.length === 0 && (
+          {items.length === 0 && !detectionsError && (
             <Text style={styles.detectionEmpty}>No detections yet.</Text>
+          )}
+          {detectionsError && (
+            <Text style={styles.errorText}>Error loading detections: {detectionsError}</Text>
+          )}
+        </View>
+      </View>
+
+      {/* Outbreak Alerts */}
+      <View style={styles.activitiesSection}>
+        <Text style={styles.sectionTitle}>Outbreak Alerts</Text>
+        <View style={styles.activitiesCard}>
+          {pendingAlerts.map((a) => (
+            <View key={a.alertId} style={styles.alertItem}>
+              <View style={styles.alertHeader}>
+                <View style={styles.alertIcon}>
+                  <AlertTriangle color="#EF4444" size={18} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.alertTitle}>Disease Outbreak Detected</Text>
+                  <Text style={styles.alertMeta}>
+                    Disease ID: {a.diseaseId || 'unknown'} • Radius: {a.radiusKm} km
+                  </Text>
+                  <Text style={styles.alertMeta}>
+                    Center: {a.centerLat.toFixed(3)}, {a.centerLng.toFixed(3)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.alertApproveButton}
+                  onPress={() => approveAlert(a.alertId)}
+                >
+                  <Text style={styles.alertApproveText}>Approve</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+          {pendingAlerts.length === 0 && !alertsError && (
+            <Text style={styles.detectionEmpty}>No pending outbreak alerts.</Text>
+          )}
+          {alertsError && (
+            <Text style={styles.errorText}>Error loading alerts: {alertsError}</Text>
           )}
         </View>
       </View>
@@ -492,5 +533,46 @@ const styles = StyleSheet.create({
   detectionEmpty: {
     fontSize: 13,
     color: '#6B7280',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#EF4444',
+    padding: 8,
+  },
+  alertItem: {
+    marginBottom: 12,
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  alertIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  alertTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  alertMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  alertApproveButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#22C55E',
+  },
+  alertApproveText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

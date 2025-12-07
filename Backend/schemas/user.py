@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Float
 from sqlalchemy.sql import func
 try:
     from ..db import Base
@@ -14,7 +14,8 @@ class User(Base):
     email = Column(String(120), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     phone = Column(String(30), nullable=True)
-    location = Column(String(120), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     role = Column(String(20), nullable=False, default='farmer')
     created_at = Column(DateTime, server_default=func.current_timestamp())
 

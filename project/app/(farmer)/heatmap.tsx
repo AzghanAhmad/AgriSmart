@@ -1,12 +1,24 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Image } from 'react-native';
-import { MapPin, TriangleAlert as AlertTriangle, Filter, Layers } from 'lucide-react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Platform } from 'react-native';
+import { MapPin, TriangleAlert as AlertTriangle, Layers } from 'lucide-react-native';
+import { getApiBaseUrl } from '@/utils/env';
 
 const screenWidth = Dimensions.get('window').width;
+
+interface OutbreakAlertItem {
+  alertId: string;
+  diseaseId: string;
+  status: string;
+  createdAt: string | null;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+}
 
 export default function HeatmapScreen() {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [selectedLayer, setSelectedLayer] = useState('disease');
+  const [alerts, setAlerts] = useState<OutbreakAlertItem[]>([]);
 
   const filters = [
     { id: 'all', label: 'All Diseases' },
@@ -22,12 +34,36 @@ export default function HeatmapScreen() {
     { id: 'yield', label: 'Yield Prediction' },
   ];
 
-  const diseaseHotspots = [
-    { id: '1', name: 'Wheat Rust', location: 'Punjab - Sector A', severity: 'high', cases: 45, latitude: 31.5204, longitude: 74.3587 },
-    { id: '2', name: 'Rice Blast', location: 'Sindh - Zone B', severity: 'medium', cases: 23, latitude: 25.1967, longitude: 68.5247 },
-    { id: '3', name: 'Cotton Boll Rot', location: 'Punjab - Sector C', severity: 'high', cases: 67, latitude: 30.1575, longitude: 71.5249 },
-    { id: '4', name: 'Corn Smut', location: 'KPK - Region D', severity: 'low', cases: 12, latitude: 34.0151, longitude: 71.5249 },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const resp = await fetch(`${baseUrl}/api/admin/alerts?status=approved`);
+        const j = await resp.json();
+        if (!cancelled) {
+          setAlerts(Array.isArray(j.items) ? j.items : []);
+        }
+      } catch (e) {
+        // keep silent for now; could add toast/logging
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const diseaseHotspots = alerts.map((a) => ({
+    id: a.alertId,
+    name: a.diseaseId || 'Disease Outbreak',
+    location: 'Pakistan Region',
+    severity: 'high' as const,
+    cases: 100,
+    latitude: a.centerLat,
+    longitude: a.centerLng,
+    radiusKm: a.radiusKm,
+  }));
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -106,33 +142,91 @@ export default function HeatmapScreen() {
           <MapPin color="#22C55E" size={20} />
           <Text style={styles.mapTitle}>Pakistan Agricultural Map</Text>
         </View>
-        
-        <View style={styles.mapPlaceholder}>
-          <View style={styles.mapOverlay}>
-            {diseaseHotspots.map((hotspot, index) => (
-              <TouchableOpacity
-                key={hotspot.id}
-                style={[
-                  styles.mapMarker,
-                  {
-                    top: `${15 + index * 20}%`,
-                    left: `${20 + index * 15}%`,
-                    backgroundColor: getSeverityColor(hotspot.severity),
-                  }
-                ]}
-              >
-                <AlertTriangle color="white" size={20} />
-                <View style={styles.markerTooltip}>
-                  <Text style={styles.markerTitle}>{hotspot.name}</Text>
-                  <Text style={styles.markerSubtitle}>{hotspot.location}</Text>
-                  <Text style={styles.markerCases}>{hotspot.cases} cases</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+
+        {Platform.OS === 'web' ? (
+          <View style={styles.mapPlaceholder}>
+            <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
+            <Text style={styles.mapSubtext}>
+              Interactive map showing disease hotspots across regions
+            </Text>
           </View>
-          <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-          <Text style={styles.mapSubtext}>Interactive map showing disease hotspots across regions</Text>
-        </View>
+        ) : (
+          (() => {
+            try {
+              // Dynamically require react-native-maps on native to avoid web bundling issues
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const Maps = require('react-native-maps');
+              const MapView = Maps && Maps.default;
+              const Circle = Maps && Maps.Circle;
+              const Marker = Maps && Maps.Marker;
+
+              if (!MapView || !Circle || !Marker) {
+                // Fallback if library is not available or misconfigured
+                return (
+                  <View style={styles.mapPlaceholder}>
+                    <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
+                    <Text style={styles.mapSubtext}>
+                      Map component not available. Please check react-native-maps installation.
+                    </Text>
+                  </View>
+                );
+              }
+
+              return (
+                <MapView
+                  style={styles.mapPlaceholder}
+                  initialRegion={{
+                    latitude: 30.3753,
+                    longitude: 69.3451,
+                    latitudeDelta: 15,
+                    longitudeDelta: 15,
+                  }}
+                >
+                  {diseaseHotspots.map((hotspot) => (
+                    <React.Fragment key={hotspot.id}>
+                      <Circle
+                        center={{
+                          latitude: hotspot.latitude,
+                          longitude: hotspot.longitude,
+                        }}
+                        radius={(hotspot.radiusKm || 10) * 1000}
+                        strokeColor="rgba(220, 38, 38, 0.9)"
+                        fillColor="rgba(248, 113, 113, 0.25)"
+                      />
+                      <Marker
+                        coordinate={{
+                          latitude: hotspot.latitude,
+                          longitude: hotspot.longitude,
+                        }}
+                        title={hotspot.name}
+                        description={hotspot.location}
+                      >
+                        <View
+                          style={[
+                            styles.mapMarker,
+                            { backgroundColor: getSeverityColor(hotspot.severity) },
+                          ]}
+                        >
+                          <AlertTriangle color="white" size={20} />
+                        </View>
+                      </Marker>
+                    </React.Fragment>
+                  ))}
+                </MapView>
+              );
+            } catch (e) {
+              // Final fallback if require itself fails
+              return (
+                <View style={styles.mapPlaceholder}>
+                  <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
+                  <Text style={styles.mapSubtext}>
+                    Map component failed to load. Please verify react-native-maps setup.
+                  </Text>
+                </View>
+              );
+            }
+          })()
+        )}
 
         {/* Legend */}
         <View style={styles.legend}>

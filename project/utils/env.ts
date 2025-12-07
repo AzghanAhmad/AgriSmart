@@ -11,7 +11,7 @@ type ExtraConfig = {
 export function getApiBaseUrl(): string {
   // ALWAYS use backend server's actual network IP
   // This IP works for physical devices on the same WiFi network AND emulators
-  const BACKEND_NETWORK_IP = '192.168.142.26';
+  const BACKEND_NETWORK_IP = '192.168.100.21';
   const url = `http://${BACKEND_NETWORK_IP}:5000`;
   console.log('📡 Using Backend Network IP:', url);
   return url;
