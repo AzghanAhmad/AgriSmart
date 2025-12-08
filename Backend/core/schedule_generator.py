@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional
 try:
     from ..db import SessionLocal
@@ -70,7 +70,7 @@ def generate_schedule(
         if weather_data:
             weather_recs = get_weather_recommendations(weather_data)
             for rec in weather_recs:
-                rec_date = datetime.fromisoformat(rec['date']).date()
+                rec_date = date.fromisoformat(rec['date'])
                 if rec_date >= today:
                     for idx, recommendation in enumerate(rec['recommendations']):
                         tasks.append({
@@ -314,7 +314,7 @@ def generate_schedule_from_detection(
             # Get temperature-specific recommendations
             for i, day in enumerate(weather_data['forecast'][:7]):
                 temp_avg = (day['temp_min'] + day['temp_max']) / 2
-                day_date = datetime.fromisoformat(day['date']).date()
+                day_date = date.fromisoformat(day['date'])
                 
                 # Temperature-based irrigation tasks
                 if temp_avg > 35:

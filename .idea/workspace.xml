@@ -4,19 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/core/schedule_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/core/schedule_generator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/migrate_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/migrate_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/farmer.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/farmer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/schedule.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/schedule.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/schemas/detection.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/schemas/detection.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
-    </list>
+    <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
