@@ -285,18 +285,27 @@ export default function ScheduleScreen() {
         </View>
       </View>
 
-      {/* Weather Button - Prominent at top */}
-      <View style={styles.weatherButtonContainer}>
+      {/* Action Buttons - Prominent at top */}
+      <View style={styles.actionButtonsContainer}>
         <TouchableOpacity 
-          style={styles.weatherButtonLarge} 
-          onPress={() => router.push('/(farmer)/weather' as any)}
+          style={styles.primaryActionButton} 
+          onPress={() => router.push('/(farmer)/schedule-select' as any)}
           activeOpacity={0.8}
         >
-          <Cloud color="white" size={24} />
-          <View style={styles.weatherButtonTextContainer}>
-            <Text style={styles.weatherButtonTitle}>7-Day Weather Forecast</Text>
-            <Text style={styles.weatherButtonSubtitle}>Check weather for your farming schedule</Text>
+          <Calendar color="white" size={24} />
+          <View style={styles.actionButtonTextContainer}>
+            <Text style={styles.actionButtonTitle}>Create New Schedule</Text>
+            <Text style={styles.actionButtonSubtitle}>Based on your disease detections</Text>
           </View>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.secondaryActionButton} 
+          onPress={() => router.push('/weather' as any)}
+          activeOpacity={0.8}
+        >
+          <Cloud color="white" size={20} />
+          <Text style={styles.secondaryActionButtonText}>7-Day Weather</Text>
         </TouchableOpacity>
       </View>
 
@@ -591,15 +600,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
   },
-  weatherButtonContainer: {
+  actionButtonsContainer: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 8,
+    gap: 8,
   },
-  weatherButtonLarge: {
+  primaryActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F59E0B',
+    backgroundColor: '#22C55E',
     borderRadius: 12,
     padding: 16,
     gap: 12,
@@ -609,18 +619,37 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  weatherButtonTextContainer: {
+  secondaryActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  actionButtonTextContainer: {
     flex: 1,
   },
-  weatherButtonTitle: {
+  actionButtonTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
     marginBottom: 2,
   },
-  weatherButtonSubtitle: {
+  actionButtonSubtitle: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.9)',
+  },
+  secondaryActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
   },
   progressCard: {
     backgroundColor: 'white',

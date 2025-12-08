@@ -112,7 +112,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const resp = await apiPost<{ token: string; user: User }>(
         '/api/auth/signup',
-        { name, email, password, phone: userData.phone, location: userData.location, role }
+        { 
+          name, 
+          email, 
+          password, 
+          phone: userData.phone, 
+          location: userData.location,
+          latitude: userData.latitude,
+          longitude: userData.longitude,
+          role 
+        }
       );
 
       await AsyncStorage.setItem('user', JSON.stringify(resp.user));

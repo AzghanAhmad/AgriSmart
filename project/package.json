@@ -62,11 +62,5 @@
     "@types/react": "~19.0.10",
     "cross-env": "^10.0.0",
     "typescript": "~5.8.3"
-  },
-  "plugins": [
-  "expo-router",
-  "expo-font",
-  "expo-web-browser",
-  "react-native-maps"
-]
+  }
 }

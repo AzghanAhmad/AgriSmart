@@ -5,6 +5,8 @@ export interface User {
   role: 'farmer' | 'admin';
   phone?: string;
   location?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface AuthContextType {
@@ -24,6 +26,8 @@ export interface SignupData {
   role: 'farmer' | 'admin';
   phone?: string;
   location?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface CropDisease {

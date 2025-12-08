@@ -59,19 +59,13 @@ export default function WeatherScreen() {
   }, []);
 
   const loadWeather = async () => {
-    if (!user?.location) {
-      setError('Location not available. Please update your profile.');
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
     
     try {
-      // Default to Lahore, Pakistan coordinates (you can enhance with geocoding)
-      const lat = 31.5204;
-      const lon = 74.3587;
+      // Use user's coordinates if available, otherwise default to Lahore, Pakistan
+      const lat = user?.latitude || 31.5204;
+      const lon = user?.longitude || 74.3587;
       
       const API_BASE_URL = getApiBaseUrl();
       const response = await fetch(
