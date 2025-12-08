@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -43,10 +43,25 @@ interface DayTasks {
   tasks: ScheduleTask[];
 }
 
+interface ScheduleTask {
+  id: string;
+  title: string;
+  description: string;
+  dueDate: string;
+  priority: 'high' | 'medium' | 'low';
+  category?: string;
+  source?: string;
+  completed: boolean;
+  cropType?: string; // Add crop type to task interface
+}
+
+type CropType = 'wheat' | 'rice' | 'cotton';
+
 export default function ScheduleScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState<'today' | 'upcoming' | 'completed'>('today');
+  const [selectedCrop, setSelectedCrop] = useState<CropType>('wheat'); // Default to wheat
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -95,7 +110,7 @@ export default function ScheduleScreen() {
     setDailyProgress((completed / todayTasks.length) * 100);
   };
 
-  const loadSchedule = async () => {
+  const loadSchedule = useCallback(async () => {
     if (!user?.id) return;
     
     setIsLoading(true);
@@ -111,7 +126,11 @@ export default function ScheduleScreen() {
       if (response.ok) {
         const data = await response.json();
         // Filter to only show 1 week (7 days from today)
-        const weekTasks = (data.tasks || []).filter((task: ScheduleTask) => {
+        // Try to infer crop type from schedule or use default
+        const weekTasks = (data.tasks || []).map((task: ScheduleTask) => ({
+          ...task,
+          cropType: task.cropType || 'wheat', // Default to wheat if not specified
+        })).filter((task: ScheduleTask) => {
           const taskDate = task.dueDate.split('T')[0];
           const daysDiff = Math.floor(
             (new Date(taskDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24)
@@ -129,13 +148,34 @@ export default function ScheduleScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
 
-  const generateSchedule = async () => {
+  const generateSchedule = async (cropType?: string) => {
     if (!user?.id) return;
+    
+    const crop = cropType || selectedCrop; // Use selected crop (always has a value now)
     
     try {
       const API_BASE_URL = getApiBaseUrl();
+      
+      // Get disease name from recent detections for this crop
+      let diseaseName = null;
+      try {
+        const detectionsResponse = await fetch(
+          `${API_BASE_URL}/api/farmer/detections/recent?farmerId=${user.id}`
+        );
+        if (detectionsResponse.ok) {
+          const detectionsData = await detectionsResponse.json();
+          const cropDetection = detectionsData.detections?.find(
+            (d: any) => d.cropType?.toLowerCase() === crop.toLowerCase()
+          );
+          if (cropDetection?.diseaseName) {
+            diseaseName = cropDetection.diseaseName;
+          }
+        }
+      } catch (e) {
+        console.log('Could not fetch disease name:', e);
+      }
       
       const response = await fetch(`${API_BASE_URL}/api/farmer/schedule/generate`, {
         method: 'POST',
@@ -144,16 +184,22 @@ export default function ScheduleScreen() {
         },
         body: JSON.stringify({
           farmerId: user.id,
-          cropType: 'wheat', // Default - could be from user profile
-          location: user.location || 'Punjab, Pakistan',
+          cropType: crop,
+          location: user.location || 'Islamabad',
+          latitude: user.latitude,
+          longitude: user.longitude,
           weekNumber: 'week1',
+          diseaseName: diseaseName,
         }),
       });
       
       if (response.ok) {
         const data = await response.json();
         const today = new Date().toISOString().split('T')[0];
-        const weekTasks = (data.tasks || []).filter((task: ScheduleTask) => {
+        const weekTasks = (data.tasks || []).map((task: ScheduleTask) => ({
+          ...task,
+          cropType: crop, // Add crop type to each task
+        })).filter((task: ScheduleTask) => {
           const taskDate = task.dueDate.split('T')[0];
           const daysDiff = Math.floor(
             (new Date(taskDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24)
@@ -230,18 +276,36 @@ export default function ScheduleScreen() {
 
   const filterTasks = (taskList: ScheduleTask[]) => {
     const today = new Date().toISOString().split('T')[0];
+    let filtered = taskList;
+    
+    // Filter by crop type (always filter since selectedCrop is never null now)
+    filtered = filtered.filter(task => 
+      task.cropType?.toLowerCase() === selectedCrop?.toLowerCase()
+    );
+    
+    // Filter by tab
     switch (selectedTab) {
       case 'today':
-        return taskList.filter(task => task.dueDate.split('T')[0] === today);
+        return filtered.filter(task => task.dueDate.split('T')[0] === today);
       case 'upcoming':
-        return taskList.filter(task => {
+        return filtered.filter(task => {
           const taskDate = task.dueDate.split('T')[0];
           return taskDate > today && !task.completed;
         });
       case 'completed':
-        return taskList.filter(task => task.completed);
+        return filtered.filter(task => task.completed);
       default:
-        return taskList;
+        return filtered;
+    }
+  };
+  
+  const handleCropSelect = async (crop: CropType) => {
+    if (!crop) return; // Ensure crop is never null
+    setSelectedCrop(crop);
+    // If crop is selected and no tasks exist for that crop, generate schedule
+    const cropTasks = tasks.filter(t => t.cropType?.toLowerCase() === crop.toLowerCase());
+    if (cropTasks.length === 0) {
+      await generateSchedule(crop);
     }
   };
 
@@ -261,11 +325,16 @@ export default function ScheduleScreen() {
   const groupedTasks = groupTasksByCategory(filteredTasks);
   const weekDays = getWeekDays();
 
-  const onRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await loadSchedule();
-    setIsRefreshing(false);
-  };
+    try {
+      await loadSchedule();
+    } catch (error) {
+      console.error('Error refreshing schedule:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadSchedule]);
 
   if (isLoading) {
     return <LoadingSpinner text="Loading your farming schedule..." />;
@@ -279,26 +348,72 @@ export default function ScheduleScreen() {
           <Text style={styles.subtitle}>1 Week Personalized Plan</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
+          <TouchableOpacity 
+            style={styles.refreshButton} 
+            onPress={handleRefresh}
+          >
             <RefreshCw color="#22C55E" size={20} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Crop Filter Bar */}
+      <View style={styles.cropFilterContainer}>
+        <Text style={styles.cropFilterLabel}>Filter by Crop:</Text>
+        <View style={styles.cropFilterButtons}>
+          <TouchableOpacity
+            style={[
+              styles.cropFilterButton,
+              selectedCrop === 'wheat' && styles.cropFilterButtonActive,
+            ]}
+            onPress={() => handleCropSelect('wheat')}
+          >
+            <Text
+              style={[
+                styles.cropFilterButtonText,
+                selectedCrop === 'wheat' && styles.cropFilterButtonTextActive,
+              ]}
+            >
+              Wheat
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.cropFilterButton,
+              selectedCrop === 'rice' && styles.cropFilterButtonActive,
+            ]}
+            onPress={() => handleCropSelect('rice')}
+          >
+            <Text
+              style={[
+                styles.cropFilterButtonText,
+                selectedCrop === 'rice' && styles.cropFilterButtonTextActive,
+              ]}
+            >
+              Rice
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.cropFilterButton,
+              selectedCrop === 'cotton' && styles.cropFilterButtonActive,
+            ]}
+            onPress={() => handleCropSelect('cotton')}
+          >
+            <Text
+              style={[
+                styles.cropFilterButtonText,
+                selectedCrop === 'cotton' && styles.cropFilterButtonTextActive,
+              ]}
+            >
+              Cotton
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Action Buttons - Prominent at top */}
       <View style={styles.actionButtonsContainer}>
-        <TouchableOpacity 
-          style={styles.primaryActionButton} 
-          onPress={() => router.push('/(farmer)/schedule-select' as any)}
-          activeOpacity={0.8}
-        >
-          <Calendar color="white" size={24} />
-          <View style={styles.actionButtonTextContainer}>
-            <Text style={styles.actionButtonTitle}>Create New Schedule</Text>
-            <Text style={styles.actionButtonSubtitle}>Based on your disease detections</Text>
-          </View>
-        </TouchableOpacity>
-        
         <TouchableOpacity 
           style={styles.secondaryActionButton} 
           onPress={() => router.push('/weather' as any)}
@@ -339,7 +454,10 @@ export default function ScheduleScreen() {
         style={styles.content}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={handleRefresh}
+          />
         }
       >
         {/* Upcoming Tab - Show Days */}
@@ -599,6 +717,45 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
+  },
+  cropFilterContainer: {
+    backgroundColor: 'white',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  cropFilterLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  cropFilterButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cropFilterButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  cropFilterButtonActive: {
+    backgroundColor: '#22C55E',
+    borderColor: '#16A34A',
+  },
+  cropFilterButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  cropFilterButtonTextActive: {
+    color: 'white',
   },
   actionButtonsContainer: {
     paddingHorizontal: 16,

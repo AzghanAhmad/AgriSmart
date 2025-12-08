@@ -184,7 +184,7 @@ export default function WeatherScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => router.push('/schedule' as any)} style={styles.backButton}>
           <ArrowLeft color="#111827" size={24} />
         </TouchableOpacity>
         <Text style={styles.title}>7-Day Weather Forecast</Text>

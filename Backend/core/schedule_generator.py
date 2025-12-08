@@ -4,10 +4,12 @@ try:
     from ..db import SessionLocal
     from ..schemas.detection import Detection
     from ..schemas.guidance import DiseaseGuidance
+    from ..schemas.schedule import DiseaseSchedule
 except ImportError:
     from db import SessionLocal
     from schemas.detection import Detection
     from schemas.guidance import DiseaseGuidance
+    from schemas.schedule import DiseaseSchedule
 
 def generate_schedule(
     farmer_id: str,
@@ -15,40 +17,99 @@ def generate_schedule(
     location: str,
     lat: Optional[float] = None,
     lon: Optional[float] = None,
-    previous_week_progress: Optional[Dict] = None
+    previous_week_progress: Optional[Dict] = None,
+    disease_name: Optional[str] = None
 ) -> List[Dict]:
     """
     Generate personalized farming schedule combining:
-    1. Crop disease status
+    1. Crop disease status (from seed schedules or Gemini API)
     2. Cure guidance from detections
     3. Weather forecast
     4. Location/land type
+    
+    Args:
+        farmer_id: Farmer ID
+        crop_type: Type of crop (wheat, rice, cotton)
+        location: Location name (e.g., 'Islamabad')
+        lat: Latitude
+        lon: Longitude
+        previous_week_progress: Previous week's progress data
+        disease_name: Name of the disease (if known from detection)
     """
     tasks = []
     today = datetime.now().date()
     
-    # 1. Get recent disease detections
-    db = SessionLocal()
-    try:
-        recent_detections = db.query(Detection).filter(
-            Detection.farmer_id == farmer_id
-        ).order_by(Detection.timestamp.desc()).limit(5).all()
-        
-        active_diseases = []
-        for det in recent_detections:
-            if det.status == 'pending' or (det.confidence_score and det.confidence_score > 50):
-                active_diseases.append({
-                    'disease': 'Unknown Disease',  # Would map to actual disease name
-                    'confidence': det.confidence_score or 0,
-                    'severity': 'high' if (det.confidence_score or 0) > 80 else 'medium'
-                })
-    finally:
-        db.close()
+    # Validate inputs
+    if not crop_type or not isinstance(crop_type, str):
+        print(f"⚠️ Invalid crop_type in generate_schedule: {crop_type}")
+        crop_type = 'wheat'  # Default fallback
+    if not location or not isinstance(location, str):
+        print(f"⚠️ Invalid location in generate_schedule: {location}")
+        location = 'Islamabad'  # Default fallback
     
-    # 2. Generate tasks from disease status and cure guidance
-    if active_diseases:
-        for i, disease in enumerate(active_diseases[:2]):  # Limit to 2 most critical
-            task_date = today + timedelta(days=i)
+    # Ensure crop_type and location are strings
+    crop_type = str(crop_type).strip().lower()
+    location = str(location).strip()
+    
+    # Get current temperature from weather API
+    current_temp = None
+    if lat and lon:
+        try:
+            from .weather import get_weather_forecast
+        except ImportError:
+            from core.weather import get_weather_forecast
+        weather_data = get_weather_forecast(lat, lon, 1)
+        if weather_data and weather_data.get('forecast'):
+            current_temp = (weather_data['forecast'][0]['temp_min'] + weather_data['forecast'][0]['temp_max']) / 2
+    
+    # 1. Get disease-specific schedule from seed data or Gemini API
+    disease_schedule = None
+    if disease_name and isinstance(disease_name, str):
+        disease_schedule = get_disease_schedule(crop_type, disease_name, location, current_temp)
+    
+    # If we have a disease schedule, use it as the base
+    if disease_schedule:
+        # Convert day plans to tasks
+        for day_plan in disease_schedule:
+            day_num = day_plan.get('day', 1)
+            task_date = today + timedelta(days=day_num - 1)
+            
+            for task_idx, task in enumerate(day_plan.get('tasks', [])):
+                tasks.append({
+                    'id': f"disease-day{day_num}-{task_idx}",
+                    'title': task.get('title', 'Task'),
+                    'description': task.get('description', ''),
+                    'dueDate': task_date.isoformat(),
+                    'priority': task.get('priority', 'medium'),
+                    'category': task.get('category', 'disease_management'),
+                    'completed': False,
+                    'source': 'disease_schedule',
+                    'cropType': crop_type  # Add crop type to task
+                })
+    else:
+        # Fallback: Get recent disease detections and generate basic schedule
+        db = SessionLocal()
+        try:
+            recent_detections = db.query(Detection).filter(
+                Detection.farmer_id == farmer_id
+            ).order_by(Detection.timestamp.desc()).limit(5).all()
+            
+            active_diseases = []
+            for det in recent_detections:
+                if det.status == 'pending' or (det.confidence_score and det.confidence_score > 50):
+                    disease_name_from_det = det.disease_name or 'Unknown Disease'
+                    active_diseases.append({
+                        'disease': disease_name_from_det,
+                        'confidence': det.confidence_score or 0,
+                        'severity': 'high' if (det.confidence_score or 0) > 80 else 'medium'
+                    })
+        finally:
+            db.close()
+        
+        # Generate tasks from disease status
+        if active_diseases:
+            for i, disease in enumerate(active_diseases[:2]):  # Limit to 2 most critical
+                task_date = today + timedelta(days=i)
             tasks.append({
                 'id': f"disease-{i}",
                 'title': f"Apply treatment for {disease['disease']}",
@@ -57,10 +118,11 @@ def generate_schedule(
                 'priority': disease['severity'],
                 'category': 'disease_management',
                 'completed': False,
-                'source': 'disease_detection'
+                'source': 'disease_detection',
+                'cropType': crop_type  # Add crop type to task
             })
     
-    # 3. Weather-based tasks (if weather API is available)
+    # 2. Weather-based tasks (if weather API is available)
     if lat and lon:
         try:
             from .weather import get_weather_forecast, get_weather_recommendations
@@ -81,13 +143,15 @@ def generate_schedule(
                             'priority': 'medium',
                             'category': 'weather_advisory',
                             'completed': False,
-                            'source': 'weather_forecast'
+                            'source': 'weather_forecast',
+                            'cropType': crop_type  # Add crop type to task
                         })
     
-    # 4. Location/land type based tasks
-    location_tasks = get_location_based_tasks(location, crop_type)
-    for i, loc_task in enumerate(location_tasks):
-        task_date = today + timedelta(days=i % 7)
+    # 3. Location/land type based tasks (only if not already in disease schedule)
+    if not disease_schedule:
+        location_tasks = get_location_based_tasks(location, crop_type)
+        for i, loc_task in enumerate(location_tasks):
+            task_date = today + timedelta(days=i % 7)
         tasks.append({
             'id': f"location-{i}",
             'title': loc_task['title'],
@@ -96,13 +160,15 @@ def generate_schedule(
             'priority': loc_task.get('priority', 'medium'),
             'category': 'location_specific',
             'completed': False,
-            'source': 'location_analysis'
+            'source': 'location_analysis',
+            'cropType': crop_type  # Add crop type to task
         })
     
-    # 5. Standard crop maintenance tasks
-    maintenance_tasks = get_crop_maintenance_tasks(crop_type, previous_week_progress)
-    for i, maint_task in enumerate(maintenance_tasks):
-        task_date = today + timedelta(days=i % 7)
+    # 4. Standard crop maintenance tasks (only if not already in disease schedule)
+    if not disease_schedule:
+        maintenance_tasks = get_crop_maintenance_tasks(crop_type, previous_week_progress)
+        for i, maint_task in enumerate(maintenance_tasks):
+            task_date = today + timedelta(days=i % 7)
         tasks.append({
             'id': f"maintenance-{i}",
             'title': maint_task['title'],
@@ -111,7 +177,8 @@ def generate_schedule(
             'priority': maint_task.get('priority', 'low'),
             'category': 'maintenance',
             'completed': False,
-            'source': 'crop_schedule'
+            'source': 'crop_schedule',
+            'cropType': crop_type  # Add crop type to task
         })
     
     # Sort by priority and date
@@ -121,13 +188,107 @@ def generate_schedule(
         x['dueDate']
     ))
     
-    return tasks[:14]  # Limit to 2 weeks
+    # Limit to 7 days (1 week)
+    return tasks[:50]  # Allow more tasks since we have 7 days
+
+
+def get_disease_schedule(
+    crop_type: str,
+    disease_name: str,
+    location: str,
+    temperature: Optional[float] = None
+) -> Optional[List[Dict]]:
+    """
+    Get disease-specific 7-day schedule from seed data or Gemini API.
+    
+    Args:
+        crop_type: Type of crop (wheat, rice, cotton)
+        disease_name: Name of the disease
+        location: Location name (e.g., 'Islamabad')
+        temperature: Current temperature (optional)
+    
+    Returns:
+        List of day plans with tasks, or None if not found
+    """
+    db = SessionLocal()
+    try:
+        # Normalize inputs - handle None and ensure strings
+        if not crop_type or not isinstance(crop_type, str):
+            print(f"⚠️ Invalid crop_type: {crop_type}")
+            return None
+        if not disease_name or not isinstance(disease_name, str):
+            print(f"⚠️ Invalid disease_name: {disease_name}")
+            return None
+        if not location or not isinstance(location, str):
+            print(f"⚠️ Invalid location: {location}")
+            return None
+        
+        crop_lower = crop_type.strip().lower()
+        disease_normalized = disease_name.strip().lower().replace('_', ' ').replace('-', ' ')
+        location_normalized = location.strip()
+        
+        # Try to find exact match first
+        schedule = db.query(DiseaseSchedule).filter(
+            DiseaseSchedule.crop == crop_lower,
+            DiseaseSchedule.location == location_normalized
+        ).filter(
+            DiseaseSchedule.disease.ilike(f'%{disease_normalized}%')
+        ).first()
+        
+        if schedule:
+            # Check temperature range if provided
+            if temperature is not None:
+                if schedule.temperature_min and schedule.temperature_max:
+                    if schedule.temperature_min <= temperature <= schedule.temperature_max:
+                        return schedule.day_plans
+                    else:
+                        print(f"⚠️ Temperature {temperature}°C outside range [{schedule.temperature_min}-{schedule.temperature_max}°C] for {disease_name}")
+                        # Still return the schedule, but log warning
+                        return schedule.day_plans
+                else:
+                    return schedule.day_plans
+            else:
+                return schedule.day_plans
+        
+        # If not found in seed data, try Gemini API
+        print(f"📡 Disease '{disease_name}' not found in seed data. Using Gemini API...")
+        try:
+            from .gemini_schedule import generate_schedule_with_gemini
+        except ImportError:
+            from core.gemini_schedule import generate_schedule_with_gemini
+        
+        gemini_schedule = generate_schedule_with_gemini(
+            crop_type=crop_type,
+            disease=disease_name,
+            location=location,
+            temperature=temperature or 25.0
+        )
+        
+        if gemini_schedule:
+            return gemini_schedule
+        else:
+            print(f"⚠️ Could not generate schedule for {disease_name} using Gemini API")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error getting disease schedule: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+    finally:
+        db.close()
 
 def get_location_based_tasks(location: str, crop_type: str) -> List[Dict]:
     """Generate tasks based on location/land type"""
     tasks = []
     
-    location_lower = location.lower()
+    # Handle None or invalid inputs
+    if not location or not isinstance(location, str):
+        location = ''
+    if not crop_type or not isinstance(crop_type, str):
+        crop_type = ''
+    
+    location_lower = location.lower() if location else ''
     
     # Punjab-specific recommendations
     if 'punjab' in location_lower:
@@ -162,6 +323,11 @@ def get_location_based_tasks(location: str, crop_type: str) -> List[Dict]:
 def get_crop_maintenance_tasks(crop_type: str, previous_progress: Optional[Dict] = None) -> List[Dict]:
     """Generate standard maintenance tasks based on crop type and previous week progress"""
     tasks = []
+    
+    # Handle None or invalid inputs
+    if not crop_type or not isinstance(crop_type, str):
+        crop_type = 'wheat'  # Default fallback
+    
     crop_lower = crop_type.lower()
     
     # Adjust based on previous week progress
@@ -226,245 +392,6 @@ def get_crop_maintenance_tasks(crop_type: str, previous_progress: Optional[Dict]
             {
                 'title': 'Fertilizer application',
                 'description': 'Apply balanced NPK fertilizer. Avoid excessive nitrogen.',
-                'priority': 'medium'
-            }
-        ])
-    
-    return tasks
-
-
-
-def generate_schedule_from_detection(
-    farmer_id: str,
-    detection_id: str,
-    crop_type: str,
-    disease: str,
-    location: str,
-    lat: Optional[float] = None,
-    lon: Optional[float] = None
-) -> List[Dict]:
-    """
-    Generate personalized farming schedule based on specific detection.
-    Considers: 1) Location, 2) Weather (temperature), 3) Crop type, 4) Disease
-    """
-    tasks = []
-    today = datetime.now().date()
-    
-    # 1. Get disease-specific guidance from database
-    db = SessionLocal()
-    try:
-        norm_crop = crop_type.strip().lower()
-        norm_disease = disease.strip().lower().replace('_', ' ').replace('-', ' ')
-        
-        guidance = db.query(DiseaseGuidance).filter(
-            DiseaseGuidance.crop == norm_crop
-        ).filter(
-            DiseaseGuidance.name.ilike(f'%{norm_disease}%')
-        ).first()
-        
-        if guidance:
-            # Create high-priority disease management tasks
-            if guidance.chemical_control:
-                tasks.append({
-                    'id': f"disease-treatment-1",
-                    'title': f"Apply treatment for {disease}",
-                    'description': f"{guidance.chemical_control}. {guidance.brands if guidance.brands else ''}",
-                    'dueDate': today.isoformat(),
-                    'priority': 'high',
-                    'category': 'disease_management',
-                    'completed': False,
-                    'source': 'disease_detection'
-                })
-            
-            if guidance.cultural_controls:
-                tasks.append({
-                    'id': f"disease-prevention-1",
-                    'title': f"Preventive measures for {disease}",
-                    'description': guidance.cultural_controls,
-                    'dueDate': (today + timedelta(days=1)).isoformat(),
-                    'priority': 'high',
-                    'category': 'disease_management',
-                    'completed': False,
-                    'source': 'disease_detection'
-                })
-            
-            # Add monitoring task
-            tasks.append({
-                'id': f"disease-monitor-1",
-                'title': f"Monitor {crop_type} for {disease} symptoms",
-                'description': f"Check for: {guidance.symptoms if guidance.symptoms else 'disease progression'}",
-                'dueDate': (today + timedelta(days=3)).isoformat(),
-                'priority': 'medium',
-                'category': 'disease_management',
-                'completed': False,
-                'source': 'disease_detection'
-            })
-    finally:
-        db.close()
-    
-    # 2. Weather-based tasks (check temperature)
-    if lat and lon:
-        try:
-            from .weather import get_weather_forecast, get_weather_recommendations
-        except ImportError:
-            from core.weather import get_weather_forecast, get_weather_recommendations
-        
-        weather_data = get_weather_forecast(lat, lon, 7)
-        if weather_data and weather_data.get('forecast'):
-            # Get temperature-specific recommendations
-            for i, day in enumerate(weather_data['forecast'][:7]):
-                temp_avg = (day['temp_min'] + day['temp_max']) / 2
-                day_date = date.fromisoformat(day['date'])
-                
-                # Temperature-based irrigation tasks
-                if temp_avg > 35:
-                    tasks.append({
-                        'id': f"weather-irrigation-{i}",
-                        'title': "Increase irrigation due to high temperature",
-                        'description': f"Temperature: {temp_avg:.1f}°C. Increase watering frequency for {crop_type}. Check soil moisture regularly.",
-                        'dueDate': day_date.isoformat(),
-                        'priority': 'high',
-                        'category': 'weather_advisory',
-                        'completed': False,
-                        'source': 'weather_forecast'
-                    })
-                elif temp_avg < 10:
-                    tasks.append({
-                        'id': f"weather-frost-{i}",
-                        'title': "Protect crops from cold temperature",
-                        'description': f"Temperature: {temp_avg:.1f}°C. Protect {crop_type} from frost damage. Consider covering or mulching.",
-                        'dueDate': day_date.isoformat(),
-                        'priority': 'high',
-                        'category': 'weather_advisory',
-                        'completed': False,
-                        'source': 'weather_forecast'
-                    })
-                
-                # Precipitation-based tasks
-                if day['precipitation'] > 5:
-                    tasks.append({
-                        'id': f"weather-rain-{i}",
-                        'title': "Heavy rain expected - adjust irrigation",
-                        'description': f"Expected rainfall: {day['precipitation']:.1f}mm. Skip irrigation and ensure proper drainage.",
-                        'dueDate': day_date.isoformat(),
-                        'priority': 'medium',
-                        'category': 'weather_advisory',
-                        'completed': False,
-                        'source': 'weather_forecast'
-                    })
-    
-    # 3. Location-specific tasks
-    location_tasks = get_location_based_tasks(location, crop_type)
-    for i, loc_task in enumerate(location_tasks[:3]):  # Limit to 3 location tasks
-        task_date = today + timedelta(days=(i + 2))
-        tasks.append({
-            'id': f"location-{i}",
-            'title': loc_task['title'],
-            'description': loc_task['description'],
-            'dueDate': task_date.isoformat(),
-            'priority': loc_task.get('priority', 'medium'),
-            'category': 'location_specific',
-            'completed': False,
-            'source': 'location_analysis'
-        })
-    
-    # 4. Crop-specific maintenance tasks
-    crop_tasks = get_crop_specific_tasks(crop_type, disease)
-    for i, crop_task in enumerate(crop_tasks[:4]):  # Limit to 4 crop tasks
-        task_date = today + timedelta(days=(i + 1))
-        tasks.append({
-            'id': f"crop-maintenance-{i}",
-            'title': crop_task['title'],
-            'description': crop_task['description'],
-            'dueDate': task_date.isoformat(),
-            'priority': crop_task.get('priority', 'medium'),
-            'category': 'maintenance',
-            'completed': False,
-            'source': 'crop_schedule'
-        })
-    
-    # Sort by priority and date
-    priority_order = {'high': 3, 'medium': 2, 'low': 1}
-    tasks.sort(key=lambda x: (
-        -priority_order.get(x['priority'], 0),
-        x['dueDate']
-    ))
-    
-    # Limit to 14 tasks (2 weeks)
-    return tasks[:14]
-
-
-def get_crop_specific_tasks(crop_type: str, disease: str) -> List[Dict]:
-    """Generate crop-specific maintenance tasks considering the disease"""
-    tasks = []
-    crop_lower = crop_type.lower()
-    
-    if crop_lower == 'wheat':
-        tasks.extend([
-            {
-                'title': 'Inspect wheat field for disease spread',
-                'description': f'Check neighboring plants for {disease} symptoms. Early detection prevents spread.',
-                'priority': 'high'
-            },
-            {
-                'title': 'Adjust nitrogen fertilizer application',
-                'description': 'Excessive nitrogen can worsen some diseases. Apply balanced NPK fertilizer.',
-                'priority': 'medium'
-            },
-            {
-                'title': 'Ensure proper field drainage',
-                'description': 'Poor drainage can promote disease. Check and clear drainage channels.',
-                'priority': 'medium'
-            },
-            {
-                'title': 'Remove infected plant debris',
-                'description': 'Clean up fallen leaves and infected plant parts to reduce disease inoculum.',
-                'priority': 'high'
-            }
-        ])
-    elif crop_lower == 'rice':
-        tasks.extend([
-            {
-                'title': 'Monitor water levels in rice field',
-                'description': f'Maintain optimal water depth. Some diseases thrive in stagnant water.',
-                'priority': 'high'
-            },
-            {
-                'title': 'Check for pest vectors',
-                'description': f'Some pests spread {disease}. Monitor and control pest populations.',
-                'priority': 'high'
-            },
-            {
-                'title': 'Apply silicon-based fertilizer',
-                'description': 'Silicon strengthens rice plants against diseases. Apply as per recommendations.',
-                'priority': 'medium'
-            },
-            {
-                'title': 'Inspect field bunds and levees',
-                'description': 'Maintain proper water management infrastructure to prevent disease spread.',
-                'priority': 'low'
-            }
-        ])
-    elif crop_lower == 'cotton':
-        tasks.extend([
-            {
-                'title': 'Scout for bollworm and other pests',
-                'description': f'Pests can worsen {disease} impact. Regular scouting is essential.',
-                'priority': 'high'
-            },
-            {
-                'title': 'Prune affected cotton branches',
-                'description': 'Remove severely infected branches to prevent disease spread.',
-                'priority': 'high'
-            },
-            {
-                'title': 'Apply potassium-rich fertilizer',
-                'description': 'Potassium improves disease resistance in cotton. Apply as needed.',
-                'priority': 'medium'
-            },
-            {
-                'title': 'Check irrigation system efficiency',
-                'description': 'Proper irrigation prevents stress that makes cotton susceptible to diseases.',
                 'priority': 'medium'
             }
         ])

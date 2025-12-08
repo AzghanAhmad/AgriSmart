@@ -31,3 +31,6 @@ def get_secret_key() -> str:
 def get_weather_api_key() -> str:
     return os.getenv('OPENWEATHER_API_KEY', '')
 
+def get_gemini_api_key() -> str:
+    return os.getenv('GEMINI_API_KEY', '')
+
