@@ -50,6 +50,18 @@ def run_migrations(engine):
                     conn.execute(text('ALTER TABLE "Detections" ADD COLUMN alert_generated VARCHAR(10) DEFAULT \'no\''))
                     conn.commit()
                     print("    ✅ Added 'alert_generated' column")
+                
+                if not column_exists(inspector, 'Detections', 'crop_type'):
+                    print("    ➕ Adding 'crop_type' column...")
+                    conn.execute(text('ALTER TABLE "Detections" ADD COLUMN crop_type VARCHAR(50)'))
+                    conn.commit()
+                    print("    ✅ Added 'crop_type' column")
+
+                if not column_exists(inspector, 'Detections', 'disease_name'):
+                    print("    ➕ Adding 'disease_name' column...")
+                    conn.execute(text('ALTER TABLE "Detections" ADD COLUMN disease_name VARCHAR(120)'))
+                    conn.commit()
+                    print("    ✅ Added 'disease_name' column")
             
             # Check if Users table exists
             if table_exists(inspector, 'Users'):
@@ -66,6 +78,12 @@ def run_migrations(engine):
                     conn.execute(text('ALTER TABLE "Users" ADD COLUMN longitude REAL'))
                     conn.commit()
                     print("    ✅ Added 'longitude' column to Users")
+
+                if not column_exists(inspector, 'Users', 'location'):
+                    print("    ➕ Adding 'location' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN location VARCHAR(255)'))
+                    conn.commit()
+                    print("    ✅ Added 'location' column to Users")
             
             # Check if OutbreakAlerts table exists
             if not table_exists(inspector, 'OutbreakAlerts'):

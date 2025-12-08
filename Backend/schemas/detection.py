@@ -11,6 +11,8 @@ class Detection(Base):
     farmer_id = Column(String(50), nullable=False)
     land_id = Column(String(50), nullable=True)
     disease_id = Column(String(50), nullable=True)
+    disease_name = Column(String(120), nullable=True)
+    crop_type = Column(String(50), nullable=True)  # Added for schedule generation
     image_ref = Column(String(255), nullable=True)
     confidence_score = Column(Float, nullable=True)
     status = Column(String(20), nullable=False, default='pending')
