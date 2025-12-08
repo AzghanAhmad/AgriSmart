@@ -14,6 +14,7 @@ try:
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
     from .core.seed_guidance import seed_guidance_if_needed
+    from .core.seed_schedules import seed_schedules_if_needed
 except ImportError:
     # Fallback for running as a script: python Backend/app.py
     from db import Base, engine
@@ -25,6 +26,7 @@ except ImportError:
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
     from core.seed_guidance import seed_guidance_if_needed
+    from core.seed_schedules import seed_schedules_if_needed
 
 app = Flask(__name__)
 # Configure CORS via env; default to permissive in dev
@@ -69,6 +71,14 @@ with app.app_context():
         print("✅ Guidance data seeded")
     except Exception as se:
         print(f'⚠️ Guidance seeding error: {se}')
+    
+    # Seed disease schedules table (idempotent)
+    try:
+        print("📅 Seeding disease schedules data...")
+        seed_schedules_if_needed()
+        print("✅ Schedules data seeded")
+    except Exception as se:
+        print(f'⚠️ Schedules seeding error: {se}')
 
 # Register blueprints
 app.register_blueprint(farmer_bp)

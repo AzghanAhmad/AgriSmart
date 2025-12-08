@@ -14,91 +14,66 @@ except ImportError:
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/farmer/schedule')
 
-@schedule_bp.route('/generate-from-detection', methods=['POST'])
-def generate_schedule_from_detection():
-    """Generate personalized farming schedule based on specific detection"""
-    try:
-        data = request.get_json() or {}
-        farmer_id = data.get('farmerId')
-        detection_id = data.get('detectionId')
-        crop_type = data.get('cropType', '').lower()
-        disease = data.get('disease', '')
-        location = data.get('location', '')
-        lat = data.get('latitude')
-        lon = data.get('longitude')
-        week_number = data.get('weekNumber', 'week1')
-        
-        if not farmer_id:
-            return jsonify({'error': 'Missing farmerId'}), 400
-        if not crop_type:
-            return jsonify({'error': 'Missing cropType'}), 400
-        if not disease:
-            return jsonify({'error': 'Missing disease'}), 400
-        
-        # Convert lat/lon to float if provided
-        lat_float = float(lat) if lat else None
-        lon_float = float(lon) if lon else None
-        
-        # Generate schedule with detection-specific parameters
-        from ..core.schedule_generator import generate_schedule_from_detection as gen_from_det
-        tasks = gen_from_det(
-            farmer_id=farmer_id,
-            detection_id=detection_id,
-            crop_type=crop_type,
-            disease=disease,
-            location=location,
-            lat=lat_float,
-            lon=lon_float
-        )
-        
-        # Save schedule to database
-        schedule_id = str(uuid.uuid4())
-        db = SessionLocal()
-        try:
-            from ..schemas.schedule import Schedule
-            schedule = Schedule(
-                schedule_id=schedule_id,
-                farmer_id=farmer_id,
-                cultivation_id=None,
-                period=week_number,
-                tasks=tasks,
-                generated_by='ai'
-            )
-            db.add(schedule)
-            db.commit()
-        finally:
-            db.close()
-        
-        return jsonify({
-            'scheduleId': schedule_id,
-            'weekNumber': week_number,
-            'tasks': tasks,
-            'totalTasks': len(tasks),
-            'generatedAt': datetime.now().isoformat()
-        }), 201
-        
-    except Exception as e:
-        print(f"❌ Error generating schedule from detection: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': 'Failed to generate schedule'}), 500
-
 @schedule_bp.route('/generate', methods=['POST'])
 def generate_farming_schedule():
     """Generate personalized farming schedule for a week"""
     try:
         data = request.get_json() or {}
         farmer_id = data.get('farmerId') or request.args.get('farmerId')
-        crop_type = data.get('cropType', '').lower()
-        location = data.get('location', '')
+        crop_type_raw = data.get('cropType', '')
+        location_raw = data.get('location', '')
         lat = data.get('latitude')
         lon = data.get('longitude')
         week_number = data.get('weekNumber', 'week1')
+        disease_name = data.get('diseaseName')  # Get disease name if provided
         
         if not farmer_id:
             return jsonify({'error': 'Missing farmerId'}), 400
+        
+        # Validate and normalize crop_type
+        if isinstance(crop_type_raw, dict):
+            crop_type = crop_type_raw.get('name', 'wheat') or 'wheat'
+        elif isinstance(crop_type_raw, str):
+            crop_type = crop_type_raw.strip().lower()
+        else:
+            crop_type = 'wheat'  # Default fallback
+        
         if not crop_type:
             return jsonify({'error': 'Missing cropType'}), 400
+        
+        # Validate and normalize location
+        if isinstance(location_raw, dict):
+            location = location_raw.get('name', 'Islamabad') or 'Islamabad'
+        elif isinstance(location_raw, str):
+            location = location_raw.strip()
+        else:
+            location = 'Islamabad'  # Default fallback
+        
+        # Ensure disease_name is a string if provided
+        if disease_name and not isinstance(disease_name, str):
+            if isinstance(disease_name, dict):
+                disease_name = disease_name.get('name') or disease_name.get('disease')
+            else:
+                disease_name = str(disease_name) if disease_name else None
+        
+        # If disease_name not provided, try to get from recent detections
+        if not disease_name:
+            db = SessionLocal()
+            try:
+                from ..schemas.detection import Detection
+            except ImportError:
+                from schemas.detection import Detection
+            
+            try:
+                recent_detection = db.query(Detection).filter(
+                    Detection.farmer_id == farmer_id,
+                    Detection.crop_type == crop_type
+                ).order_by(Detection.timestamp.desc()).first()
+                
+                if recent_detection and recent_detection.disease_name:
+                    disease_name = recent_detection.disease_name
+            finally:
+                db.close()
         
         # Get previous week progress if week_number > 1
         previous_progress = None
@@ -134,7 +109,8 @@ def generate_farming_schedule():
             location=location,
             lat=lat_float,
             lon=lon_float,
-            previous_week_progress=previous_progress
+            previous_week_progress=previous_progress,
+            disease_name=disease_name
         )
         
         # Save schedule to database
