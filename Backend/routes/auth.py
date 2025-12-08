@@ -34,6 +34,7 @@ def signup():
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
     phone = (data.get('phone') or '').strip()
+    location = (data.get('location') or '').strip() or None
     role = (data.get('role') or 'farmer').strip().lower()
     
     # Accept coordinates for geotagging
@@ -59,6 +60,7 @@ def signup():
             email=email,
             password_hash=generate_password_hash(password),
             phone=phone or None,
+            location=location,
             latitude=latitude,
             longitude=longitude,
             role=role,
@@ -72,11 +74,12 @@ def signup():
             'user': {
                 'id': user.user_id,
                 'name': user.name,
-                'email': user.email,
-                'phone': user.phone,
-                'latitude': latitude,
-                'longitude': longitude,
-                'role': user.role,
+            'email': user.email,
+            'phone': user.phone,
+            'location': location,
+            'latitude': latitude,
+            'longitude': longitude,
+            'role': user.role,
             }
         }), 201
     finally:
@@ -104,10 +107,11 @@ def login():
                 'id': user.user_id,
                 'name': user.name,
                 'email': user.email,
-                'phone': user.phone,
-                'latitude': user.latitude,
-                'longitude': user.longitude,
-                'role': user.role,
+            'phone': user.phone,
+            'location': user.location,
+            'latitude': user.latitude,
+            'longitude': user.longitude,
+            'role': user.role,
             }
         })
     finally:
@@ -140,6 +144,7 @@ def me():
             'name': user.name,
             'email': user.email,
             'phone': user.phone,
+            'location': user.location,
             'latitude': user.latitude,
             'longitude': user.longitude,
             'role': user.role,

@@ -14,6 +14,75 @@ except ImportError:
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/farmer/schedule')
 
+@schedule_bp.route('/generate-from-detection', methods=['POST'])
+def generate_schedule_from_detection():
+    """Generate personalized farming schedule based on specific detection"""
+    try:
+        data = request.get_json() or {}
+        farmer_id = data.get('farmerId')
+        detection_id = data.get('detectionId')
+        crop_type = data.get('cropType', '').lower()
+        disease = data.get('disease', '')
+        location = data.get('location', '')
+        lat = data.get('latitude')
+        lon = data.get('longitude')
+        week_number = data.get('weekNumber', 'week1')
+        
+        if not farmer_id:
+            return jsonify({'error': 'Missing farmerId'}), 400
+        if not crop_type:
+            return jsonify({'error': 'Missing cropType'}), 400
+        if not disease:
+            return jsonify({'error': 'Missing disease'}), 400
+        
+        # Convert lat/lon to float if provided
+        lat_float = float(lat) if lat else None
+        lon_float = float(lon) if lon else None
+        
+        # Generate schedule with detection-specific parameters
+        from ..core.schedule_generator import generate_schedule_from_detection as gen_from_det
+        tasks = gen_from_det(
+            farmer_id=farmer_id,
+            detection_id=detection_id,
+            crop_type=crop_type,
+            disease=disease,
+            location=location,
+            lat=lat_float,
+            lon=lon_float
+        )
+        
+        # Save schedule to database
+        schedule_id = str(uuid.uuid4())
+        db = SessionLocal()
+        try:
+            from ..schemas.schedule import Schedule
+            schedule = Schedule(
+                schedule_id=schedule_id,
+                farmer_id=farmer_id,
+                cultivation_id=None,
+                period=week_number,
+                tasks=tasks,
+                generated_by='ai'
+            )
+            db.add(schedule)
+            db.commit()
+        finally:
+            db.close()
+        
+        return jsonify({
+            'scheduleId': schedule_id,
+            'weekNumber': week_number,
+            'tasks': tasks,
+            'totalTasks': len(tasks),
+            'generatedAt': datetime.now().isoformat()
+        }), 201
+        
+    except Exception as e:
+        print(f"❌ Error generating schedule from detection: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to generate schedule'}), 500
+
 @schedule_bp.route('/generate', methods=['POST'])
 def generate_farming_schedule():
     """Generate personalized farming schedule for a week"""

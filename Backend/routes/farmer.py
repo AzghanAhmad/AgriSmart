@@ -81,7 +81,9 @@ def create_detection():
                 detection_id=detection_id,
                 farmer_id=farmer_id,
                 land_id=land_id,
-                disease_id=None,  # mapping to Diseases table can be added if available
+                disease_id=None,  # placeholder for future disease table linkage
+                disease_name=disease_name,
+                crop_type=crop_type,  # Store crop type for schedule generation
                 image_ref=image_url,
                 confidence_score=confidence,
                 status='pending',
@@ -110,7 +112,7 @@ def create_detection():
 
                 two_weeks_ago = datetime.datetime.utcnow() - datetime.timedelta(days=14)
                 recent = db.query(Detection).filter(
-                    Detection.disease_id == det.disease_id,
+                    Detection.disease_name == det.disease_name,
                     Detection.timestamp >= two_weeks_ago,
                     Detection.latitude.isnot(None),
                     Detection.longitude.isnot(None),
@@ -197,11 +199,15 @@ def recent_detections():
         rows = db.query(Detection).filter(Detection.farmer_id == farmer_id).order_by(Detection.timestamp.desc()).limit(10).all()
         data = [{
             'id': r.detection_id,
-            'name': 'Unknown Disease',
+            'name': getattr(r, 'disease_name', None) or r.disease_id or 'Unknown Disease',
             'severity': 'high' if (r.confidence_score or 0) > 80 else ('medium' if (r.confidence_score or 0) > 50 else 'low'),
             'treatment': '',
             'imageUrl': r.image_ref,
             'detectedAt': r.timestamp.isoformat() if r.timestamp else None,
+            'confidence': r.confidence_score or 0,
+            'cropType': getattr(r, 'crop_type', 'wheat'),  # Default to wheat if not stored
+            'latitude': getattr(r, 'latitude', None),
+            'longitude': getattr(r, 'longitude', None),
         } for r in rows]
         return jsonify({'detections': data})
     except Exception as e:

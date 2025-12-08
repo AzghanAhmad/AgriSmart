@@ -14,6 +14,7 @@ class User(Base):
     email = Column(String(120), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     phone = Column(String(30), nullable=True)
+    location = Column(String(255), nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     role = Column(String(20), nullable=False, default='farmer')
