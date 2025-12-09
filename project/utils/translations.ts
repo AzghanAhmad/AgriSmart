@@ -28,6 +28,7 @@ export const translations = {
     cureGuidance: 'Cure Guidance',
     farmingSchedule: 'Farming Schedule',
     diseaseHeatmap: 'Disease Heatmap',
+    yieldEstimate: 'Yield Estimate',
     chatbot: 'AI Assistant',
     
     // Common
@@ -76,6 +77,7 @@ export const translations = {
     cureGuidance: 'علاج کی رہنمائی',
     farmingSchedule: 'کاشتکاری کا شیڈول',
     diseaseHeatmap: 'بیماری کا نقشہ',
+    yieldEstimate: 'پیداوار کا تخمینہ',
     chatbot: 'AI مددگار',
     
     // Common

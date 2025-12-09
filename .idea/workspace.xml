@@ -4,6 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
+<<<<<<< Updated upstream
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Backend/core/schedule_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/core/schedule_generator.py" afterDir="false" />
@@ -47,6 +48,9 @@
       <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule-select.tsx" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" afterDir="false" />
     </list>
+=======
+    <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="" />
+>>>>>>> Stashed changes
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -70,6 +74,7 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
+<<<<<<< Updated upstream
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
@@ -82,6 +87,19 @@
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;azghan&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
+=======
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "main",
+    "settings.editor.selected.configurable": "AndroidSdkUpdater"
+>>>>>>> Stashed changes
   }
 }</component>
   <component name="TaskManager">
