@@ -35,8 +35,19 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
       data = { error: 'Invalid JSON response' }; 
     }
     
-    if (!res.ok || data?.error) {
+    if (!res.ok) {
+      // Handle 401 Unauthorized - clear invalid token
+      if (res.status === 401) {
+        // Clear invalid token from storage
+        AsyncStorage.removeItem('authToken').catch(() => {});
+        AsyncStorage.removeItem('user').catch(() => {});
+      }
       const message = typeof data?.error === 'string' ? data.error : `Request failed (${res.status})`;
+      throw new Error(message);
+    }
+    
+    if (data?.error) {
+      const message = typeof data?.error === 'string' ? data.error : `Request failed`;
       throw new Error(message);
     }
     
