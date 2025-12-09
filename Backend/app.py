@@ -11,6 +11,7 @@ try:
     from .routes.auth import auth_bp
     from .routes.guidance import guidance_bp
     from .routes.schedule import schedule_bp
+    from .modules.yield_estimation import yield_estimation_bp
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
     from .core.seed_guidance import seed_guidance_if_needed
@@ -22,6 +23,7 @@ except ImportError:
     from routes.auth import auth_bp
     from routes.guidance import guidance_bp
     from routes.schedule import schedule_bp
+    from modules.yield_estimation import yield_estimation_bp
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
     from core.seed_guidance import seed_guidance_if_needed
@@ -76,6 +78,7 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(guidance_bp)
 app.register_blueprint(schedule_bp)
+app.register_blueprint(yield_estimation_bp)  # Yield Estimation Module
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
@@ -112,6 +115,7 @@ def home():
             "admin": "/api/admin/*",
             "guidance": "/api/guidance",
             "schedule": "/api/farmer/schedule/*",
+            "yield": "/api/yield/*",
             "predict": "/predict"
         }
     })
