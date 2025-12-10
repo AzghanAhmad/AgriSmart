@@ -115,7 +115,7 @@ export default function FarmerHomeScreen() {
     fetchTodayWeather();
   }, []);
 
-  // Mock data for weekly yield
+  // Data for weekly yield
   const yieldData = {
     labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
     datasets: [{
