@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image, ActivityIndicator } from 'react-native';
-import { Camera, Shield, Calendar, MapPin, MessageCircle, TrendingUp, Sun, Droplets, Wind, BarChart3 } from 'lucide-react-native';
+import { Camera, Shield, Calendar, MapPin, MessageCircle, TrendingUp, Sun, Droplets, Wind, BarChart3, Sparkles } from 'lucide-react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
@@ -142,6 +142,7 @@ export default function FarmerHomeScreen() {
 
   const quickActions = [
     { title: translate('scanCrop', language), icon: Camera, color: '#22C55E', route: '/disease-detection' },
+    { title: 'Smart TimeLapse', icon: Sparkles, color: '#FFD700', route: '/timelapse-upload' },
     { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6', route: '/disease-detection' },
     { title: translate('farmingSchedule', language), icon: Calendar, color: '#F59E0B', route: '/schedule' },
     { title: translate('diseaseHeatmap', language), icon: MapPin, color: '#EF4444', route: '/heatmap' },

@@ -4,53 +4,21 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-<<<<<<< Updated upstream
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/core/schedule_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/core/schedule_generator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/schedule.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/schedule.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/025061a7-4603-4ed1-8980-f04ac61ea3a6.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/0924d4e6-2e9d-49e8-9a79-77adec7e0460.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/092c99f8-b3b9-4668-8d0f-e6da69a6c71a.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/1480dd88-0d42-4e76-821d-fff45d7640dd.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/14955a57-863f-4a60-9105-480bc2c5a7f1.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/18650f47-cfa0-4ff1-9966-a7bf17699793.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/22c232df-9d33-482d-95be-6c5002e4df68.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/3d8e3e13-ba2c-4f6f-b22a-233ea5ff6840.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/490e838c-81db-4b18-8f35-87505b8bb82c.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/4d45023e-5171-4673-b7d1-cf80cb23572f.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/5704a2fd-4c33-48be-b7a6-31a65bbb8a5b.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/59451c52-97f2-46e3-acf3-867d5fc16325.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/7cbf6d8c-37b9-4f53-8013-00be5b00ab48.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/7e3c80a8-2f69-4264-9347-24931c2e4e4d.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/89e725bc-3694-4c85-8e8e-d5d1367a369e.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/8b22ece6-3017-4c63-9da6-a368d79419f3.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/8ba9c4b3-14d6-42d4-9aff-a8387adbe028.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/8c53a2e8-85e9-4c48-8e29-eae0070c39b6.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/8dc05654-c1ff-4205-a4e0-616d087a8775.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/9364bb22-3c0a-4a76-ae4e-f5f29c10cd33.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/979ef149-3784-4da1-9e88-fc90c40c174d.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/97f38550-c90e-4a55-8313-d741526acd1e.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/9f7a92d1-e60b-4ef1-b2b0-bf61fdab6bff.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/afb0284b-2fc2-4183-9274-96e0fb06b172.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/b01b80bf-6829-4583-b9a0-6bb048fff707.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/b619bfac-739d-45b0-b757-9fa6df0c3253.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/d1a002d8-624b-4e53-be75-6accee6aab86.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/d7309d61-70e9-480c-b555-0e67a3e6c651.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/e9eeddba-ae88-43a5-a692-dbd56138ae9e.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/ed13a481-64db-42a4-a309-406e6d79594e.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/eec7b797-c7fc-407d-8f46-145ea928c082.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/f60431b7-1891-41ad-8ea9-1c18b1aa9826.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/f659cbb4-4768-4784-b5e0-faa9844dde59.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/fb116bd3-1722-45d2-93aa-02ae1eba9223.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/fb859993-2bd9-4ec7-888d-231bfed5df25.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/static/uploads/detections/fc9c70a7-9e95-4f03-a607-5129356b2240.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule-select.tsx" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
     </list>
-=======
-    <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="" />
->>>>>>> Stashed changes
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -62,9 +30,6 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProblemsViewState">
-    <option name="selectedTabId" value="ProjectErrors" />
-  </component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 2
@@ -74,7 +39,6 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-<<<<<<< Updated upstream
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
@@ -85,21 +49,9 @@
     &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;azghan&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;talha&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/Crop_Disease_Detect/AgriSmart&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
-=======
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.cidr.known.project.marker": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.readMode.enableVisualFormatting": "true",
-    "cf.first.check.clang-format": "false",
-    "cidr.known.project.marker": "true",
-    "git-widget-placeholder": "main",
-    "settings.editor.selected.configurable": "AndroidSdkUpdater"
->>>>>>> Stashed changes
   }
 }</component>
   <component name="TaskManager">

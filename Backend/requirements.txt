@@ -10,3 +10,6 @@ SQLAlchemy
 python-dotenv
 requests
 psycopg2-binary>=2.9
+opencv-python
+scikit-learn
+numpy
