@@ -460,49 +460,42 @@ export default function ScheduleScreen() {
           />
         }
       >
-        {/* Upcoming Tab - Show Days */}
+        {/* Upcoming Tab - Show Days in Grid */}
         {selectedTab === 'upcoming' && (
           <View style={styles.daysSection}>
             <Text style={styles.sectionTitle}>Upcoming Days</Text>
-            {weekDays.map((day, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.dayCard}
-                onPress={() => setSelectedDay(day.date)}
-              >
-                <View style={styles.dayHeader}>
-                  <View style={styles.dayInfo}>
-                    <Text style={styles.dayName}>{day.dayName}</Text>
-                    <Text style={styles.dayDate}>
-                      {new Date(day.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </Text>
-                  </View>
-                  <View style={styles.dayStats}>
-                    <Text style={styles.dayTaskCount}>{day.tasks.length} tasks</Text>
-                    <Text style={styles.dayCompletedCount}>
-                      {day.tasks.filter(t => t.completed).length} completed
-                    </Text>
-                  </View>
-                </View>
-                {day.tasks.length > 0 && (
-                  <View style={styles.dayPreview}>
-                    {day.tasks.slice(0, 2).map((task, idx) => (
-                      <Text key={idx} style={styles.dayPreviewTask}>
-                        • {task.title}
-                      </Text>
-                    ))}
-                    {day.tasks.length > 2 && (
-                      <Text style={styles.dayMoreTasks}>
-                        +{day.tasks.length - 2} more tasks
+            <View style={styles.daysGrid}>
+              {weekDays.map((day, index) => {
+                const allTasksCompleted = day.tasks.length > 0 && day.tasks.every(t => t.completed);
+                const dayDate = new Date(day.date);
+                const month = dayDate.toLocaleDateString('en-US', { month: 'short' });
+                const dayNum = dayDate.getDate();
+                
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.dayBox,
+                      allTasksCompleted && styles.dayBoxCompleted
+                    ]}
+                    onPress={() => setSelectedDay(day.date)}
+                  >
+                    <Text style={styles.dayBoxName}>{day.dayName}</Text>
+                    <Text style={styles.dayBoxDate}>{month} {dayNum}</Text>
+                    {allTasksCompleted && (
+                      <View style={styles.doneBadge}>
+                        <Text style={styles.doneText}>Done</Text>
+                      </View>
+                    )}
+                    {day.tasks.length > 0 && !allTasksCompleted && (
+                      <Text style={styles.dayBoxTaskCount}>
+                        {day.tasks.filter(t => t.completed).length}/{day.tasks.length}
                       </Text>
                     )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -518,7 +511,7 @@ export default function ScheduleScreen() {
                   {selectedTab === 'completed' && "No completed tasks yet"}
                 </Text>
                 {selectedTab === 'today' && (
-                  <TouchableOpacity style={styles.generateButton} onPress={generateSchedule}>
+                  <TouchableOpacity style={styles.generateButton} onPress={() => generateSchedule()}>
                     <Text style={styles.generateButtonText}>Generate Schedule</Text>
                   </TouchableOpacity>
                 )}
@@ -873,62 +866,69 @@ const styles = StyleSheet.create({
   daysSection: {
     marginBottom: 24,
   },
-  dayCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  dayHeader: {
+  daysGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
     justifyContent: 'space-between',
+  },
+  dayBox: {
+    width: '48%',
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 18,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    minHeight: 130,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    position: 'relative',
   },
-  dayInfo: {
-    flex: 1,
+  dayBoxCompleted: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+    shadowColor: '#10B981',
   },
-  dayName: {
+  dayBoxName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#111827',
-    marginBottom: 2,
+    marginBottom: 6,
   },
-  dayDate: {
-    fontSize: 14,
+  dayBoxDate: {
+    fontSize: 15,
     color: '#6B7280',
-  },
-  dayStats: {
-    alignItems: 'flex-end',
-  },
-  dayTaskCount: {
-    fontSize: 16,
+    marginBottom: 10,
     fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
   },
-  dayCompletedCount: {
-    fontSize: 12,
-    color: '#22C55E',
-  },
-  dayPreview: {
-    gap: 4,
-  },
-  dayPreviewTask: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 20,
-  },
-  dayMoreTasks: {
-    fontSize: 12,
+  dayBoxTaskCount: {
+    fontSize: 13,
     color: '#6B7280',
-    fontStyle: 'italic',
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  doneBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  doneText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   tasksSection: {
     marginBottom: 24,

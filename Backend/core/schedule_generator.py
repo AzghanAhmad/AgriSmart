@@ -125,9 +125,25 @@ def generate_schedule(
     # 2. Weather-based tasks (if weather API is available)
     if lat and lon:
         try:
-            from .weather import get_weather_forecast, get_weather_recommendations
+            from .weather import get_weather_forecast, get_weather_recommendations, check_rain_in_next_hours
         except ImportError:
-            from core.weather import get_weather_forecast, get_weather_recommendations
+            from core.weather import get_weather_forecast, get_weather_recommendations, check_rain_in_next_hours
+        
+        # Check if rain is expected in 2-3 hours - add irrigation warning
+        rain_expected = check_rain_in_next_hours(lat, lon, hours=3)
+        if rain_expected:
+            tasks.append({
+                'id': f"irrigation-warning-{today.isoformat()}",
+                'title': '⚠️ Do Not Water Crops',
+                'description': 'Rain is expected within the next 2-3 hours. Do not water your crops as natural rainfall will provide sufficient moisture.',
+                'dueDate': today.isoformat(),
+                'priority': 'high',
+                'category': 'weather_advisory',
+                'completed': False,
+                'source': 'weather_forecast',
+                'cropType': crop_type
+            })
+        
         weather_data = get_weather_forecast(lat, lon, 7)
         if weather_data:
             weather_recs = get_weather_recommendations(weather_data)
@@ -152,17 +168,17 @@ def generate_schedule(
         location_tasks = get_location_based_tasks(location, crop_type)
         for i, loc_task in enumerate(location_tasks):
             task_date = today + timedelta(days=i % 7)
-        tasks.append({
-            'id': f"location-{i}",
-            'title': loc_task['title'],
-            'description': loc_task['description'],
-            'dueDate': task_date.isoformat(),
-            'priority': loc_task.get('priority', 'medium'),
-            'category': 'location_specific',
-            'completed': False,
-            'source': 'location_analysis',
-            'cropType': crop_type  # Add crop type to task
-        })
+            tasks.append({
+                'id': f"location-{i}",
+                'title': loc_task['title'],
+                'description': loc_task['description'],
+                'dueDate': task_date.isoformat(),
+                'priority': loc_task.get('priority', 'medium'),
+                'category': 'location_specific',
+                'completed': False,
+                'source': 'location_analysis',
+                'cropType': crop_type  # Add crop type to task
+            })
     
     # 4. Standard crop maintenance tasks (only if not already in disease schedule)
     if not disease_schedule:
