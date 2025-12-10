@@ -89,6 +89,79 @@ interface Prediction {
 
 type ChartType = 'severity' | 'weather' | 'disease' | 'confidence';
 
+// Helper component for images with fallback - SIMPLIFIED
+const ImageWithFallback = ({ 
+  primaryUrl, 
+  fallbackUrl, 
+  style, 
+  resizeMode = 'cover',
+  onError,
+  onLoad,
+  key
+}: {
+  primaryUrl: string | null;
+  fallbackUrl: string | null;
+  style: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
+  onError?: (e: any) => void;
+  onLoad?: () => void;
+  key?: string;
+}) => {
+  const [hasError, setHasError] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
+  
+  // Reset when URLs change
+  useEffect(() => {
+    setHasError(false);
+    setUseFallback(false);
+  }, [primaryUrl, fallbackUrl]);
+
+  const handleError = (e: any) => {
+    if (!useFallback && fallbackUrl && primaryUrl) {
+      // Try fallback
+      setUseFallback(true);
+      console.log(`⚠️ Primary image failed, trying fallback`);
+    } else {
+      // Both failed or no fallback
+      setHasError(true);
+      console.error('❌ Image failed to load');
+      if (onError) onError(e);
+    }
+  };
+
+  const handleLoad = () => {
+    if (onLoad) onLoad();
+  };
+
+  // Determine which URL to use
+  const imageUrl = useFallback ? fallbackUrl : primaryUrl;
+
+  if (hasError || !imageUrl) {
+    // Use a dummy placeholder image from assets
+    return (
+      <Image
+        source={require('@/assets/crops/Wheat.jpg')}
+        style={style}
+        resizeMode={resizeMode}
+      />
+    );
+  }
+
+  return (
+    <Image
+      key={key}
+      source={{ 
+        uri: imageUrl,
+        cache: 'default'
+      }}
+      style={style}
+      resizeMode={resizeMode}
+      onError={handleError}
+      onLoad={handleLoad}
+    />
+  );
+};
+
 export default function TimeLapseViewScreen() {
   const router = useRouter();
   const { cropId } = useLocalSearchParams<{ cropId: string }>();
@@ -119,11 +192,22 @@ export default function TimeLapseViewScreen() {
   }, [isPlaying, data]);
 
   const loadData = async () => {
-    if (!cropId) return;
+    if (!cropId) {
+      console.error('❌ No cropId provided to timelapse view');
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        console.error('❌ No auth token found');
+        setLoading(false);
+        return;
+      }
+
+      console.log('📡 Loading timelapse data for cropId:', cropId);
       const response = await fetch(`${getApiBaseUrl()}/api/timelapse/${cropId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -131,12 +215,39 @@ export default function TimeLapseViewScreen() {
         },
       });
 
+      console.log('📥 Timelapse response status:', response.status);
+
       if (response.ok) {
         const result = await response.json();
+        console.log('✅ Timelapse data loaded:', {
+          totalEntries: result.entries?.length || 0,
+          cropName: result.crop_name,
+          firstEntry: result.entries?.[0] ? {
+            id: result.entries[0].id,
+            date: result.entries[0].date,
+            photo_url: result.entries[0].photo_url,
+            fullUrl: `${getApiBaseUrl()}${result.entries[0].photo_url}`,
+          } : null,
+          lastEntry: result.entries?.[result.entries.length - 1] ? {
+            id: result.entries[result.entries.length - 1].id,
+            date: result.entries[result.entries.length - 1].date,
+            photo_url: result.entries[result.entries.length - 1].photo_url,
+            fullUrl: `${getApiBaseUrl()}${result.entries[result.entries.length - 1].photo_url}`,
+          } : null,
+        });
+        console.log('📋 All entries:', result.entries?.map((e: any) => ({
+          id: e.id,
+          date: e.date,
+          photo_url: e.photo_url,
+        })));
         setData(result);
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to load timelapse:', response.status, errorText);
       }
-    } catch (error) {
-      console.error('Failed to load timelapse:', error);
+    } catch (error: any) {
+      console.error('❌ Error loading timelapse:', error);
+      console.error('Error details:', error.message, error.stack);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -335,6 +446,34 @@ export default function TimeLapseViewScreen() {
     },
   };
 
+  if (!cropId) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={[colors.primary, colors.primaryDark]}
+          style={styles.loadingContainer}
+        >
+          <AlertCircle size={48} color="white" />
+          <Text style={styles.loadingText}>No Crop Selected</Text>
+          <Text style={[styles.loadingText, { fontSize: 14, marginTop: 8 }]}>
+            Please select a crop first
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyButton}
+            onPress={() => router.back()}
+          >
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDark]}
+              style={styles.emptyButtonGradient}
+            >
+              <Text style={styles.emptyButtonText}>Go Back</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -349,7 +488,21 @@ export default function TimeLapseViewScreen() {
     );
   }
 
-  if (!data || data.entries.length === 0) {
+  if (!data) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={[colors.primary, colors.primaryDark]}
+          style={styles.loadingContainer}
+        >
+          <ActivityIndicator size="large" color="white" />
+          <Text style={styles.loadingText}>Loading TimeLapse Data...</Text>
+        </LinearGradient>
+      </View>
+    );
+  }
+
+  if (!data.entries || data.entries.length === 0) {
     return (
       <View style={styles.container}>
         <LinearGradient
@@ -389,21 +542,35 @@ export default function TimeLapseViewScreen() {
       >
         {/* Header */}
         <LinearGradient
-          colors={[colors.primary, colors.primaryDark]}
+          colors={[colors.primary, colors.primaryDark, '#15803D']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={styles.header}
         >
+          <View style={styles.headerOverlay} />
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
+            activeOpacity={0.8}
           >
-            <ArrowLeft size={24} color="white" />
+            <LinearGradient
+              colors={['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.15)']}
+              style={styles.backButtonGradient}
+            >
+              <ArrowLeft size={22} color="white" />
+            </LinearGradient>
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <Sparkles size={28} color="#FFD700" />
+            <View style={styles.sparkleContainer}>
+              <Sparkles size={32} color="#FFD700" />
+              <View style={styles.sparkleGlow} />
+            </View>
             <Text style={styles.headerTitle}>{data.crop_name}</Text>
-            <Text style={styles.headerSubtitle}>
-              {data.stats.total_entries} entries • {data.crop_type}
-            </Text>
+            <View style={styles.headerBadge}>
+              <Text style={styles.headerBadgeText}>
+                {data.stats.total_entries} entries • {data.crop_type}
+              </Text>
+            </View>
           </View>
         </LinearGradient>
 
@@ -411,21 +578,33 @@ export default function TimeLapseViewScreen() {
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
+              colors={[colors.primary, colors.primaryDark, '#15803D']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.statCardGradient}
             >
-              <Activity size={24} color="white" />
-              <Text style={styles.statValue}>{stats?.totalEntries || 0}</Text>
+              <View style={styles.statIconContainer}>
+                <Activity size={22} color="white" />
+                <View style={styles.statIconGlow} />
+              </View>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {stats?.totalEntries || 0}
+              </Text>
               <Text style={styles.statLabel}>Total Scans</Text>
             </LinearGradient>
           </View>
           <View style={styles.statCard}>
             <LinearGradient
-              colors={[colors.warning, '#D97706']}
+              colors={['#F59E0B', '#D97706', '#B45309']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.statCardGradient}
             >
-              <BarChart3 size={24} color="white" />
-              <Text style={styles.statValue}>
+              <View style={styles.statIconContainer}>
+                <BarChart3 size={22} color="white" />
+                <View style={styles.statIconGlow} />
+              </View>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {stats?.avgSeverity.toFixed(1) || '0.0'}
               </Text>
               <Text style={styles.statLabel}>Avg Severity</Text>
@@ -435,23 +614,29 @@ export default function TimeLapseViewScreen() {
             <LinearGradient
               colors={
                 stats?.trend === 'improving' 
-                  ? [colors.success, colors.primaryDark]
+                  ? [colors.success, colors.primaryDark, '#15803D']
                   : stats?.trend === 'worsening'
-                  ? [colors.error, '#DC2626']
-                  : [colors.warning, '#D97706']
+                  ? [colors.error, '#DC2626', '#B91C1C']
+                  : ['#F59E0B', '#D97706', '#B45309']
               }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.statCardGradient}
             >
-              {stats?.trend === 'improving' ? (
-                <TrendingDown size={24} color="white" />
-              ) : stats?.trend === 'worsening' ? (
-                <TrendingUp size={24} color="white" />
-              ) : (
-                <Minus size={24} color="white" />
-              )}
-              <Text style={styles.statLabel}>
-                {stats?.trend ? stats.trend.charAt(0).toUpperCase() + stats.trend.slice(1) : 'Stable'}
+              <View style={styles.statIconContainer}>
+                {stats?.trend === 'improving' ? (
+                  <TrendingDown size={22} color="white" />
+                ) : stats?.trend === 'worsening' ? (
+                  <TrendingUp size={22} color="white" />
+                ) : (
+                  <Minus size={22} color="white" />
+                )}
+                <View style={styles.statIconGlow} />
+              </View>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                {stats?.trend ? stats.trend.charAt(0).toUpperCase() + stats.trend.slice(1) : 'STABLE'}
               </Text>
+              <Text style={styles.statLabel}>Status</Text>
             </LinearGradient>
           </View>
         </View>
@@ -510,45 +695,51 @@ export default function TimeLapseViewScreen() {
                       day: 'numeric',
                     })}
                   </Text>
-                  <Image
-                    source={{ 
-                      uri: `${getApiBaseUrl()}${data.entries[data.entries.length - 1].photo_url}`,
-                      cache: 'force-cache'
-                    }}
+                  <ImageWithFallback
+                    key={`first-${data.entries[data.entries.length - 1].id}`}
+                    primaryUrl={data.entries[data.entries.length - 1].photo_url ? `${getApiBaseUrl()}${data.entries[data.entries.length - 1].photo_url}` : null}
+                    fallbackUrl={data.entries[data.entries.length - 1].highlighted_photo_url ? `${getApiBaseUrl()}${data.entries[data.entries.length - 1].highlighted_photo_url}` : null}
                     style={styles.comparisonImage}
+                    resizeMode="cover"
                     onError={(e) => {
-                      console.error('❌ Failed to load first scan image:', e.nativeEvent.error);
-                      console.error('   URL:', `${getApiBaseUrl()}${data.entries[data.entries.length - 1].photo_url}`);
+                      console.error('❌ Failed to load first scan image:', e);
+                      console.error('   Entry ID:', data.entries[data.entries.length - 1].id);
                     }}
                     onLoad={() => {
                       console.log('✅ First scan image loaded successfully');
+                      console.log('   Entry ID:', data.entries[data.entries.length - 1].id);
                     }}
                   />
                   <View style={styles.comparisonStats}>
                     <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Severity</Text>
+                      <Text style={styles.comparisonStatLabel} numberOfLines={1}>Severity</Text>
                       <View
                         style={[
                           styles.comparisonSeverityBadge,
                           { backgroundColor: getSeverityColor(data.entries[data.entries.length - 1].severity_score) },
                         ]}
                       >
-                        <Text style={styles.comparisonSeverityText}>
+                        <Text 
+                          style={styles.comparisonSeverityText} 
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.7}
+                        >
                           {getSeverityLabel(data.entries[data.entries.length - 1].severity)}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Confidence</Text>
-                      <Text style={styles.comparisonStatValue}>
+                      <Text style={styles.comparisonStatLabel} numberOfLines={1}>Confidence</Text>
+                      <Text style={styles.comparisonStatValue} numberOfLines={1}>
                         {data.entries[data.entries.length - 1]?.ai_confidence != null
                           ? `${((data.entries[data.entries.length - 1]?.ai_confidence ?? 0) * 100).toFixed(0)}%`
                           : 'N/A'}
                       </Text>
                     </View>
                     <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Score</Text>
-                      <Text style={styles.comparisonStatValue}>
+                      <Text style={styles.comparisonStatLabel} numberOfLines={1}>Score</Text>
+                      <Text style={styles.comparisonStatValue} numberOfLines={1}>
                         {data.entries[data.entries.length - 1].severity_score ?? 0}
                       </Text>
                     </View>
@@ -560,65 +751,83 @@ export default function TimeLapseViewScreen() {
                   <ArrowRight size={32} color={colors.primary} />
                 </View>
 
-                {/* Latest Entry */}
+                {/* Latest Entry - Show second uploaded image if 2 entries, otherwise show newest */}
                 <View style={styles.comparisonItem}>
                   <Text style={styles.comparisonLabel}>Latest Scan</Text>
-                  <Text style={styles.comparisonDate}>
-                    {new Date(data.entries[0].date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </Text>
-                  <Image
-                    source={{ 
-                      uri: `${getApiBaseUrl()}${data.entries[0].photo_url}`,
-                      cache: 'force-cache'
-                    }}
-                    style={styles.comparisonImage}
-                    onError={(e) => {
-                      console.error('❌ Failed to load latest scan image:', e.nativeEvent.error);
-                      console.error('   URL:', `${getApiBaseUrl()}${data.entries[0].photo_url}`);
-                    }}
-                    onLoad={() => {
-                      console.log('✅ Latest scan image loaded successfully');
-                    }}
-                  />
-                  <View style={styles.comparisonStats}>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Severity</Text>
-                      <View
-                        style={[
-                          styles.comparisonSeverityBadge,
-                          { backgroundColor: getSeverityColor(data.entries[0].severity_score) },
-                        ]}
-                      >
-                        <Text style={styles.comparisonSeverityText}>
-                          {getSeverityLabel(data.entries[0].severity)}
+                  {(() => {
+                    // If exactly 2 entries, show the second one (index 1), otherwise show the newest (index 0)
+                    const latestEntryIndex = data.entries.length === 2 ? 1 : 0;
+                    const latestEntry = data.entries[latestEntryIndex];
+                    
+                    return (
+                      <>
+                        <Text style={styles.comparisonDate}>
+                          {new Date(latestEntry.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
                         </Text>
-                      </View>
-                    </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Confidence</Text>
-                      <Text style={styles.comparisonStatValue}>
-                        {data.entries[0].ai_confidence
-                          ? `${(data.entries[0].ai_confidence * 100).toFixed(0)}%`
-                          : 'N/A'}
-                      </Text>
-                    </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Score</Text>
-                      <Text style={styles.comparisonStatValue}>
-                        {data.entries[0].severity_score ?? 0}
-                      </Text>
-                    </View>
-                  </View>
+                        <ImageWithFallback
+                          key={`latest-${latestEntry.id}`}
+                          primaryUrl={latestEntry.photo_url ? `${getApiBaseUrl()}${latestEntry.photo_url}` : null}
+                          fallbackUrl={latestEntry.highlighted_photo_url ? `${getApiBaseUrl()}${latestEntry.highlighted_photo_url}` : null}
+                          style={styles.comparisonImage}
+                          resizeMode="cover"
+                          onError={(e) => {
+                            console.error('❌ Failed to load latest scan image:', e);
+                            console.error('   Entry ID:', latestEntry.id);
+                          }}
+                          onLoad={() => {
+                            console.log('✅ Latest scan image loaded successfully');
+                            console.log('   Entry ID:', latestEntry.id);
+                          }}
+                        />
+                        <View style={styles.comparisonStats}>
+                          <View style={styles.comparisonStat}>
+                            <Text style={styles.comparisonStatLabel} numberOfLines={1}>Severity</Text>
+                            <View
+                              style={[
+                                styles.comparisonSeverityBadge,
+                                { backgroundColor: getSeverityColor(latestEntry.severity_score) },
+                              ]}
+                            >
+                              <Text 
+                                style={styles.comparisonSeverityText} 
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.7}
+                              >
+                                {getSeverityLabel(latestEntry.severity)}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.comparisonStat}>
+                            <Text style={styles.comparisonStatLabel} numberOfLines={1}>Confidence</Text>
+                            <Text style={styles.comparisonStatValue} numberOfLines={1}>
+                              {latestEntry.ai_confidence
+                                ? `${(latestEntry.ai_confidence * 100).toFixed(0)}%`
+                                : 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={styles.comparisonStat}>
+                            <Text style={styles.comparisonStatLabel} numberOfLines={1}>Score</Text>
+                            <Text style={styles.comparisonStatValue} numberOfLines={1}>
+                              {latestEntry.severity_score ?? 0}
+                            </Text>
+                          </View>
+                        </View>
+                      </>
+                    );
+                  })()}
                 </View>
               </View>
 
               {/* Improvement Summary */}
               {(() => {
                 const firstEntry = data.entries[data.entries.length - 1];
-                const latestEntry = data.entries[0];
+                // If exactly 2 entries, use the second one (index 1), otherwise use the newest (index 0)
+                const latestEntryIndex = data.entries.length === 2 ? 1 : 0;
+                const latestEntry = data.entries[latestEntryIndex];
                 const severityChange = (latestEntry.severity_score ?? 0) - (firstEntry.severity_score ?? 0);
                 const confidenceChange = (latestEntry.ai_confidence ?? 0) - (firstEntry.ai_confidence ?? 0);
                 const isImproving = severityChange < 0;
@@ -883,11 +1092,12 @@ export default function TimeLapseViewScreen() {
               </View>
               {isPlaying && data.entries[currentPlayIndex] && (
                 <View style={styles.playbackImageContainer}>
-                  <Image
-                    source={{
-                      uri: `${getApiBaseUrl()}${data.entries[currentPlayIndex].photo_url}`,
-                    }}
+                  <ImageWithFallback
+                    key={`playback-${data.entries[currentPlayIndex].id}`}
+                    primaryUrl={data.entries[currentPlayIndex].photo_url ? `${getApiBaseUrl()}${data.entries[currentPlayIndex].photo_url}` : null}
+                    fallbackUrl={data.entries[currentPlayIndex].highlighted_photo_url ? `${getApiBaseUrl()}${data.entries[currentPlayIndex].highlighted_photo_url}` : null}
                     style={styles.playbackImage}
+                    resizeMode="cover"
                   />
                   <View style={styles.playbackOverlay}>
                     <Text style={styles.playbackDate}>
@@ -925,14 +1135,14 @@ export default function TimeLapseViewScreen() {
               activeOpacity={0.8}
             >
               <View style={styles.timelineCard}>
-                <Image
-                  source={{ 
-                    uri: `${getApiBaseUrl()}${entry.photo_url}`,
-                    cache: 'force-cache'
-                  }}
+                <ImageWithFallback
+                  key={`timeline-${entry.id}`}
+                  primaryUrl={entry.photo_url ? `${getApiBaseUrl()}${entry.photo_url}` : null}
+                  fallbackUrl={entry.highlighted_photo_url ? `${getApiBaseUrl()}${entry.highlighted_photo_url}` : null}
                   style={styles.timelineImage}
+                  resizeMode="cover"
                   onError={(e) => {
-                    console.error(`❌ Failed to load timeline image for entry ${entry.id}:`, e.nativeEvent.error);
+                    console.error(`❌ Failed to load timeline image for entry ${entry.id}:`, e);
                   }}
                 />
                 <View style={styles.timelineContent}>
@@ -1020,10 +1230,10 @@ export default function TimeLapseViewScreen() {
               >
                 <Text style={styles.modalCloseText}>✕</Text>
               </TouchableOpacity>
-              <Image
-                source={{
-                  uri: `${getApiBaseUrl()}${selectedEntry.highlighted_photo_url || selectedEntry.photo_url}`,
-                }}
+              <ImageWithFallback
+                key={`modal-${selectedEntry.id}`}
+                primaryUrl={selectedEntry.highlighted_photo_url ? `${getApiBaseUrl()}${selectedEntry.highlighted_photo_url}` : null}
+                fallbackUrl={selectedEntry.photo_url ? `${getApiBaseUrl()}${selectedEntry.photo_url}` : null}
                 style={styles.modalImage}
                 resizeMode="contain"
               />
@@ -1104,29 +1314,78 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.xl,
     marginBottom: spacing.lg,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.1)',
   },
   backButton: {
     position: 'absolute',
     top: 60,
     left: spacing.base,
     zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  backButtonGradient: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerContent: {
     alignItems: 'center',
     marginTop: spacing.base,
-    gap: spacing.sm,
+    gap: spacing.md,
+    zIndex: 1,
+  },
+  sparkleContainer: {
+    position: 'relative',
+    marginBottom: spacing.xs,
+  },
+  sparkleGlow: {
+    position: 'absolute',
+    top: -8,
+    left: -8,
+    right: -8,
+    bottom: -8,
+    backgroundColor: 'rgba(255, 215, 0, 0.3)',
+    borderRadius: 20,
+    opacity: 0.6,
   },
   headerTitle: {
     fontSize: typography.fontSize['3xl'],
     fontWeight: typography.fontWeight.bold as any,
     color: 'white',
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+    letterSpacing: 0.5,
+  },
+  headerBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    marginTop: spacing.xs,
+  },
+  headerBadgeText: {
+    fontSize: typography.fontSize.sm,
+    color: 'white',
+    fontWeight: typography.fontWeight.semibold as any,
+    textTransform: 'capitalize',
   },
   headerSubtitle: {
     fontSize: typography.fontSize.base,
@@ -1138,30 +1397,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     marginBottom: spacing.lg,
     gap: spacing.md,
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
   },
   statCard: {
     flex: 1,
-    minWidth: statCardWidth,
+    minWidth: 0,
+    maxWidth: statCardWidth,
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
-    ...shadows.lg,
+    ...shadows.xl,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   statCardGradient: {
-    padding: spacing.lg,
+    padding: spacing.md,
     alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 120,
+    gap: spacing.xs,
+    minHeight: 110,
+    maxHeight: 120,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  statIconContainer: {
+    position: 'relative',
+    marginBottom: spacing.xs,
+  },
+  statIconGlow: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    opacity: 0.5,
   },
   statValue: {
-    fontSize: isSmallScreen ? typography.fontSize.xl : typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold as any,
+    fontSize: isSmallScreen ? typography.fontSize.base : typography.fontSize.lg,
+    fontWeight: typography.fontWeight.extrabold as any,
     color: 'white',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    maxWidth: '100%',
+    paddingHorizontal: spacing.xs,
   },
   statLabel: {
     fontSize: typography.fontSize.sm,
     color: 'rgba(255,255,255,0.95)',
     textAlign: 'center',
-    fontWeight: typography.fontWeight.medium as any,
+    fontWeight: typography.fontWeight.semibold as any,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   additionalStatsContainer: {
     flexDirection: 'row',
@@ -1174,13 +1464,15 @@ const styles = StyleSheet.create({
     width: additionalStatCardWidth,
     minWidth: isSmallScreen ? (width - spacing.base * 2 - spacing.sm) / 2 : additionalStatCardWidth,
     backgroundColor: colors.bg.primary,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
     alignItems: 'center',
     gap: spacing.sm,
-    ...shadows.md,
-    borderWidth: 1,
+    ...shadows.lg,
+    borderWidth: 1.5,
     borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   additionalStatValue: {
     fontSize: typography.fontSize.xl,
@@ -1234,11 +1526,13 @@ const styles = StyleSheet.create({
   },
   chartCard: {
     backgroundColor: colors.bg.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    ...shadows.lg,
-    borderWidth: 1,
+    borderRadius: borderRadius['2xl'],
+    padding: spacing.xl,
+    ...shadows.xl,
+    borderWidth: 1.5,
     borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   chartHeader: {
     flexDirection: 'row',
@@ -1392,16 +1686,20 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
     gap: spacing.lg,
-    ...shadows.md,
-    borderWidth: 1,
+    ...shadows.lg,
+    borderWidth: 1.5,
     borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   timelineImage: {
-    width: isSmallScreen ? 90 : 100,
-    height: isSmallScreen ? 90 : 100,
-    borderRadius: borderRadius.lg,
+    width: isSmallScreen ? 95 : 105,
+    height: isSmallScreen ? 95 : 105,
+    borderRadius: borderRadius.xl,
     backgroundColor: colors.bg.tertiary,
-    ...shadows.sm,
+    ...shadows.md,
+    borderWidth: 1.5,
+    borderColor: colors.border.light,
   },
   timelineContent: {
     flex: 1,
@@ -1457,12 +1755,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: spacing.xl,
     right: spacing.lg,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     overflow: 'hidden',
-    ...shadows.xl,
+    ...shadows['2xl'],
     zIndex: 10,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   uploadFABGradient: {
     width: '100%',
@@ -1602,86 +1902,124 @@ const styles = StyleSheet.create({
   },
   comparisonCard: {
     backgroundColor: colors.bg.primary,
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius['2xl'],
     padding: spacing.lg,
-    ...shadows.lg,
-    borderWidth: 1,
+    ...shadows.xl,
+    borderWidth: 1.5,
     borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   comparisonRow: {
     flexDirection: isSmallScreen ? 'column' : 'row',
-    alignItems: 'center',
-    gap: spacing.lg,
+    alignItems: isSmallScreen ? 'stretch' : 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
     marginBottom: spacing.base,
+    width: '100%',
   },
   comparisonItem: {
     flex: 1,
-    alignItems: 'center',
-    width: isSmallScreen ? '100%' : 'auto',
+    alignItems: 'stretch',
+    minWidth: isSmallScreen ? '100%' : 120,
+    maxWidth: isSmallScreen ? '100%' : '45%',
     padding: spacing.md,
     backgroundColor: colors.bg.secondary,
-    borderRadius: borderRadius.lg,
-    ...shadows.sm,
+    borderRadius: borderRadius.xl,
+    ...shadows.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   comparisonLabel: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.bold as any,
     color: colors.text.primary,
     marginBottom: spacing.xs,
+    textAlign: 'center',
+    width: '100%',
   },
   comparisonDate: {
     fontSize: typography.fontSize.sm,
     color: colors.text.secondary,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     fontWeight: typography.fontWeight.medium as any,
+    textAlign: 'center',
+    width: '100%',
   },
   comparisonImage: {
-    width: isSmallScreen ? 120 : 110,
-    height: isSmallScreen ? 120 : 110,
+    width: isSmallScreen ? Math.min(100, width * 0.3) : Math.min(110, (width - spacing.base * 4) * 0.35),
+    height: isSmallScreen ? Math.min(100, width * 0.3) : Math.min(110, (width - spacing.base * 4) * 0.35),
     borderRadius: borderRadius.lg,
     backgroundColor: colors.bg.tertiary,
-    marginBottom: spacing.md,
-    ...shadows.sm,
+    marginBottom: spacing.sm,
+    ...shadows.md,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 197, 94, 0.2)',
+    alignSelf: 'center',
   },
   comparisonStats: {
     width: '100%',
     gap: spacing.sm,
     paddingTop: spacing.sm,
+    maxWidth: '100%',
   },
   comparisonStat: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
     backgroundColor: colors.bg.primary,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border.light,
+    minHeight: 36,
+    width: '100%',
+    gap: spacing.xs,
+    overflow: 'hidden',
   },
   comparisonStatLabel: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     color: colors.text.secondary,
     fontWeight: typography.fontWeight.medium as any,
+    flexShrink: 0,
+    width: 55,
   },
   comparisonStatValue: {
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.bold as any,
     color: colors.text.primary,
+    flexShrink: 0,
+    textAlign: 'right',
+    minWidth: 35,
   },
   comparisonSeverityBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: borderRadius.sm,
+    minWidth: 50,
+    maxWidth: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    flex: 1,
+    overflow: 'hidden',
   },
   comparisonSeverityText: {
-    fontSize: typography.fontSize.xs,
+    fontSize: 11,
     fontWeight: typography.fontWeight.semibold as any,
     color: 'white',
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   comparisonArrow: {
     padding: spacing.sm,
     transform: [{ rotate: isSmallScreen ? '90deg' : '0deg' }],
+    alignSelf: isSmallScreen ? 'center' : 'center',
+    marginVertical: isSmallScreen ? spacing.sm : 0,
   },
   improvementCard: {
     marginTop: spacing.lg,

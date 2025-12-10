@@ -36,14 +36,14 @@ const Animated = {
 // Fallback animation helpers (no-op for now, can add RN Animated later if needed)
 const useSharedValue = (initial: number) => ({ value: initial });
 const useAnimatedStyle = (fn: () => any) => ({});
-const withSpring = (value: any) => value;
-const withTiming = (value: any) => value;
-const withRepeat = (value: any) => value;
+const withSpring = (value: any, _config?: any) => value;
+const withTiming = (value: any, _config?: any) => value;
+const withRepeat = (value: any, _count?: number, _reverse?: boolean) => value;
 const withSequence = (...args: any[]) => args[0];
-const FadeIn = { duration: () => ({}) };
-const FadeOut = { duration: () => ({}) };
-const SlideInDown = { delay: () => ({}) };
-const ZoomIn = { springify: () => ({}), delay: () => ({}) };
+const FadeIn = { duration: (_duration?: number) => ({}) };
+const FadeOut = { duration: (_duration?: number) => ({}) };
+const SlideInDown = { delay: (_delay?: number) => ({}) };
+const ZoomIn = { springify: (_springify?: boolean) => ({}), delay: (_delay?: number) => ({}) };
 
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -577,21 +577,33 @@ export default function TimeLapseUploadScreen() {
     <View style={styles.container}>
       {/* Header with Green Gradient */}
       <LinearGradient
-        colors={['#22C55E', '#16A34A']}
+        colors={[colors.primary, colors.primaryDark, '#15803D']}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
+        <View style={styles.headerOverlay} />
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
+          activeOpacity={0.8}
         >
-          <ArrowLeft size={24} color="white" />
+          <LinearGradient
+            colors={['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.15)']}
+            style={styles.backButtonGradient}
+          >
+            <ArrowLeft size={22} color="white" />
+          </LinearGradient>
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Sparkles size={28} color="#FFD700" />
+          <View style={styles.sparkleContainer}>
+            <Sparkles size={32} color="#FFD700" />
+            <View style={styles.sparkleGlow} />
+          </View>
           <Text style={styles.title}>Smart TimeLapse</Text>
-          <Text style={styles.subtitle}>Track disease progression over time</Text>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>Track disease progression over time</Text>
+          </View>
         </View>
       </LinearGradient>
 
@@ -978,29 +990,77 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.xl,
     marginBottom: spacing.lg,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.1)',
   },
   backButton: {
     position: 'absolute',
     top: 60,
     left: spacing.base,
     zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  backButtonGradient: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerContent: {
     alignItems: 'center',
     marginTop: spacing.base,
-    gap: spacing.sm,
+    gap: spacing.md,
+    zIndex: 1,
+  },
+  sparkleContainer: {
+    position: 'relative',
+    marginBottom: spacing.xs,
+  },
+  sparkleGlow: {
+    position: 'absolute',
+    top: -8,
+    left: -8,
+    right: -8,
+    bottom: -8,
+    backgroundColor: 'rgba(255, 215, 0, 0.3)',
+    borderRadius: 20,
+    opacity: 0.6,
   },
   title: {
     fontSize: typography.fontSize['3xl'],
     fontWeight: '700' as const,
     color: 'white',
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+    letterSpacing: 0.5,
+  },
+  headerBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    marginTop: spacing.xs,
+  },
+  headerBadgeText: {
+    fontSize: typography.fontSize.sm,
+    color: 'white',
+    fontWeight: typography.fontWeight.semibold as any,
   },
   subtitle: {
     fontSize: typography.fontSize.base,
@@ -1039,9 +1099,13 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.bg.primary,
-    borderRadius: borderRadius.lg,
-    padding: spacing.base,
-    ...shadows.md,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    ...shadows.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   cropScroll: {
     marginHorizontal: -spacing.base,
@@ -1049,17 +1113,20 @@ const styles = StyleSheet.create({
   },
   cropCard: {
     marginRight: spacing.md,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     backgroundColor: colors.bg.primary,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: colors.border.light,
-    minWidth: 140,
+    minWidth: 150,
     position: 'relative',
-    ...shadows.sm,
+    ...shadows.md,
+    overflow: 'hidden',
   },
   cropCardSelected: {
     borderColor: colors.primary,
-    ...shadows.lg,
+    borderWidth: 3,
+    ...shadows.xl,
+    backgroundColor: colors.primaryBg,
   },
   cropCardTouchable: {
     flex: 1,
@@ -1196,10 +1263,13 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   selectedImage: {
-    width: 120,
-    height: 120,
-    borderRadius: borderRadius.md,
+    width: 130,
+    height: 130,
+    borderRadius: borderRadius.xl,
     backgroundColor: colors.bg.tertiary,
+    borderWidth: 2,
+    borderColor: colors.border.light,
+    ...shadows.md,
   },
   removeImageButton: {
     position: 'absolute',
@@ -1220,11 +1290,14 @@ const styles = StyleSheet.create({
   },
   detectionCard: {
     overflow: 'hidden',
+    borderRadius: borderRadius.xl,
+    ...shadows.xl,
   },
   detectionGradient: {
-    padding: spacing.xl,
+    padding: spacing['2xl'],
     alignItems: 'center',
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
+    position: 'relative',
   },
   detectionTitle: {
     fontSize: typography.fontSize.xl,
@@ -1261,9 +1334,11 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   uploadButton: {
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
     overflow: 'hidden',
-    ...shadows.lg,
+    ...shadows.xl,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   uploadButtonDisabled: {
     opacity: 0.6,
@@ -1333,11 +1408,15 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: colors.bg.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
+    borderRadius: borderRadius['2xl'],
+    padding: spacing['2xl'],
     width: '100%',
     maxWidth: 400,
     ...shadows['2xl'],
+    borderWidth: 1.5,
+    borderColor: colors.border.light,
+    position: 'relative',
+    overflow: 'hidden',
   },
   modalTitle: {
     fontSize: typography.fontSize['2xl'],
