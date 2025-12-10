@@ -207,7 +207,7 @@ export function LocationPickerModal({
             <Marker
               coordinate={markerCoordinate}
               draggable
-              onDragEnd={(e) => handleMapPress({ nativeEvent: e })}
+              onDragEnd={(e: any) => handleMapPress({ nativeEvent: e })}
             >
               <View style={styles.markerContainer}>
                 <MapPin color="#EF4444" size={32} fill="#EF4444" />

@@ -101,7 +101,7 @@ export default function WeatherScreen() {
     return Cloud;
   };
 
-  const getWeatherColor = (main: string) => {
+  const getWeatherColor = (main: string): [string, string] => {
     switch (main) {
       case 'Clear': return ['#FFD700', '#FFA500'];
       case 'Clouds': return ['#87CEEB', '#4682B4'];

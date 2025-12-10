@@ -26,7 +26,8 @@ class OutbreakAlert(Base):
     __tablename__ = 'OutbreakAlerts'
 
     alert_id = Column(String(50), primary_key=True)
-    disease_id = Column(String(50), nullable=False)
+    disease_id = Column(String(50), nullable=True)
+    disease_name = Column(String(120), nullable=False)  # Store actual disease name
     created_at = Column(DateTime, server_default=func.current_timestamp())
     status = Column(String(20), nullable=False, default='pending')
     center_lat = Column(Float, nullable=False)

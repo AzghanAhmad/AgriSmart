@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,289 +7,198 @@ import {
   StyleSheet,
   TextInput,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { Search, Filter, Users, MapPin, Phone, Mail, MoveVertical as MoreVertical, CircleCheck as CheckCircle, X } from 'lucide-react-native';
+import { Search, Users, MapPin, Phone, Mail, MoveVertical as MoreVertical, CircleCheck as CheckCircle, X } from 'lucide-react-native';
+import { apiGet } from '@/utils/api';
 
 interface Farmer {
   id: string;
   name: string;
   email: string;
-  phone: string;
-  location: string;
-  cropTypes: string[];
-  farmSize: string;
-  registrationDate: string;
-  status: 'active' | 'pending' | 'suspended';
-  totalReports: number;
+  phone: string | null;
+  location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  registrationDate: string | null;
 }
 
 export default function FarmersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [farmers, setFarmers] = useState<Farmer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const mockFarmers: Farmer[] = [
-    {
-      id: '1',
-      name: 'Ahmad Khan',
-      email: 'ahmad.khan@example.com',
-      phone: '+92-300-123456',
-      location: 'Punjab, Lahore',
-      cropTypes: ['Wheat', 'Rice'],
-      farmSize: '12.5 acres',
-      registrationDate: '2024-01-10',
-      status: 'active',
-      totalReports: 15
-    },
-    {
-      id: '2',
-      name: 'Muhammad Ali',
-      email: 'ali.farmer@example.com',
-      phone: '+92-301-234567',
-      location: 'Sindh, Karachi',
-      cropTypes: ['Cotton', 'Sugarcane'],
-      farmSize: '8.2 acres',
-      registrationDate: '2024-01-12',
-      status: 'pending',
-      totalReports: 3
-    },
-    {
-      id: '3',
-      name: 'Fatima Bibi',
-      email: 'fatima.b@example.com',
-      phone: '+92-302-345678',
-      location: 'Punjab, Multan',
-      cropTypes: ['Wheat', 'Cotton', 'Rice'],
-      farmSize: '15.7 acres',
-      registrationDate: '2024-01-08',
-      status: 'active',
-      totalReports: 22
-    },
-    {
-      id: '4',
-      name: 'Hassan Sheikh',
-      email: 'hassan.sheikh@example.com',
-      phone: '+92-303-456789',
-      location: 'KPK, Peshawar',
-      cropTypes: ['Corn', 'Wheat'],
-      farmSize: '6.3 acres',
-      registrationDate: '2024-01-15',
-      status: 'suspended',
-      totalReports: 8
-    }
-  ];
-
-  const filters = [
-    { id: 'all', label: 'All Farmers' },
-    { id: 'active', label: 'Active' },
-    { id: 'pending', label: 'Pending' },
-    { id: 'suspended', label: 'Suspended' }
-  ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return '#22C55E';
-      case 'pending': return '#F59E0B';
-      case 'suspended': return '#EF4444';
-      default: return '#6B7280';
+  // Fetch farmers from API
+  const fetchFarmers = async () => {
+    try {
+      setError(null);
+      const response = await apiGet<{ total: number; items: Farmer[] }>('/api/admin/farmers');
+      setFarmers(response.items || []);
+    } catch (err: any) {
+      console.error('Error fetching farmers:', err);
+      setError(err.message || 'Failed to fetch farmers');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getStatusBgColor = (status: string) => {
-    switch (status) {
-      case 'active': return '#F0FDF4';
-      case 'pending': return '#FFFBEB';
-      case 'suspended': return '#FEF2F2';
-      default: return '#F3F4F6';
-    }
+  useEffect(() => {
+    fetchFarmers();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchFarmers();
   };
 
-  const filteredFarmers = mockFarmers.filter(farmer => {
-    const matchesSearch = farmer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         farmer.location.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || farmer.status === selectedFilter;
-    return matchesSearch && matchesFilter;
+  // Filter farmers by search
+  const filteredFarmers = farmers.filter(farmer => {
+    const matchesSearch = 
+      farmer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (farmer.location?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+      (farmer.email?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+    return matchesSearch;
   });
 
-  const handleApprove = (farmerId: string) => {
-    Alert.alert(
-      'Approve Farmer',
-      'Are you sure you want to approve this farmer?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Approve', onPress: () => console.log('Approved:', farmerId) }
-      ]
-    );
+  // Get formatted location
+  const getLocationDisplay = (farmer: Farmer) => {
+    if (farmer.location) {
+      return farmer.location;
+    }
+    if (farmer.latitude && farmer.longitude) {
+      return `${farmer.latitude.toFixed(4)}, ${farmer.longitude.toFixed(4)}`;
+    }
+    return 'Location not set';
   };
-
-  const handleSuspend = (farmerId: string) => {
-    Alert.alert(
-      'Suspend Farmer',
-      'Are you sure you want to suspend this farmer?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Suspend', style: 'destructive', onPress: () => console.log('Suspended:', farmerId) }
-      ]
-    );
-  };
-
-  const statsData = [
-    { label: 'Total Farmers', value: mockFarmers.length.toString(), color: '#22C55E' },
-    { label: 'Active', value: mockFarmers.filter(f => f.status === 'active').length.toString(), color: '#10B981' },
-    { label: 'Pending', value: mockFarmers.filter(f => f.status === 'pending').length.toString(), color: '#F59E0B' },
-    { label: 'Suspended', value: mockFarmers.filter(f => f.status === 'suspended').length.toString(), color: '#EF4444' }
-  ];
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Farmer Management</Text>
-        <TouchableOpacity style={styles.addButton}>
-          <Text style={styles.addButtonText}>Add Farmer</Text>
-        </TouchableOpacity>
+        <Text style={styles.title}>Farmers</Text>
+        <View style={styles.headerBadge}>
+          <Text style={styles.headerBadgeText}>{farmers.length} Total</Text>
+        </View>
       </View>
 
-      {/* Stats */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
-        {statsData.map((stat, index) => (
-          <View key={index} style={styles.statCard}>
-            <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
-          </View>
-        ))}
-      </ScrollView>
-
-      {/* Search and Filter */}
+      {/* Search */}
       <View style={styles.searchSection}>
         <View style={styles.searchContainer}>
           <Search color="#6B7280" size={20} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search farmers..."
+            placeholder="Search by name, location, or email..."
             value={searchQuery}
             onChangeText={setSearchQuery}
+            placeholderTextColor="#9CA3AF"
           />
-        </View>
-        
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterButton,
-                selectedFilter === filter.id && styles.activeFilterButton
-              ]}
-              onPress={() => setSelectedFilter(filter.id)}
-            >
-              <Text style={[
-                styles.filterText,
-                selectedFilter === filter.id && styles.activeFilterText
-              ]}>
-                {filter.label}
-              </Text>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <X color="#6B7280" size={18} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          )}
+        </View>
       </View>
 
-      {/* Farmers List */}
-      <ScrollView style={styles.farmersList} contentContainerStyle={styles.farmersContent}>
-        {filteredFarmers.map((farmer) => (
-          <View key={farmer.id} style={styles.farmerCard}>
-            <View style={styles.farmerHeader}>
-              <View style={styles.farmerInfo}>
-                <Text style={styles.farmerName}>{farmer.name}</Text>
-                <View style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor: getStatusBgColor(farmer.status),
-                    borderColor: getStatusColor(farmer.status)
-                  }
-                ]}>
-                  <Text style={[styles.statusText, { color: getStatusColor(farmer.status) }]}>
-                    {farmer.status.charAt(0).toUpperCase() + farmer.status.slice(1)}
+      {/* Error State */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={fetchFarmers}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Loading State */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#22C55E" />
+          <Text style={styles.loadingText}>Loading farmers...</Text>
+        </View>
+      ) : (
+        /* Farmers List */
+        <ScrollView 
+          style={styles.farmersList} 
+          contentContainerStyle={styles.farmersContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#22C55E']}
+              tintColor="#22C55E"
+            />
+          }
+        >
+          {filteredFarmers.map((farmer) => (
+            <View key={farmer.id} style={styles.farmerCard}>
+              {/* Avatar and Name */}
+              <View style={styles.farmerHeader}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {farmer.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.farmerInfo}>
+                  <Text style={styles.farmerName}>{farmer.name}</Text>
+                  <Text style={styles.farmerDate}>
+                    Joined: {farmer.registrationDate 
+                      ? new Date(farmer.registrationDate).toLocaleDateString() 
+                      : 'Unknown'}
                   </Text>
                 </View>
               </View>
-              
-              <TouchableOpacity style={styles.menuButton}>
-                <MoreVertical color="#6B7280" size={20} />
-              </TouchableOpacity>
+
+              {/* Details */}
+              <View style={styles.farmerDetails}>
+                {farmer.email && (
+                  <View style={styles.detailRow}>
+                    <Mail color="#6B7280" size={16} />
+                    <Text style={styles.detailText}>{farmer.email}</Text>
+                  </View>
+                )}
+                {farmer.phone && (
+                  <View style={styles.detailRow}>
+                    <Phone color="#6B7280" size={16} />
+                    <Text style={styles.detailText}>{farmer.phone}</Text>
+                  </View>
+                )}
+                <View style={styles.detailRow}>
+                  <MapPin color="#22C55E" size={16} />
+                  <Text style={[styles.detailText, styles.locationText]}>
+                    {getLocationDisplay(farmer)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Coordinates if available */}
+              {farmer.latitude && farmer.longitude && (
+                <View style={styles.coordinatesContainer}>
+                  <Text style={styles.coordinatesLabel}>Coordinates:</Text>
+                  <Text style={styles.coordinatesValue}>
+                    {farmer.latitude.toFixed(6)}, {farmer.longitude.toFixed(6)}
+                  </Text>
+                </View>
+              )}
             </View>
+          ))}
 
-            <View style={styles.farmerDetails}>
-              <View style={styles.detailRow}>
-                <Mail color="#6B7280" size={16} />
-                <Text style={styles.detailText}>{farmer.email}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Phone color="#6B7280" size={16} />
-                <Text style={styles.detailText}>{farmer.phone}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <MapPin color="#6B7280" size={16} />
-                <Text style={styles.detailText}>{farmer.location}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Users color="#6B7280" size={16} />
-                <Text style={styles.detailText}>{farmer.farmSize} • {farmer.cropTypes.join(', ')}</Text>
-              </View>
+          {filteredFarmers.length === 0 && !loading && (
+            <View style={styles.emptyState}>
+              <Users color="#6B7280" size={48} />
+              <Text style={styles.emptyTitle}>No farmers found</Text>
+              <Text style={styles.emptyText}>
+                {searchQuery 
+                  ? 'Try adjusting your search terms' 
+                  : 'No farmers have registered yet'}
+              </Text>
             </View>
-
-            <View style={styles.farmerStats}>
-              <View style={styles.statItem}>
-                <Text style={styles.statItemValue}>{farmer.totalReports}</Text>
-                <Text style={styles.statItemLabel}>Reports</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statItemValue}>
-                  {new Date(farmer.registrationDate).toLocaleDateString()}
-                </Text>
-                <Text style={styles.statItemLabel}>Registered</Text>
-              </View>
-            </View>
-
-            {farmer.status === 'pending' && (
-              <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                  style={styles.approveButton}
-                  onPress={() => handleApprove(farmer.id)}
-                >
-                  <CheckCircle color="white" size={16} />
-                  <Text style={styles.approveButtonText}>Approve</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.rejectButton}
-                  onPress={() => handleSuspend(farmer.id)}
-                >
-                  <X color="white" size={16} />
-                  <Text style={styles.rejectButtonText}>Reject</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {farmer.status === 'active' && (
-              <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                  style={styles.suspendButton}
-                  onPress={() => handleSuspend(farmer.id)}
-                >
-                  <Text style={styles.suspendButtonText}>Suspend</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        ))}
-
-        {filteredFarmers.length === 0 && (
-          <View style={styles.emptyState}>
-            <Users color="#6B7280" size={48} />
-            <Text style={styles.emptyTitle}>No farmers found</Text>
-            <Text style={styles.emptyText}>
-              {searchQuery ? 'Try adjusting your search terms' : 'No farmers match the selected filter'}
-            </Text>
-          </View>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -314,48 +223,32 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111827',
   },
-  addButton: {
-    backgroundColor: '#22C55E',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+  headerBadge: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#22C55E',
   },
-  addButtonText: {
-    color: 'white',
-    fontWeight: '500',
-  },
-  statsScroll: {
-    backgroundColor: 'white',
-    paddingVertical: 16,
-  },
-  statCard: {
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    marginLeft: 16,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+  headerBadgeText: {
+    color: '#22C55E',
+    fontWeight: '600',
+    fontSize: 14,
   },
   searchSection: {
     padding: 16,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    gap: 12,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     gap: 8,
   },
   searchInput: {
@@ -363,49 +256,75 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111827',
   },
-  filtersScroll: {
-    flexGrow: 0,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
   },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    marginRight: 8,
-  },
-  activeFilterButton: {
-    backgroundColor: '#F0FDF4',
-  },
-  filterText: {
-    fontSize: 14,
+  loadingText: {
     color: '#6B7280',
-    fontWeight: '500',
+    fontSize: 16,
   },
-  activeFilterText: {
-    color: '#22C55E',
+  errorContainer: {
+    margin: 16,
+    padding: 16,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 12,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
   farmersList: {
     flex: 1,
   },
   farmersContent: {
     padding: 16,
+    paddingBottom: 32,
   },
   farmerCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   farmerHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#22C55E',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   farmerInfo: {
     flex: 1,
@@ -414,103 +333,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  menuButton: {
-    padding: 4,
+  farmerDate: {
+    fontSize: 13,
+    color: '#9CA3AF',
   },
   farmerDetails: {
-    gap: 8,
-    marginBottom: 16,
+    gap: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   detailText: {
     fontSize: 14,
     color: '#6B7280',
     flex: 1,
   },
-  farmerStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 12,
+  locationText: {
+    color: '#22C55E',
+    fontWeight: '500',
+  },
+  coordinatesContainer: {
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    marginBottom: 12,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statItemValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  statItemLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  actionButtons: {
+    borderTopColor: '#F3F4F6',
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  approveButton: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#22C55E',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+  coordinatesLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
   },
-  approveButtonText: {
-    color: 'white',
-    fontWeight: '500',
-  },
-  rejectButton: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#EF4444',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  rejectButtonText: {
-    color: 'white',
-    fontWeight: '500',
-  },
-  suspendButton: {
-    flex: 1,
-    backgroundColor: '#F59E0B',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  suspendButtonText: {
-    color: 'white',
-    fontWeight: '500',
+  coordinatesValue: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontFamily: 'monospace',
   },
   emptyState: {
     alignItems: 'center',

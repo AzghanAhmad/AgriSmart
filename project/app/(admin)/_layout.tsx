@@ -68,6 +68,12 @@ export default function AdminTabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="heatmap"
+        options={{
+          href: null, // Hide from tab bar, but accessible via navigation
+        }}
+      />
     </Tabs>
   );
 }

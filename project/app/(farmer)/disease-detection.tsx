@@ -16,6 +16,7 @@ import { ErrorAlert } from '@/components/ErrorAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
+import * as Location from 'expo-location';
 
 import axios from 'axios';
 import { Platform } from 'react-native';
@@ -43,7 +44,67 @@ export default function DiseaseDetectionScreen() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [showError, setShowError] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const { language, cropDiseases, addRecentDetection } = useApp();
+
+  // Helper function to check if coordinates are within Pakistan bounds
+  const isInPakistan = (lat: number, lng: number): boolean => {
+    // Pakistan approximate bounds:
+    // Latitude: 23.5° N to 37.0° N
+    // Longitude: 60.0° E to 77.0° E
+    return lat >= 23.5 && lat <= 37.0 && lng >= 60.0 && lng <= 77.0;
+  };
+
+  // Get user's current location on mount
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          const lat = location.coords.latitude;
+          const lng = location.coords.longitude;
+          
+          // Check if location is within Pakistan
+          if (isInPakistan(lat, lng)) {
+            setUserLocation({ latitude: lat, longitude: lng });
+            console.log('📍 Location acquired (Pakistan):', lat, lng);
+          } else {
+            // Use user's saved location as fallback
+            if (user?.latitude && user?.longitude && isInPakistan(user.latitude, user.longitude)) {
+              setUserLocation({ latitude: user.latitude, longitude: user.longitude });
+              console.log('⚠️ GPS outside Pakistan, using saved location:', user.latitude, user.longitude);
+            } else {
+              // Default to Lahore, Pakistan if all else fails
+              setUserLocation({ latitude: 31.5204, longitude: 74.3587 });
+              console.log('⚠️ Using default Pakistan location (Lahore)');
+            }
+          }
+        } else {
+          // Use user's saved location if permission denied
+          if (user?.latitude && user?.longitude && isInPakistan(user.latitude, user.longitude)) {
+            setUserLocation({ latitude: user.latitude, longitude: user.longitude });
+            console.log('📍 Using saved location (permission denied):', user.latitude, user.longitude);
+          } else {
+            // Default to Lahore, Pakistan
+            setUserLocation({ latitude: 31.5204, longitude: 74.3587 });
+            console.log('⚠️ Using default Pakistan location (Lahore) - permission denied');
+          }
+        }
+      } catch (err) {
+        console.log('⚠️ Could not get location:', err);
+        // Use user's saved location or default to Lahore
+        if (user?.latitude && user?.longitude && isInPakistan(user.latitude, user.longitude)) {
+          setUserLocation({ latitude: user.latitude, longitude: user.longitude });
+        } else {
+          setUserLocation({ latitude: 31.5204, longitude: 74.3587 });
+          console.log('⚠️ Using default Pakistan location (Lahore) - error');
+        }
+      }
+    })();
+  }, [user]);
 
   const crops: Crop[] = [
     {
@@ -221,6 +282,15 @@ export default function DiseaseDetectionScreen() {
     formData.append('cropType', selectedCrop);
     if (user?.id) {
       formData.append('farmerId', user.id);
+    }
+    
+    // Attach location for outbreak detection
+    if (userLocation) {
+      formData.append('latitude', userLocation.latitude.toString());
+      formData.append('longitude', userLocation.longitude.toString());
+      console.log('📍 Sending location:', userLocation.latitude, userLocation.longitude);
+    } else {
+      console.log('⚠️ No location available for detection');
     }
 
     console.log('📤 Sending crop type to backend:', selectedCrop);

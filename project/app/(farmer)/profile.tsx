@@ -230,38 +230,56 @@ export default function ProfileScreen() {
           <View style={styles.sectionContent}>
             {section.items.map((item, itemIndex) => {
               const IconComponent = item.icon;
+              const hasDanger = 'danger' in item && item.danger;
+              const isSwitch = 'type' in item && item.type === 'switch';
+              const isToggle = 'type' in item && item.type === 'toggle';
+              const hasValue = 'value' in item;
+              
               return (
                 <TouchableOpacity
                   key={itemIndex}
-                  style={[styles.settingsItem, item.danger && styles.dangerItem]}
+                  style={[styles.settingsItem, hasDanger && styles.dangerItem]}
                   onPress={() => {
-                    if (item.type === 'switch') return;
-                    item.onPress?.();
+                    // Switches are handled by Switch component's onValueChange
+                    if (isSwitch) return;
+                    // For other items, call onPress if it exists and doesn't require arguments
+                    if ('onPress' in item && typeof item.onPress === 'function' && !isSwitch) {
+                      // Type guard: if it's not a switch, onPress should be () => void
+                      (item.onPress as () => void)();
+                    }
                   }}
                 >
                   <View style={styles.settingsItemLeft}>
                     <IconComponent 
-                      color={item.danger ? '#EF4444' : '#6B7280'} 
+                      color={hasDanger ? '#EF4444' : '#6B7280'} 
                       size={20} 
                     />
                     <Text style={[
                       styles.settingsLabel,
-                      item.danger && styles.dangerLabel
+                      hasDanger && styles.dangerLabel
                     ]}>
                       {item.label}
                     </Text>
                   </View>
                   
                   <View style={styles.settingsItemRight}>
-                    {item.type === 'switch' ? (
+                    {isSwitch && hasValue ? (
                       <Switch
                         value={item.value as boolean}
-                        onValueChange={item.onPress}
+                        onValueChange={(value: boolean) => {
+                          if ('onPress' in item && typeof item.onPress === 'function') {
+                            (item.onPress as (value: boolean) => void)(value);
+                          }
+                        }}
                         trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
                         thumbColor="white"
                       />
-                    ) : item.type === 'toggle' ? (
-                      <TouchableOpacity style={styles.toggleButton} onPress={item.onPress}>
+                    ) : isToggle && hasValue ? (
+                      <TouchableOpacity style={styles.toggleButton} onPress={() => {
+                        if ('onPress' in item && typeof item.onPress === 'function') {
+                          (item.onPress as () => void)();
+                        }
+                      }}>
                         <Text style={styles.toggleText}>{item.value as string}</Text>
                       </TouchableOpacity>
                     ) : (

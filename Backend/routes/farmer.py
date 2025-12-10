@@ -96,6 +96,8 @@ def create_detection():
 
             # --- Geo-based outbreak detection (inline, minimal) ---
             if disease_name != 'Healthy Crop' and latitude is not None and longitude is not None:
+                print(f"🔍 Checking for outbreak: {disease_name} at ({latitude}, {longitude})")
+                
                 # Simple haversine distance in km
                 def _haversine_km(lat1, lng1, lat2, lng2):
                     r = 6371.0
@@ -112,32 +114,77 @@ def create_detection():
 
                 two_weeks_ago = datetime.datetime.utcnow() - datetime.timedelta(days=14)
                 recent = db.query(Detection).filter(
-                    Detection.disease_name == det.disease_name,
+                    Detection.disease_name == disease_name,
                     Detection.timestamp >= two_weeks_ago,
                     Detection.latitude.isnot(None),
                     Detection.longitude.isnot(None),
                 ).all()
+                
+                print(f"📊 Found {len(recent)} recent detections of {disease_name}")
 
                 nearby = [
                     d for d in recent
                     if _haversine_km(latitude, longitude, d.latitude, d.longitude) <= 10.0
                 ]
+                
+                print(f"📍 {len(nearby)} detections within 10km radius")
 
                 if len(nearby) >= 3:
-                    alert_id = str(uuid.uuid4())
-                    alert = OutbreakAlert(
-                        alert_id=alert_id,
-                        disease_id=det.disease_id or 'unknown',
-                        status='pending',
-                        center_lat=latitude,
-                        center_lng=longitude,
-                        radius_km=10.0,
-                    )
-                    db.add(alert)
-                    for d in nearby:
-                        d.alert_generated = 'pending'
-                    det.alert_generated = 'pending'
-                    db.commit()
+                    # Check if there's already a pending/approved alert for this disease in this area
+                    existing_alert = db.query(OutbreakAlert).filter(
+                        OutbreakAlert.disease_name == disease_name,
+                        OutbreakAlert.status.in_(['pending', 'approved']),
+                    ).first()
+                    
+                    if existing_alert:
+                        # Check if existing alert is nearby (within 15km)
+                        dist_to_existing = _haversine_km(
+                            latitude, longitude, 
+                            existing_alert.center_lat, existing_alert.center_lng
+                        )
+                        if dist_to_existing <= 15.0:
+                            print(f"⚠️ Alert already exists for {disease_name} nearby (ID: {existing_alert.alert_id})")
+                            # Just update the detection's alert status
+                            det.alert_generated = 'pending'
+                            db.commit()
+                        else:
+                            # Create new alert for different location
+                            alert_id = str(uuid.uuid4())
+                            alert = OutbreakAlert(
+                                alert_id=alert_id,
+                                disease_id=det.disease_id or disease_name,  # Use disease_name as fallback
+                                disease_name=disease_name,
+                                status='pending',
+                                center_lat=latitude,
+                                center_lng=longitude,
+                                radius_km=10.0,
+                            )
+                            db.add(alert)
+                            for d in nearby:
+                                d.alert_generated = 'pending'
+                            det.alert_generated = 'pending'
+                            db.commit()
+                            print(f"🚨 NEW OUTBREAK ALERT CREATED: {alert_id} for {disease_name}")
+                    else:
+                        # No existing alert - create new one
+                        alert_id = str(uuid.uuid4())
+                        alert = OutbreakAlert(
+                            alert_id=alert_id,
+                            disease_id=det.disease_id or disease_name,  # Use disease_name as fallback
+                            disease_name=disease_name,
+                            status='pending',
+                            center_lat=latitude,
+                            center_lng=longitude,
+                            radius_km=10.0,
+                        )
+                        db.add(alert)
+                        for d in nearby:
+                            d.alert_generated = 'pending'
+                        det.alert_generated = 'pending'
+                        db.commit()
+                        print(f"🚨 NEW OUTBREAK ALERT CREATED: {alert_id} for {disease_name}")
+                else:
+                    print(f"ℹ️ Not enough detections for outbreak (need 3, have {len(nearby)})")
         finally:
             db.close()
 
