@@ -140,6 +140,72 @@ def get_weather_forecast(lat: float, lon: float, days: int = 7) -> Optional[Dict
         print(f"❌ Weather API error: {str(e)}")
         return None
 
+def check_rain_in_next_hours(lat: float, lon: float, hours: int = 3) -> Optional[bool]:
+    """Check if rain is expected in the next N hours (default 3 hours)"""
+    api_key = get_weather_api_key()
+    if not api_key:
+        return None
+    
+    try:
+        # Use One Call API to get hourly forecast
+        url = "https://api.openweathermap.org/data/2.5/onecall"
+        params = {
+            'lat': lat,
+            'lon': lon,
+            'exclude': 'current,minutely,daily,alerts',
+            'appid': api_key,
+            'units': 'metric'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Check next N hours for rain
+        hourly_forecast = data.get('hourly', [])[:hours]
+        for hour_data in hourly_forecast:
+            weather_main = hour_data.get('weather', [{}])[0].get('main', '')
+            # Check if rain is expected
+            if weather_main in ['Rain', 'Drizzle', 'Thunderstorm']:
+                return True
+            # Also check precipitation probability
+            if hour_data.get('pop', 0) > 0.5:  # Probability of precipitation > 50%
+                return True
+        
+        return False
+    except Exception as e:
+        print(f"⚠️ Error checking hourly forecast: {str(e)}")
+        # Fallback: use 5-day/3-hour forecast API
+        try:
+            url = f"https://api.openweathermap.org/data/2.5/forecast"
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'appid': api_key,
+                'units': 'metric'
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Check next 3 forecast periods (each is 3 hours, so 3 periods = ~9 hours)
+            # But we only need to check first 1-2 periods for 2-3 hours
+            forecast_items = data.get('list', [])[:2]  # First 2 periods = 6 hours max
+            
+            for item in forecast_items:
+                weather_main = item.get('weather', [{}])[0].get('main', '')
+                if weather_main in ['Rain', 'Drizzle', 'Thunderstorm']:
+                    return True
+                # Check if there's rain data
+                if item.get('rain', {}).get('3h', 0) > 0:
+                    return True
+            
+            return False
+        except Exception as fallback_error:
+            print(f"⚠️ Fallback hourly forecast check failed: {str(fallback_error)}")
+            return None
+
 def get_weather_recommendations(forecast: Dict) -> List[str]:
     """Generate farming recommendations based on weather forecast"""
     recommendations = []

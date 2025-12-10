@@ -127,9 +127,9 @@ export default function FarmerHomeScreen() {
 
   // Dynamic crop health data from backend
   const cropHealthData = [
-    { name: 'Healthy', population: healthData.healthy, color: '#22C55E', legendFontColor: '#16A34A', legendFontSize: 13 },
-    { name: 'At Risk', population: healthData.atRisk, color: '#F59E0B', legendFontColor: '#D97706', legendFontSize: 13 },
-    { name: 'Diseased', population: healthData.diseased, color: '#EF4444', legendFontColor: '#DC2626', legendFontSize: 13 },
+    { name: 'Healthy', population: healthData.healthy, color: '#22C55E', legendFontColor: '#16A34A', legendFontSize: 18 },
+    { name: 'At Risk', population: healthData.atRisk, color: '#F59E0B', legendFontColor: '#D97706', legendFontSize: 18 },
+    { name: 'Diseased', population: healthData.diseased, color: '#EF4444', legendFontColor: '#DC2626', legendFontSize: 18 },
   ];
 
   // Dynamic disease incidence data
@@ -399,9 +399,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: 18,
     color: colors.text.secondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   loadingContainer: {
     height: 220,
