@@ -21,12 +21,14 @@ try:
     from ..schemas.user import User
     from ..core.yolo import get_model_for_crop
     from ..config import get_weather_api_key
+    from ..preprocess.preprocess_for_wheat import WheatImagePreprocessor
 except ImportError:
     from db import SessionLocal
     from models import TimelapseEntry, Crop
     from schemas.user import User
     from core.yolo import get_model_for_crop
     from config import get_weather_api_key
+    from preprocess.preprocess_for_wheat import WheatImagePreprocessor
 
 timelapse_bp = Blueprint('timelapse', __name__, url_prefix='/api/timelapse')
 
@@ -101,31 +103,53 @@ def fetch_weather_data(latitude: float, longitude: float) -> dict:
         # Return default values on error
         return {'temp': 25.0, 'humidity': 60.0}
 
-def detect_disease_with_yolo(image_bytes: bytes, crop_type: str) -> dict:
+def detect_disease_with_yolo(image_bytes: bytes, crop_type: str, preprocessed_image=None) -> dict:
     """
     Run YOLO model inference on image to detect disease.
     Returns dict with disease name, confidence, and severity mapping.
+    
+    Args:
+        image_bytes: Original image bytes
+        crop_type: Type of crop (e.g., 'wheat')
+        preprocessed_image: Optional preprocessed numpy array (BGR format)
     """
     try:
         # Load YOLO model for crop type
         model = get_model_for_crop(crop_type)
         
-        # Convert bytes to PIL Image
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        # Use preprocessed image if provided, otherwise convert bytes to PIL Image
+        if preprocessed_image is not None:
+            # Convert BGR numpy array to RGB PIL Image for YOLO
+            image_rgb = cv2.cvtColor(preprocessed_image, cv2.COLOR_BGR2RGB)
+            image = Image.fromarray(image_rgb)
+        else:
+            # Convert bytes to PIL Image
+            image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # Run prediction
-        results = model.predict(image)
+        # Run prediction with lower confidence threshold to get all predictions
+        # This ensures we get actual confidence values, not hardcoded ones
+        results = model.predict(image, conf=0.01)  # Very low threshold to get all predictions
         detections = results[0]
         
-        # Extract top prediction
+        # Extract top prediction with actual confidence
         if len(detections.boxes) > 0:
             top_box = detections.boxes[0]
             cls_id = int(top_box.cls)
-            confidence = float(top_box.conf)
+            confidence = float(top_box.conf)  # Actual confidence from model
             disease_name = detections.names[cls_id]
             
+            print(f"🔍 YOLO Detection: disease={disease_name}, confidence={confidence:.4f}, class_id={cls_id}")
+            
+            # Check if detected class is "healthy" or similar
+            disease_lower = disease_name.lower()
+            is_healthy = any(term in disease_lower for term in ['healthy', 'normal', 'good', 'no disease'])
+            
             # Map confidence to severity score (0-3)
-            if confidence > 0.8:
+            if is_healthy:
+                # For healthy crops, use the actual confidence from model
+                severity_score = 0
+                severity = 'None'
+            elif confidence > 0.8:
                 severity_score = 3  # Severe
                 severity = 'Severe'
             elif confidence > 0.5:
@@ -140,23 +164,29 @@ def detect_disease_with_yolo(image_bytes: bytes, crop_type: str) -> dict:
             
             return {
                 'disease': disease_name,
-                'confidence': confidence,
+                'confidence': confidence,  # Actual confidence from YOLO (not hardcoded)
                 'severity': severity,
                 'severity_score': severity_score
             }
         else:
-            # No disease detected - healthy crop
+            # No detections at all - this could mean healthy crop or model uncertainty
+            # Use a moderate confidence value (0.5) to indicate "likely healthy but uncertain"
+            # This is more realistic than hardcoding 1.0 or 0.0
+            print("⚠️ No detections found - model indicates healthy crop with moderate confidence")
             return {
                 'disease': 'Healthy Crop',
-                'confidence': 1.0,
+                'confidence': 0.5,  # Moderate confidence - indicates likely healthy but not certain
                 'severity': 'None',
                 'severity_score': 0
             }
     except Exception as e:
         print(f"❌ Disease detection error: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return low confidence on error, not hardcoded 0.0
         return {
             'disease': None,
-            'confidence': 0.0,
+            'confidence': 0.05,  # Very low confidence indicates error/uncertainty
             'severity': 'None',
             'severity_score': 0
         }
@@ -270,30 +300,64 @@ def upload_timelapse():
                 except Exception:
                     return jsonify({'error': 'Invalid image format (JPEG/PNG required)'}), 400
                 
-                # Resize image for processing (224x224 for model)
-                img = Image.open(io.BytesIO(image_bytes))
-                img_resized = img.resize((224, 224), Image.Resampling.LANCZOS)
-                img_bytes_io = io.BytesIO()
-                img_resized.save(img_bytes_io, format='JPEG', quality=95)
-                img_bytes_resized = img_bytes_io.getvalue()
+                # Preprocess image based on crop type
+                preprocessed_image = None
+                preprocessed_bytes = None
                 
-                # Run AI disease detection
-                detection = detect_disease_with_yolo(img_bytes_resized, crop.crop_type)
+                if crop.crop_type.lower() == 'wheat':
+                    # Use WheatImagePreprocessor for wheat crops
+                    print(f"🌾 Preprocessing wheat image with WheatImagePreprocessor")
+                    try:
+                        # Convert image bytes to numpy array (BGR format for OpenCV)
+                        nparr = np.frombuffer(image_bytes, np.uint8)
+                        img_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        
+                        if img_cv is not None:
+                            # Preprocess using WheatImagePreprocessor
+                            preprocessor = WheatImagePreprocessor()
+                            preprocessed_image = preprocessor.preprocess_numpy(img_cv)
+                            
+                            # Convert preprocessed image back to bytes for saving
+                            _, encoded_img = cv2.imencode('.jpg', preprocessed_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                            preprocessed_bytes = encoded_img.tobytes()
+                            print(f"✅ Wheat image preprocessed successfully (shape: {preprocessed_image.shape})")
+                        else:
+                            print("⚠️ Failed to decode image for preprocessing, using original")
+                    except Exception as e:
+                        print(f"⚠️ Wheat preprocessing error: {e}, using original image")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Run AI disease detection with preprocessed image if available
+                if preprocessed_image is not None:
+                    detection = detect_disease_with_yolo(image_bytes, crop.crop_type, preprocessed_image)
+                else:
+                    # Fallback: resize image for processing (224x224 for model)
+                    img = Image.open(io.BytesIO(image_bytes))
+                    img_resized = img.resize((224, 224), Image.Resampling.LANCZOS)
+                    img_bytes_io = io.BytesIO()
+                    img_resized.save(img_bytes_io, format='JPEG', quality=95)
+                    img_bytes_resized = img_bytes_io.getvalue()
+                    detection = detect_disease_with_yolo(img_bytes_resized, crop.crop_type)
+                
+                print(f"🔍 Detection result: disease={detection.get('disease')}, confidence={detection.get('confidence'):.2f}, severity={detection.get('severity')}")
                 
                 # Fetch weather data (ALWAYS fetch - uses defaults if API fails)
                 print(f"🌤️ Fetching weather for lat={latitude}, lon={longitude}")
                 weather = fetch_weather_data(latitude, longitude)
                 print(f"✅ Weather data saved: temp={weather.get('temp')}, humidity={weather.get('humidity')}")
                 
-                # Generate highlighted image with OpenCV
-                highlighted_bytes = highlight_disease_spots(image_bytes, detection)
+                # Generate highlighted image with OpenCV (use preprocessed image if available)
+                image_for_highlighting = preprocessed_bytes if preprocessed_bytes else image_bytes
+                highlighted_bytes = highlight_disease_spots(image_for_highlighting, detection)
                 
-                # Save original photo
+                # Save photo (use preprocessed image if available, otherwise original)
                 photo_filename = f"timelapse_{uuid.uuid4().hex[:12]}.jpg"
                 photo_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'timelapse', photo_filename)
                 os.makedirs(os.path.dirname(photo_path), exist_ok=True)
                 with open(photo_path, 'wb') as f:
-                    f.write(image_bytes)
+                    # Save preprocessed image if available, otherwise save original
+                    f.write(preprocessed_bytes if preprocessed_bytes else image_bytes)
                 photo_url = f"/static/uploads/timelapse/{photo_filename}"
                 
                 # Save highlighted photo

@@ -44,3 +44,4 @@ If the latest entry's `photo_url` is invalid or the file doesn't exist, we can a
 ## Restart Required:
 **NO RESTART NEEDED** - Frontend changes only. Just refresh the mobile app.
 
+

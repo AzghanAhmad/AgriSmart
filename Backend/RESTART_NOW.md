@@ -46,3 +46,4 @@ If image shows → Backend is working!
 
 `send_file()` is Flask's recommended way to serve files and handles React Native better.
 
+

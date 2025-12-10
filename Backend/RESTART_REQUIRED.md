@@ -50,3 +50,4 @@ If images still don't load:
 3. Test image URL in browser: `http://172.20.10.3:5000/static/uploads/timelapse/<filename>`
 4. Check mobile app console for image loading errors
 
+

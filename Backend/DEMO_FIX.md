@@ -77,3 +77,4 @@ If image shows → Backend is working!
 If 404 → Check file path
 If blank → Check Flask console for errors
 
+

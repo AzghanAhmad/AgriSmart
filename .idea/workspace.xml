@@ -6,11 +6,24 @@
   <component name="ChangeListManager">
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/CRITICAL_FIX.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/DEBUG_LATEST_IMAGE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/DEBUG_LATEST_IMAGE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/DEMO_FIX.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/DEMO_FIX.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/FINAL_DEMO_FIX.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/FINAL_DEMO_FIX.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/FIX_IMAGE_LOADING.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/FIX_IMAGE_LOADING.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/QUICK_FIX_GUIDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/QUICK_FIX_GUIDE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/RESTART_NOW.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/RESTART_NOW.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/RESTART_REQUIRED.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/RESTART_REQUIRED.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/RESTART_SERVER.md" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/RESTART_SERVER.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/FIXES_APPLIED.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/GEOTAGGING_QUICK_START.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/FIX_ASSET_WARNING.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/test_static_file.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/test_static_file.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />

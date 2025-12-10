@@ -17,14 +17,14 @@ export function getApiBaseUrl(): string {
     if (Platform.OS === 'android') {
       // Android Emulator uses 10.0.2.2 to reach host machine
       // For physical Android device, use actual network IP
-      BACKEND_NETWORK_IP = '192.168.100.187'; // Your current network IP
+      BACKEND_NETWORK_IP = '10.235.31.18'; // Your current network IP
     } else if (Platform.OS === 'ios') {
       // iOS Simulator can use localhost
       // For physical iOS device, use actual network IP
-      BACKEND_NETWORK_IP = '192.168.100.187'; // Your current network IP
+      BACKEND_NETWORK_IP = '10.235.31.18'; // Your current network IP
     } else {
       // Web or other platforms
-      BACKEND_NETWORK_IP = '192.168.100.187';
+      BACKEND_NETWORK_IP = '10.235.31.18';
     }
   } else {
     // Production - use configured IP

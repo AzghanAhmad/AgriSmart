@@ -295,21 +295,19 @@ def serve_static(filename):
         elif filename.lower().endswith('.webp'):
             mime_type = 'image/webp'
         
-        # Use send_file with explicit settings for React Native compatibility
-        response = send_file(
-            file_path,
-            mimetype=mime_type,
-            as_attachment=False,
-            download_name=None
-        )
+        # Read file into memory for React Native compatibility (prevents "unexpected end of stream")
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
         
-        # Set headers for React Native compatibility
+        # Create response with file data
+        response = make_response(file_data)
+        response.headers['Content-Type'] = mime_type
         response.headers['Content-Length'] = str(file_size)
         response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         response.headers['Cache-Control'] = 'public, max-age=3600'
-        response.headers['Accept-Ranges'] = 'bytes'  # Allow range requests but send full file
+        response.headers['Accept-Ranges'] = 'bytes'
         
         print(f"📤 Serving static file: {filename} ({file_size} bytes, {mime_type})")
         return response

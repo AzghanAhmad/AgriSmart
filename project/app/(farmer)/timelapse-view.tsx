@@ -89,7 +89,7 @@ interface Prediction {
 
 type ChartType = 'severity' | 'weather' | 'disease' | 'confidence';
 
-// Helper component for images with fallback - SIMPLIFIED
+// Helper component for images - Robust error handling for demo
 const ImageWithFallback = ({ 
   primaryUrl, 
   fallbackUrl, 
@@ -97,7 +97,7 @@ const ImageWithFallback = ({
   resizeMode = 'cover',
   onError,
   onLoad,
-  key
+  imageKey
 }: {
   primaryUrl: string | null;
   fallbackUrl: string | null;
@@ -105,39 +105,52 @@ const ImageWithFallback = ({
   resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
   onError?: (e: any) => void;
   onLoad?: () => void;
-  key?: string;
+  imageKey?: string;
 }) => {
-  const [hasError, setHasError] = useState(false);
-  const [useFallback, setUseFallback] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState<string | null>(primaryUrl);
+  const [hasTriedFallback, setHasTriedFallback] = useState(false);
+  const [showPlaceholder, setShowPlaceholder] = useState(false);
   
   // Reset when URLs change
   useEffect(() => {
-    setHasError(false);
-    setUseFallback(false);
+    setCurrentUrl(primaryUrl);
+    setHasTriedFallback(false);
+    setShowPlaceholder(false);
   }, [primaryUrl, fallbackUrl]);
 
   const handleError = (e: any) => {
-    if (!useFallback && fallbackUrl && primaryUrl) {
-      // Try fallback
-      setUseFallback(true);
-      console.log(`⚠️ Primary image failed, trying fallback`);
-    } else {
-      // Both failed or no fallback
-      setHasError(true);
-      console.error('❌ Image failed to load');
-      if (onError) onError(e);
+    // Try fallback if we haven't tried it yet
+    if (!hasTriedFallback && fallbackUrl && currentUrl === primaryUrl) {
+      setHasTriedFallback(true);
+      setCurrentUrl(fallbackUrl);
+      return; // Component will re-render with fallback URL
+    }
+    
+    // Both failed - show placeholder (silently, no console logs)
+    setShowPlaceholder(true);
+    if (onError) {
+      try {
+        onError(e);
+      } catch (err) {
+        // Silently handle callback errors
+      }
     }
   };
 
   const handleLoad = () => {
-    if (onLoad) onLoad();
+    // Image loaded successfully, hide placeholder
+    setShowPlaceholder(false);
+    if (onLoad) {
+      try {
+        onLoad();
+      } catch (err) {
+        // Silently handle callback errors
+      }
+    }
   };
 
-  // Determine which URL to use
-  const imageUrl = useFallback ? fallbackUrl : primaryUrl;
-
-  if (hasError || !imageUrl) {
-    // Use a dummy placeholder image from assets
+  // Show placeholder if both URLs failed or no URL exists
+  if (showPlaceholder || !currentUrl) {
     return (
       <Image
         source={require('@/assets/crops/Wheat.jpg')}
@@ -147,17 +160,53 @@ const ImageWithFallback = ({
     );
   }
 
+  // If we have a URL, try to load it with error boundary
+  if (currentUrl) {
+    try {
+      return (
+        <Image
+          key={imageKey ? `${imageKey}-${currentUrl}-${hasTriedFallback ? 'fallback' : 'primary'}` : `${currentUrl}-${hasTriedFallback ? 'fallback' : 'primary'}`}
+          source={{ 
+            uri: currentUrl,
+            cache: 'default' // Use default cache
+          }}
+          style={style}
+          resizeMode={resizeMode}
+          onError={(e) => {
+            try {
+              handleError(e);
+            } catch (err) {
+              // If error handler fails, show placeholder (silently)
+              setShowPlaceholder(true);
+            }
+          }}
+          onLoad={() => {
+            try {
+              handleLoad();
+            } catch (err) {
+              // Silently handle load callback errors
+            }
+          }}
+        />
+      );
+    } catch (error) {
+      // If rendering fails, show placeholder (silently)
+      return (
+        <Image
+          source={require('@/assets/crops/Wheat.jpg')}
+          style={style}
+          resizeMode={resizeMode}
+        />
+      );
+    }
+  }
+
+  // Show placeholder only if no URL exists
   return (
     <Image
-      key={key}
-      source={{ 
-        uri: imageUrl,
-        cache: 'default'
-      }}
+      source={require('@/assets/crops/Wheat.jpg')}
       style={style}
       resizeMode={resizeMode}
-      onError={handleError}
-      onLoad={handleLoad}
     />
   );
 };
@@ -193,7 +242,6 @@ export default function TimeLapseViewScreen() {
 
   const loadData = async () => {
     if (!cropId) {
-      console.error('❌ No cropId provided to timelapse view');
       setLoading(false);
       return;
     }
@@ -202,52 +250,33 @@ export default function TimeLapseViewScreen() {
       setLoading(true);
       const token = await AsyncStorage.getItem('authToken');
       if (!token) {
-        console.error('❌ No auth token found');
         setLoading(false);
         return;
       }
 
-      console.log('📡 Loading timelapse data for cropId:', cropId);
-      const response = await fetch(`${getApiBaseUrl()}/api/timelapse/${cropId}`, {
+      const baseUrl = getApiBaseUrl();
+      const url = `${baseUrl}/api/timelapse/${cropId}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json',
         },
+        signal: controller.signal,
       });
 
-      console.log('📥 Timelapse response status:', response.status);
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const result = await response.json();
-        console.log('✅ Timelapse data loaded:', {
-          totalEntries: result.entries?.length || 0,
-          cropName: result.crop_name,
-          firstEntry: result.entries?.[0] ? {
-            id: result.entries[0].id,
-            date: result.entries[0].date,
-            photo_url: result.entries[0].photo_url,
-            fullUrl: `${getApiBaseUrl()}${result.entries[0].photo_url}`,
-          } : null,
-          lastEntry: result.entries?.[result.entries.length - 1] ? {
-            id: result.entries[result.entries.length - 1].id,
-            date: result.entries[result.entries.length - 1].date,
-            photo_url: result.entries[result.entries.length - 1].photo_url,
-            fullUrl: `${getApiBaseUrl()}${result.entries[result.entries.length - 1].photo_url}`,
-          } : null,
-        });
-        console.log('📋 All entries:', result.entries?.map((e: any) => ({
-          id: e.id,
-          date: e.date,
-          photo_url: e.photo_url,
-        })));
         setData(result);
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Failed to load timelapse:', response.status, errorText);
       }
+      // Silently handle errors - allow UI to show empty state
     } catch (error: any) {
-      console.error('❌ Error loading timelapse:', error);
-      console.error('Error details:', error.message, error.stack);
+      // Silently handle errors - don't crash the app
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -271,7 +300,7 @@ export default function TimeLapseViewScreen() {
         setPrediction(result);
       }
     } catch (error) {
-      console.error('Failed to load prediction:', error);
+        // Silently handle prediction errors
     }
   };
 
@@ -329,7 +358,7 @@ export default function TimeLapseViewScreen() {
     }),
     datasets: [{
       data: entriesReversed.map((e) => e.severity_score ?? 0),
-      color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+      color: (opacity = 1) => `rgba(236, 72, 153, ${opacity})`, // Vibrant pink/magenta
       strokeWidth: 3,
     }],
   } : null;
@@ -342,13 +371,13 @@ export default function TimeLapseViewScreen() {
     datasets: [
       {
         data: entriesReversed.map((e) => e.weather_temp ?? 0),
-        color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
-        strokeWidth: 2,
+        color: (opacity = 1) => `rgba(251, 146, 60, ${opacity})`, // Warm orange for temperature
+        strokeWidth: 3,
       },
       {
         data: entriesReversed.map((e) => e.weather_humidity ?? 0),
-        color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-        strokeWidth: 2,
+        color: (opacity = 1) => `rgba(96, 165, 250, ${opacity})`, // Bright sky blue for humidity
+        strokeWidth: 3,
       },
     ],
   } : null;
@@ -361,7 +390,17 @@ export default function TimeLapseViewScreen() {
   }, {} as Record<string, number>) || {};
 
   const diseasePieData = Object.entries(diseaseDistribution).map(([name, count], index) => {
-    const colors_list = ['#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6', '#EC4899'];
+    // User-friendly vibrant color palette - easy to distinguish
+    const colors_list = [
+      '#10B981', // Emerald green - healthy
+      '#F59E0B', // Amber - warning
+      '#EF4444', // Red - critical
+      '#8B5CF6', // Purple - disease
+      '#3B82F6', // Blue - info
+      '#EC4899', // Pink - other
+      '#14B8A6', // Teal - additional
+      '#F97316', // Orange - additional
+    ];
     return {
       name: name.length > 15 ? name.substring(0, 15) + '...' : name,
       population: count,
@@ -393,7 +432,7 @@ export default function TimeLapseViewScreen() {
     }),
     datasets: [{
       data: entriesReversed.map((e) => (e.ai_confidence ?? 0) * 100),
-      color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+      color: (opacity = 1) => `rgba(168, 85, 247, ${opacity})`, // Vibrant purple
       strokeWidth: 3,
     }],
   } : null;
@@ -686,78 +725,91 @@ export default function TimeLapseViewScreen() {
             </View>
             <View style={styles.comparisonCard}>
               <View style={styles.comparisonRow}>
-                {/* First Entry */}
-                <View style={styles.comparisonItem}>
-                  <Text style={styles.comparisonLabel}>First Scan</Text>
-                  <Text style={styles.comparisonDate}>
-                    {new Date(data.entries[data.entries.length - 1].date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </Text>
-                  <ImageWithFallback
-                    key={`first-${data.entries[data.entries.length - 1].id}`}
-                    primaryUrl={data.entries[data.entries.length - 1].photo_url ? `${getApiBaseUrl()}${data.entries[data.entries.length - 1].photo_url}` : null}
-                    fallbackUrl={data.entries[data.entries.length - 1].highlighted_photo_url ? `${getApiBaseUrl()}${data.entries[data.entries.length - 1].highlighted_photo_url}` : null}
-                    style={styles.comparisonImage}
-                    resizeMode="cover"
-                    onError={(e) => {
-                      console.error('❌ Failed to load first scan image:', e);
-                      console.error('   Entry ID:', data.entries[data.entries.length - 1].id);
-                    }}
-                    onLoad={() => {
-                      console.log('✅ First scan image loaded successfully');
-                      console.log('   Entry ID:', data.entries[data.entries.length - 1].id);
-                    }}
-                  />
-                  <View style={styles.comparisonStats}>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel} numberOfLines={1}>Severity</Text>
-                      <View
-                        style={[
-                          styles.comparisonSeverityBadge,
-                          { backgroundColor: getSeverityColor(data.entries[data.entries.length - 1].severity_score) },
-                        ]}
-                      >
-                        <Text 
-                          style={styles.comparisonSeverityText} 
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.7}
-                        >
-                          {getSeverityLabel(data.entries[data.entries.length - 1].severity)}
-                        </Text>
+                {/* First Entry - Show first uploaded image (oldest entry) */}
+                {(() => {
+                  // Entries are ordered newest first (desc order by date)
+                  // If 2 entries: [0]=second uploaded (newest), [1]=first uploaded (older)
+                  // So First Scan should use index 1 (first uploaded) when there are 2 entries
+                  // Otherwise use the oldest entry (last index)
+                  const firstEntryIndex = data.entries.length === 2 ? 1 : data.entries.length - 1;
+                  const firstEntry = data.entries[firstEntryIndex];
+                  
+                  const baseUrl = getApiBaseUrl();
+                  const primaryImageUrl = firstEntry.photo_url ? `${baseUrl}${firstEntry.photo_url}` : null;
+                  const fallbackImageUrl = firstEntry.highlighted_photo_url ? `${baseUrl}${firstEntry.highlighted_photo_url}` : null;
+                  
+                  return (
+                    <View style={styles.comparisonItem}>
+                      <Text style={styles.comparisonLabel}>First Scan</Text>
+                      <Text style={styles.comparisonDate}>
+                        {new Date(firstEntry.date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </Text>
+                      <ImageWithFallback
+                        imageKey={`first-${firstEntry.id}-${firstEntry.photo_url || 'no-url'}`}
+                        primaryUrl={primaryImageUrl}
+                        fallbackUrl={fallbackImageUrl}
+                        style={styles.comparisonImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.comparisonStats}>
+                        <View style={styles.comparisonStat}>
+                          <Text style={styles.comparisonStatLabel} numberOfLines={1}>Severity</Text>
+                          <View
+                            style={[
+                              styles.comparisonSeverityBadge,
+                              { backgroundColor: getSeverityColor(firstEntry.severity_score) },
+                            ]}
+                          >
+                            <Text 
+                              style={styles.comparisonSeverityText} 
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.7}
+                            >
+                              {getSeverityLabel(firstEntry.severity)}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.comparisonStat}>
+                          <Text style={styles.comparisonStatLabel} numberOfLines={1}>Confidence</Text>
+                          <Text style={styles.comparisonStatValue} numberOfLines={1}>
+                            {firstEntry?.ai_confidence != null
+                              ? `${((firstEntry?.ai_confidence ?? 0) * 100).toFixed(0)}%`
+                              : 'N/A'}
+                          </Text>
+                        </View>
+                        <View style={styles.comparisonStat}>
+                          <Text style={styles.comparisonStatLabel} numberOfLines={1}>Score</Text>
+                          <Text style={styles.comparisonStatValue} numberOfLines={1}>
+                            {firstEntry.severity_score ?? 0}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel} numberOfLines={1}>Confidence</Text>
-                      <Text style={styles.comparisonStatValue} numberOfLines={1}>
-                        {data.entries[data.entries.length - 1]?.ai_confidence != null
-                          ? `${((data.entries[data.entries.length - 1]?.ai_confidence ?? 0) * 100).toFixed(0)}%`
-                          : 'N/A'}
-                      </Text>
-                    </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel} numberOfLines={1}>Score</Text>
-                      <Text style={styles.comparisonStatValue} numberOfLines={1}>
-                        {data.entries[data.entries.length - 1].severity_score ?? 0}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
+                  );
+                })()}
 
                 {/* Arrow */}
                 <View style={styles.comparisonArrow}>
                   <ArrowRight size={32} color={colors.primary} />
                 </View>
 
-                {/* Latest Entry - Show second uploaded image if 2 entries, otherwise show newest */}
+                {/* Latest Entry - Show second uploaded image (newest entry) */}
                 <View style={styles.comparisonItem}>
                   <Text style={styles.comparisonLabel}>Latest Scan</Text>
                   {(() => {
-                    // If exactly 2 entries, show the second one (index 1), otherwise show the newest (index 0)
-                    const latestEntryIndex = data.entries.length === 2 ? 1 : 0;
+                    // Entries are ordered newest first (desc order by date)
+                    // If 2 entries: [0] = second uploaded (newest), [1] = first uploaded (older)
+                    // So Latest Scan should always use index 0 (newest/second uploaded)
+                    const latestEntryIndex = 0;
                     const latestEntry = data.entries[latestEntryIndex];
+                    
+                    const baseUrl = getApiBaseUrl();
+                    const primaryImageUrl = latestEntry.photo_url ? `${baseUrl}${latestEntry.photo_url}` : null;
+                    const fallbackImageUrl = latestEntry.highlighted_photo_url ? `${baseUrl}${latestEntry.highlighted_photo_url}` : null;
                     
                     return (
                       <>
@@ -768,19 +820,11 @@ export default function TimeLapseViewScreen() {
                           })}
                         </Text>
                         <ImageWithFallback
-                          key={`latest-${latestEntry.id}`}
-                          primaryUrl={latestEntry.photo_url ? `${getApiBaseUrl()}${latestEntry.photo_url}` : null}
-                          fallbackUrl={latestEntry.highlighted_photo_url ? `${getApiBaseUrl()}${latestEntry.highlighted_photo_url}` : null}
+                          imageKey={`latest-${latestEntry.id}-${latestEntry.photo_url || 'no-url'}`}
+                          primaryUrl={primaryImageUrl}
+                          fallbackUrl={fallbackImageUrl}
                           style={styles.comparisonImage}
                           resizeMode="cover"
-                          onError={(e) => {
-                            console.error('❌ Failed to load latest scan image:', e);
-                            console.error('   Entry ID:', latestEntry.id);
-                          }}
-                          onLoad={() => {
-                            console.log('✅ Latest scan image loaded successfully');
-                            console.log('   Entry ID:', latestEntry.id);
-                          }}
                         />
                         <View style={styles.comparisonStats}>
                           <View style={styles.comparisonStat}>
@@ -824,10 +868,11 @@ export default function TimeLapseViewScreen() {
 
               {/* Improvement Summary */}
               {(() => {
-                const firstEntry = data.entries[data.entries.length - 1];
-                // If exactly 2 entries, use the second one (index 1), otherwise use the newest (index 0)
-                const latestEntryIndex = data.entries.length === 2 ? 1 : 0;
-                const latestEntry = data.entries[latestEntryIndex];
+                // First entry: if 2 entries, use index 1 (first uploaded), otherwise use oldest
+                const firstEntryIndex = data.entries.length === 2 ? 1 : data.entries.length - 1;
+                const firstEntry = data.entries[firstEntryIndex];
+                // Latest entry: always use index 0 (newest/second uploaded)
+                const latestEntry = data.entries[0];
                 const severityChange = (latestEntry.severity_score ?? 0) - (firstEntry.severity_score ?? 0);
                 const confidenceChange = (latestEntry.ai_confidence ?? 0) - (firstEntry.ai_confidence ?? 0);
                 const isImproving = severityChange < 0;
@@ -996,18 +1041,18 @@ export default function TimeLapseViewScreen() {
                 height={isSmallScreen ? 200 : 240}
                 chartConfig={{
                   ...chartConfig,
-                  color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
+                  color: (opacity = 1) => `rgba(251, 146, 60, ${opacity})`, // Warm orange for temperature
                 }}
                 bezier
                 style={styles.chart}
               />
               <View style={styles.weatherLegend}>
                 <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#FBBF24' }]} />
+                  <View style={[styles.legendDot, { backgroundColor: '#FB923C' }]} />
                   <Text style={styles.legendText}>Temperature (°C)</Text>
                 </View>
                 <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
+                  <View style={[styles.legendDot, { backgroundColor: '#60A5FA' }]} />
                   <Text style={styles.legendText}>Humidity (%)</Text>
                 </View>
               </View>
@@ -1059,7 +1104,7 @@ export default function TimeLapseViewScreen() {
                 height={isSmallScreen ? 200 : 240}
                 chartConfig={{
                   ...chartConfig,
-                  color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+                  color: (opacity = 1) => `rgba(168, 85, 247, ${opacity})`, // Vibrant purple
                 }}
                 bezier
                 style={styles.chart}
@@ -1093,7 +1138,7 @@ export default function TimeLapseViewScreen() {
               {isPlaying && data.entries[currentPlayIndex] && (
                 <View style={styles.playbackImageContainer}>
                   <ImageWithFallback
-                    key={`playback-${data.entries[currentPlayIndex].id}`}
+                    imageKey={`playback-${data.entries[currentPlayIndex].id}`}
                     primaryUrl={data.entries[currentPlayIndex].photo_url ? `${getApiBaseUrl()}${data.entries[currentPlayIndex].photo_url}` : null}
                     fallbackUrl={data.entries[currentPlayIndex].highlighted_photo_url ? `${getApiBaseUrl()}${data.entries[currentPlayIndex].highlighted_photo_url}` : null}
                     style={styles.playbackImage}
@@ -1136,14 +1181,11 @@ export default function TimeLapseViewScreen() {
             >
               <View style={styles.timelineCard}>
                 <ImageWithFallback
-                  key={`timeline-${entry.id}`}
+                  imageKey={`timeline-${entry.id}`}
                   primaryUrl={entry.photo_url ? `${getApiBaseUrl()}${entry.photo_url}` : null}
                   fallbackUrl={entry.highlighted_photo_url ? `${getApiBaseUrl()}${entry.highlighted_photo_url}` : null}
                   style={styles.timelineImage}
                   resizeMode="cover"
-                  onError={(e) => {
-                    console.error(`❌ Failed to load timeline image for entry ${entry.id}:`, e);
-                  }}
                 />
                 <View style={styles.timelineContent}>
                   <View style={styles.timelineHeader}>

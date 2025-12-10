@@ -71,3 +71,4 @@ After refreshing the app, you should see:
 
 The comparison images are now identical to the playback images that work. Just refresh the app!
 
+
