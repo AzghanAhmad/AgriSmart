@@ -4,6 +4,7 @@ import { Users, FileText, MapPin, TrendingUp, TriangleAlert as AlertTriangle, Ci
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdminDetections, useOutbreakAlerts } from '@/hooks/useAdmin';
+import { useRouter } from 'expo-router';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -21,6 +22,7 @@ const chartConfig = {
 
 export default function AdminDashboardScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const { total, items, error: detectionsError } = useAdminDetections(1, 10);
   const { items: pendingAlerts, approveAlert, error: alertsError } = useOutbreakAlerts('pending');
 
@@ -200,6 +202,8 @@ export default function AdminDashboardScreen() {
             width={screenWidth - 48}
             height={220}
             chartConfig={chartConfig}
+            yAxisLabel=""
+            yAxisSuffix=""
             style={{
               marginVertical: 8,
               borderRadius: 16,
@@ -266,12 +270,12 @@ export default function AdminDashboardScreen() {
                   <AlertTriangle color="#EF4444" size={18} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.alertTitle}>Disease Outbreak Detected</Text>
+                  <Text style={styles.alertTitle}>{a.diseaseName || 'Disease'} Outbreak</Text>
                   <Text style={styles.alertMeta}>
-                    Disease ID: {a.diseaseId || 'unknown'} • Radius: {a.radiusKm} km
+                    Radius: {a.radiusKm} km • {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''}
                   </Text>
                   <Text style={styles.alertMeta}>
-                    Center: {a.centerLat.toFixed(3)}, {a.centerLng.toFixed(3)}
+                    Location: {a.centerLat.toFixed(4)}, {a.centerLng.toFixed(4)}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -300,7 +304,10 @@ export default function AdminDashboardScreen() {
             <Users color="#22C55E" size={32} />
             <Text style={styles.actionText}>Manage Farmers</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity 
+            style={styles.actionCard}
+            onPress={() => router.push('/(admin)/heatmap')}
+          >
             <MapPin color="#3B82F6" size={32} />
             <Text style={styles.actionText}>View Heatmap</Text>
           </TouchableOpacity>

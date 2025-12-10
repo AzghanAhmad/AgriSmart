@@ -38,7 +38,7 @@ interface HeatmapPoint {
   diseaseName: string;
 }
 
-export default function HeatmapScreen() {
+export default function AdminHeatmapScreen() {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [alerts, setAlerts] = useState<OutbreakAlertItem[]>([]);
   const [hotspots, setHotspots] = useState<HotspotData[]>([]);
@@ -283,9 +283,6 @@ export default function HeatmapScreen() {
               <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
               <Text style={styles.mapSubtext}>
                 Interactive map showing disease hotspots across regions
-              </Text>
-              <Text style={[styles.mapSubtext, { marginTop: 8, fontSize: 12 }]}>
-                Heatmap points: {filteredHeatmapPoints.length}
               </Text>
             </View>
           ) : (
@@ -805,3 +802,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+

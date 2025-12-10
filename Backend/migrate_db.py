@@ -91,7 +91,8 @@ def run_migrations(engine):
                 conn.execute(text("""
                     CREATE TABLE "OutbreakAlerts" (
                         alert_id VARCHAR(50) PRIMARY KEY,
-                        disease_id VARCHAR(50) NOT NULL,
+                        disease_id VARCHAR(50),
+                        disease_name VARCHAR(120) NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         status VARCHAR(20) NOT NULL DEFAULT 'pending',
                         center_lat REAL NOT NULL,
@@ -101,6 +102,13 @@ def run_migrations(engine):
                 """))
                 conn.commit()
                 print("  ✅ Created 'OutbreakAlerts' table")
+            else:
+                # Add disease_name column if missing
+                if not column_exists(inspector, 'OutbreakAlerts', 'disease_name'):
+                    print("    ➕ Adding 'disease_name' column to OutbreakAlerts...")
+                    conn.execute(text('ALTER TABLE "OutbreakAlerts" ADD COLUMN disease_name VARCHAR(120)'))
+                    conn.commit()
+                    print("    ✅ Added 'disease_name' column to OutbreakAlerts")
         
         print("✅ Migration completed successfully")
         

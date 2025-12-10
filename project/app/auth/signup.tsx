@@ -43,7 +43,12 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     try {
       setError('');
-      await signup(formData);
+      // Convert null to undefined for API compatibility
+      await signup({
+        ...formData,
+        latitude: formData.latitude ?? undefined,
+        longitude: formData.longitude ?? undefined,
+      });
       // Navigation is handled in _layout.tsx based on user role
     } catch (err: any) {
       setError(err.message || translate('networkError', language));
