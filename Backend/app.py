@@ -1,5 +1,6 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
+from werkzeug.utils import safe_join
 from PIL import Image
 import io
 import os
@@ -11,6 +12,8 @@ try:
     from .routes.auth import auth_bp
     from .routes.guidance import guidance_bp
     from .routes.schedule import schedule_bp
+    from .routes.timelapse import timelapse_bp
+    from .modules.yield_estimation import yield_estimation_bp
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
     from .core.seed_guidance import seed_guidance_if_needed
@@ -23,12 +26,14 @@ except ImportError:
     from routes.auth import auth_bp
     from routes.guidance import guidance_bp
     from routes.schedule import schedule_bp
+    from routes.timelapse import timelapse_bp
+    from modules.yield_estimation import yield_estimation_bp
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
     from core.seed_guidance import seed_guidance_if_needed
     from core.seed_schedules import seed_schedules_if_needed
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 # Configure CORS via env; default to permissive in dev
 allowed_origins = get_allowed_origins()
 if allowed_origins == '*':
@@ -37,7 +42,7 @@ else:
     CORS(app, resources={r"/*": {"origins": [o.strip() for o in allowed_origins.split(',') if o.strip()]}})
 
 # Static uploads (served under /static/uploads/...)
-app.static_folder = 'static'
+# Note: static_folder is set in Flask() constructor above
 uploads_root = get_upload_root()
 if not os.path.isabs(uploads_root):
     uploads_root = os.path.join(app.static_folder, 'uploads')
@@ -86,6 +91,8 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(guidance_bp)
 app.register_blueprint(schedule_bp)
+app.register_blueprint(timelapse_bp)  # Smart TimeLapse Module
+app.register_blueprint(yield_estimation_bp)  # Yield Estimation Module
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
@@ -122,6 +129,7 @@ def home():
             "admin": "/api/admin/*",
             "guidance": "/api/guidance",
             "schedule": "/api/farmer/schedule/*",
+            "yield": "/api/yield/*",
             "predict": "/predict"
         }
     })
@@ -252,6 +260,53 @@ def predict(path_crop: str | None = None):
         print("❌ Server Error:", str(e))
         return jsonify({'error': 'Internal server error'}), 500
 
+
+# Explicit route to serve static files (for better compatibility with React Native)
+@app.route('/static/<path:filename>', methods=['GET', 'HEAD', 'OPTIONS'])
+def serve_static(filename):
+    """Serve static files explicitly with proper error handling and headers"""
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        response = Response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
+    try:
+        # Build safe file path
+        file_path = safe_join(app.static_folder, filename)
+        
+        if not file_path or not os.path.exists(file_path):
+            print(f"⚠️ Static file not found: {filename} (path: {file_path})")
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Get file size for logging
+        file_size = os.path.getsize(file_path)
+        
+        # Use Flask's send_file which handles everything properly for React Native
+        # This is more reliable than chunked responses for mobile apps
+        response = send_file(
+            file_path,
+            mimetype=None,  # Flask will auto-detect MIME type
+            as_attachment=False,
+            download_name=os.path.basename(filename)
+        )
+        
+        # Add CORS headers explicitly
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        
+        print(f"📤 Serving static file: {filename} ({file_size} bytes)")
+        return response
+        
+    except Exception as e:
+        print(f"❌ Error serving static file {filename}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     # ⚠️ For production, use gunicorn or waitress

@@ -36,16 +36,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const me = await apiGet<User>('/api/auth/me');
           setUser(me);
           await AsyncStorage.setItem('user', JSON.stringify(me));
-        } catch (e) {
+        } catch (e: any) {
+          // Token is invalid or expired - clear it and require re-login
+          console.log('🔐 Token invalid or expired, clearing auth data');
           await AsyncStorage.removeItem('user');
           await AsyncStorage.removeItem('authToken');
           setUser(null);
         }
       } else if (userData) {
-        setUser(JSON.parse(userData));
+        // No token but have user data - try to use it (offline mode)
+        try {
+          setUser(JSON.parse(userData));
+        } catch (e) {
+          // Invalid user data - clear it
+          await AsyncStorage.removeItem('user');
+          setUser(null);
+        }
       }
     } catch (error) {
       console.error('Error checking auth state:', error);
+      // Clear potentially corrupted data
+      await AsyncStorage.removeItem('user');
+      await AsyncStorage.removeItem('authToken');
+      setUser(null);
     } finally {
       setIsLoading(false);
     }

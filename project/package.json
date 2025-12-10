@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.56.1:5000 expo start --offline",
-    "dev:online": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.100.21:5000 expo start",
+    "dev": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.56.1:5000 expo start --offline --clear",
+    "dev:online": "cross-env EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_API_BASE_URL=http://192.168.100.21:5000 expo start --clear",
+    "dev:clean": "cross-env EXPO_NO_TELEMETRY=1 expo start --clear",
     "build:web": "expo export --platform web",
     "lint": "expo lint",
     "android": "expo run:android",
@@ -59,6 +60,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@react-native/codegen": "^0.82.1",
     "@types/react": "~19.0.10",
     "cross-env": "^10.0.0",
     "typescript": "~5.8.3"

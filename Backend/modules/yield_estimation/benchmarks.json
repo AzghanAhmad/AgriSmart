@@ -1,0 +1,24 @@
+{
+  "wheat": {
+    "maxYieldPerAcre": 3200,
+    "description": "Maximum yield in kg per acre under optimal conditions"
+  },
+  "rice": {
+    "maxYieldPerAcre": 2900,
+    "description": "Maximum yield in kg per acre under optimal conditions"
+  },
+  "maize": {
+    "maxYieldPerAcre": 2800,
+    "description": "Maximum yield in kg per acre under optimal conditions"
+  },
+  "cotton": {
+    "maxYieldPerAcre": 800,
+    "description": "Maximum yield in kg per acre for cotton lint"
+  },
+  "sugarcane": {
+    "maxYieldPerAcre": 25000,
+    "description": "Maximum yield in kg per acre for sugarcane"
+  }
+}
+
+

@@ -74,6 +74,30 @@ export default function FarmerTabLayout() {
           href: null, // Hide from tab bar
         }}
       />
+      <Tabs.Screen
+        name="yield-estimation"
+        options={{
+          href: null, // Hide from tab bar, accessible via quick actions
+        }}
+      />
+      <Tabs.Screen
+        name="schedule-select"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="timelapse-upload"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="timelapse-view"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }
