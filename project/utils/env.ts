@@ -17,18 +17,18 @@ export function getApiBaseUrl(): string {
     if (Platform.OS === 'android') {
       // Android Emulator uses 10.0.2.2 to reach host machine
       // For physical Android device, use actual network IP
-      BACKEND_NETWORK_IP = '192.168.1.11'; // Your current network IP
+      BACKEND_NETWORK_IP = '192.168.56.1'; // Your current network IP
     } else if (Platform.OS === 'ios') {
       // iOS Simulator can use localhost
       // For physical iOS device, use actual network IP
-      BACKEND_NETWORK_IP = '192.168.1.11'; // Your current network IP
+      BACKEND_NETWORK_IP = '192.168.56.1'; // Your current network IP
     } else {
       // Web or other platforms
-      BACKEND_NETWORK_IP = '192.168.1.11';
+      BACKEND_NETWORK_IP = '192.168.56.1';
     }
   } else {
     // Production - use configured IP
-    BACKEND_NETWORK_IP = Constants.expoConfig?.extra?.API_BASE_URL?.replace('http://', '').replace(':5000', '') || '192.168.1.11';
+    BACKEND_NETWORK_IP = Constants.expoConfig?.extra?.API_BASE_URL?.replace('http://', '').replace(':5000', '') || '192.168.56.1';
   }
   
   const url = `http://${BACKEND_NETWORK_IP}:5000`;

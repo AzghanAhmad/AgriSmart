@@ -243,13 +243,16 @@ def upload_timelapse():
             else:
                 return jsonify({'error': 'No file provided'}), 400
             
+            # Optional per-image capture dates (ISO format) for timelapse ordering
+            dates_raw = request.form.getlist('dates[]')
+            
             # Limit to 3 files max
             files = files[:3]
             
             created_entries = []
             detection_summary = None
             
-            for file in files:
+            for file_index, file in enumerate(files):
                 if not file or file.filename == '':
                     continue
                 
@@ -312,10 +315,28 @@ def upload_timelapse():
                             treatment_note = f"\n💊 Suggested: {suggestion}"
                             break
                 
+                # Use per-image capture date if provided (user input from upload screen)
+                entry_date = datetime.datetime.now()
+                if file_index < len(dates_raw) and dates_raw[file_index]:
+                    raw = (dates_raw[file_index] or '').strip()
+                    try:
+                        if len(raw) >= 10:
+                            # Prefer date-only YYYY-MM-DD to avoid timezone shifts
+                            date_part = raw[:10]
+                            entry_date = datetime.datetime.strptime(date_part, '%Y-%m-%d')
+                        else:
+                            entry_date = datetime.datetime.fromisoformat(
+                                raw.replace('Z', '+00:00')
+                            )
+                            if entry_date.tzinfo:
+                                entry_date = entry_date.replace(tzinfo=None)
+                    except (ValueError, TypeError):
+                        pass
+                
                 # Create timelapse entry
                 entry = TimelapseEntry(
                     crop_id=crop.id,
-                    date=datetime.datetime.now(),
+                    date=entry_date,
                     photo_url=photo_url,
                     highlighted_photo_url=highlighted_photo_url,
                     detected_disease=detection['disease'],
@@ -500,24 +521,43 @@ def get_timelapse(crop_id: int):
                 db.commit()
                 print(f"✅ Updated {updated_count} entries with weather data")
             
-            # Calculate statistics
+            # Calculate statistics from scanned images
             if entries:
                 avg_severity = db.query(func.avg(TimelapseEntry.severity_score)).filter(
                     TimelapseEntry.crop_id == crop_id
                 ).scalar() or 0
                 
-                # Calculate trend (compare last 2 entries)
+                # Trend: compare first (earliest date) vs latest (newest date) by user-input date
                 trend = 'stable'
                 if len(entries) >= 2:
+                    # entries are newest first: entries[0]=latest, entries[-1]=first by date
                     latest_score = entries[0].severity_score or 0
-                    previous_score = entries[1].severity_score or 0
-                    if latest_score > previous_score:
+                    first_score = entries[-1].severity_score or 0
+                    if latest_score > first_score:
                         trend = 'worsening'
-                    elif latest_score < previous_score:
+                    elif latest_score < first_score:
                         trend = 'improving'
+                
+                # Averages from scanned images
+                temps = [e.weather_temp for e in entries if e.weather_temp is not None]
+                humids = [e.weather_humidity for e in entries if e.weather_humidity is not None]
+                confs = [e.ai_confidence for e in entries if e.ai_confidence is not None]
+                avg_temp = round(sum(temps) / len(temps), 1) if temps else None
+                avg_humidity = round(sum(humids) / len(humids), 1) if humids else None
+                avg_ai_confidence = round(sum(confs) / len(confs), 4) if confs else None  # 0-1
+                # Top disease: most frequent
+                disease_counts = {}
+                for e in entries:
+                    d = (e.detected_disease or 'Healthy').strip() or 'Healthy'
+                    disease_counts[d] = disease_counts.get(d, 0) + 1
+                top_disease = max(disease_counts, key=disease_counts.get) if disease_counts else 'None'
             else:
                 avg_severity = 0
                 trend = 'stable'
+                avg_temp = None
+                avg_humidity = None
+                avg_ai_confidence = None
+                top_disease = 'None'
             
             entries_data = [{
                 'id': e.id,
@@ -541,7 +581,11 @@ def get_timelapse(crop_id: int):
                 'stats': {
                     'total_entries': len(entries),
                     'avg_severity_score': round(float(avg_severity), 2),
-                    'trend': trend
+                    'trend': trend,
+                    'avg_temp': avg_temp,
+                    'avg_humidity': avg_humidity,
+                    'avg_ai_confidence': avg_ai_confidence,
+                    'top_disease': top_disease,
                 }
             }), 200
             
