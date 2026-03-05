@@ -4,7 +4,7 @@
  * Comprehensive timeline dashboard with multiple chart types, weather trends,
  * disease distribution, severity analysis, and predictive insights.
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -77,6 +77,10 @@ interface TimelapseData {
     total_entries: number;
     avg_severity_score: number;
     trend: 'improving' | 'worsening' | 'stable';
+    avg_temp?: number | null;
+    avg_humidity?: number | null;
+    avg_ai_confidence?: number | null;
+    top_disease?: string | null;
   };
 }
 
@@ -87,7 +91,16 @@ interface Prediction {
   message: string;
 }
 
-type ChartType = 'severity' | 'weather' | 'disease' | 'confidence';
+type ChartType = 'severity' | 'weather' | 'disease';
+
+/** Build full image URL for timelapse photos (avoids double slash, handles full URLs) */
+function getTimelapseImageUrl(photoUrl: string | null | undefined): string | null {
+  if (!photoUrl) return null;
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) return photoUrl;
+  const base = getApiBaseUrl().replace(/\/$/, '');
+  const path = photoUrl.startsWith('/') ? photoUrl : `/${photoUrl}`;
+  return `${base}${path}`;
+}
 
 export default function TimeLapseViewScreen() {
   const router = useRouter();
@@ -101,8 +114,13 @@ export default function TimeLapseViewScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
   const [activeChart, setActiveChart] = useState<ChartType>('severity');
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(new Set());
   
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const markImageFailed = useCallback((entryId: number) => {
+    setFailedImageIds((prev) => (prev.has(entryId) ? prev : new Set(prev).add(entryId)));
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -110,13 +128,20 @@ export default function TimeLapseViewScreen() {
   }, [cropId]);
 
   useEffect(() => {
-    if (isPlaying && data?.entries) {
+    if (isPlaying && data?.entries?.length) {
       startPlayback();
     } else {
       stopPlayback();
     }
     return () => stopPlayback();
   }, [isPlaying, data]);
+
+  // Keep play index in bounds when entries change (e.g. after refresh)
+  useEffect(() => {
+    if (data?.entries?.length && currentPlayIndex >= data.entries.length) {
+      setCurrentPlayIndex(0);
+    }
+  }, [data?.entries?.length, currentPlayIndex]);
 
   const loadData = async () => {
     if (!cropId) return;
@@ -134,6 +159,7 @@ export default function TimeLapseViewScreen() {
       if (response.ok) {
         const result = await response.json();
         setData(result);
+        setFailedImageIds(new Set());
       }
     } catch (error) {
       console.error('Failed to load timelapse:', error);
@@ -171,14 +197,15 @@ export default function TimeLapseViewScreen() {
   };
 
   const startPlayback = () => {
-    if (!data?.entries || data.entries.length === 0) return;
+    const entries = data?.entries ? [...data.entries].reverse() : [];
+    if (entries.length === 0) return;
     
     setCurrentPlayIndex(0);
     
     const interval = setInterval(() => {
       setCurrentPlayIndex((prev) => {
         const next = prev + 1;
-        if (next >= data.entries.length) {
+        if (next >= entries.length) {
           setIsPlaying(false);
           return 0;
         }
@@ -203,39 +230,88 @@ export default function TimeLapseViewScreen() {
     return colors.error;
   };
 
+  /** Format entry date (user-input date) for First/Latest Scan display */
+  const formatEntryDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const getSeverityLabel = (severity: string | null) => {
     if (!severity || severity === 'None') return 'Healthy';
     return severity;
   };
 
-  // Prepare chart data
-  const entriesReversed = data?.entries ? [...data.entries].reverse() : [];
-  
-  const severityChartData = entriesReversed.length > 0 ? {
-    labels: entriesReversed.map((e) => {
-      const date = new Date(e.date);
-      return `${date.getMonth() + 1}/${date.getDate()}`;
-    }),
+  // Aggregate entries by month (year-month): one point per month, value = average of all scans in that month
+  const chartWidth = cardWidth - spacing.lg * 2;
+
+  type MonthKey = string;
+  const getYearMonth = (dateStr: string): MonthKey => {
+    const d = new Date(dateStr);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  };
+
+  const monthGroups = React.useMemo(() => {
+    const entriesList = data?.entries ?? [];
+    const map = new Map<MonthKey, TimelapseEntry[]>();
+    for (const e of entriesList) {
+      const key = getYearMonth(e.date);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(e);
+    }
+    const keys = Array.from(map.keys()).sort();
+    return keys.map((key) => {
+      const group = map.get(key)!;
+      const count = group.length;
+      const avgSeverity =
+        count > 0
+          ? group.reduce((sum, x) => sum + (x.severity_score ?? 0), 0) / count
+          : 0;
+      const avgTemp =
+        count > 0
+          ? group.reduce((sum, x) => sum + (x.weather_temp ?? 0), 0) / count
+          : 0;
+      const avgHumidity =
+        count > 0
+          ? group.reduce((sum, x) => sum + (x.weather_humidity ?? 0), 0) / count
+          : 0;
+      const avgConfidence =
+        count > 0
+          ? group.reduce((sum, x) => sum + (x.ai_confidence ?? 0), 0) / count
+          : 0;
+      const [year, month] = key.split('-').map(Number);
+      const monthLabel =
+        keys.length <= 12
+          ? new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short' })
+          : new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      return { key, monthLabel, avgSeverity, avgTemp, avgHumidity, avgConfidence };
+    });
+  }, [data?.entries]);
+
+  const severityChartData = monthGroups.length > 0 ? {
+    labels: monthGroups.map((g) => g.monthLabel),
     datasets: [{
-      data: entriesReversed.map((e) => e.severity_score ?? 0),
+      data: monthGroups.map((g) => Math.round(g.avgSeverity * 100) / 100),
       color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
       strokeWidth: 3,
     }],
   } : null;
 
-  const weatherChartData = entriesReversed.length > 0 ? {
-    labels: entriesReversed.map((e) => {
-      const date = new Date(e.date);
-      return `${date.getMonth() + 1}/${date.getDate()}`;
-    }),
+  const weatherChartData = monthGroups.length > 0 ? {
+    labels: monthGroups.map((g) => g.monthLabel),
     datasets: [
       {
-        data: entriesReversed.map((e) => e.weather_temp ?? 0),
+        data: monthGroups.map((g) => Math.round(g.avgTemp * 100) / 100),
         color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
         strokeWidth: 2,
       },
       {
-        data: entriesReversed.map((e) => e.weather_humidity ?? 0),
+        data: monthGroups.map((g) => Math.round(g.avgHumidity * 100) / 100),
         color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
         strokeWidth: 2,
       },
@@ -255,7 +331,7 @@ export default function TimeLapseViewScreen() {
       name: name.length > 15 ? name.substring(0, 15) + '...' : name,
       population: count,
       color: colors_list[index % colors_list.length],
-      legendFontColor: '#FFFFFF',
+      legendFontColor: '#374151',
       legendFontSize: 12,
     };
   });
@@ -274,66 +350,69 @@ export default function TimeLapseViewScreen() {
     }],
   };
 
-  // Confidence chart
-  const confidenceChartData = entriesReversed.length > 0 ? {
-    labels: entriesReversed.map((e) => {
-      const date = new Date(e.date);
-      return `${date.getMonth() + 1}/${date.getDate()}`;
-    }),
+  // Confidence chart (aggregated by month)
+  const confidenceChartData = monthGroups.length > 0 ? {
+    labels: monthGroups.map((g) => g.monthLabel),
     datasets: [{
-      data: entriesReversed.map((e) => (e.ai_confidence ?? 0) * 100),
+      data: monthGroups.map((g) => Math.round((g.avgConfidence ?? 0) * 100)),
       color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
       strokeWidth: 3,
     }],
   } : null;
 
-  // Calculate statistics with fallbacks
+  // Statistics from backend (from scanned images)
   const stats = data ? {
     totalEntries: data.stats.total_entries || 0,
     avgSeverity: data.stats.avg_severity_score || 0,
     trend: data.stats.trend || 'stable',
-    avgTemp: (() => {
-      const temps = data.entries.filter(e => e.weather_temp !== null && e.weather_temp !== undefined);
+    avgTemp: data.stats.avg_temp ?? (() => {
+      const temps = data.entries.filter(e => e.weather_temp != null);
       if (temps.length === 0) return null;
-      const sum = temps.reduce((acc, e) => acc + (e.weather_temp || 0), 0);
-      return sum / temps.length;
+      return temps.reduce((acc, e) => acc + (e.weather_temp || 0), 0) / temps.length;
     })(),
-    avgHumidity: (() => {
-      const humidities = data.entries.filter(e => e.weather_humidity !== null && e.weather_humidity !== undefined);
+    avgHumidity: data.stats.avg_humidity ?? (() => {
+      const humidities = data.entries.filter(e => e.weather_humidity != null);
       if (humidities.length === 0) return null;
-      const sum = humidities.reduce((acc, e) => acc + (e.weather_humidity || 0), 0);
-      return sum / humidities.length;
+      return humidities.reduce((acc, e) => acc + (e.weather_humidity || 0), 0) / humidities.length;
     })(),
-    avgConfidence: (() => {
-      const confidences = data.entries.filter(e => e.ai_confidence !== null && e.ai_confidence !== undefined);
+    avgConfidence: data.stats.avg_ai_confidence ?? (() => {
+      const confidences = data.entries.filter(e => e.ai_confidence != null);
       if (confidences.length === 0) return 0;
-      const sum = confidences.reduce((acc, e) => acc + (e.ai_confidence || 0), 0);
-      return sum / confidences.length;
+      return confidences.reduce((acc, e) => acc + (e.ai_confidence || 0), 0) / confidences.length;
     })(),
-    mostCommonDisease: Object.entries(diseaseDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || 'None',
+    mostCommonDisease: data.stats.top_disease ?? (Object.entries(diseaseDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || 'None'),
   } : null;
 
-  const chartConfig = {
-    backgroundColor: 'transparent',
-    backgroundGradientFrom: 'transparent',
-    backgroundGradientTo: 'transparent',
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-    style: {
-      borderRadius: borderRadius.lg,
-    },
-    propsForDots: {
-      r: '6',
-      strokeWidth: '2',
-      stroke: colors.primary,
-    },
-    propsForBackgroundLines: {
-      strokeDasharray: '',
-      stroke: 'rgba(255, 255, 255, 0.2)',
-      strokeWidth: 1,
-    },
+  // First scan = earliest by user-input date; latest = most recent (backend returns newest first)
+  const entriesByDate = data?.entries?.length ? [...data.entries] : [];
+  const firstScanEntry = entriesByDate.length >= 1 ? entriesByDate[entriesByDate.length - 1] : null;
+  const latestScanEntry = entriesByDate.length >= 1 ? entriesByDate[0] : null;
+
+  // Playback: show the 3 (or N) scanned images in chronological order (oldest → latest); date and severity match the current image
+  const playbackEntries = React.useMemo(
+    () => (data?.entries ? [...data.entries].reverse() : []),
+    [data?.entries]
+  );
+  const currentPlayEntry = playbackEntries.length > 0
+    ? (playbackEntries[currentPlayIndex] ?? playbackEntries[0])
+    : null;
+
+  // White background chart config – readable and appealing
+  const chartConfigWhite = {
+    backgroundColor: '#FFFFFF',
+    backgroundGradientFrom: '#FFFFFF',
+    backgroundGradientTo: '#FFFFFF',
+    decimalPlaces: 1,
+    color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+    labelColor: () => '#374151',
+    style: { borderRadius: borderRadius.lg, padding: 8 },
+    propsForDots: { r: 5, strokeWidth: 2, stroke: '#22C55E' },
+    propsForBackgroundLines: { strokeDasharray: '', stroke: '#E5E7EB', strokeWidth: 1 },
   };
+  const chartConfigSeverity = { ...chartConfigWhite, color: (o = 1) => `rgba(34, 197, 94, ${o})` };
+  const chartConfigWeatherTemp = { ...chartConfigWhite, color: (o = 1) => `rgba(245, 158, 11, ${o})` };
+  const chartConfigWeatherHumid = { ...chartConfigWhite, color: (o = 1) => `rgba(59, 130, 246, ${o})` };
+  const chartConfigPie = { ...chartConfigWhite, color: () => '#22C55E' };
 
   if (loading) {
     return (
@@ -407,9 +486,9 @@ export default function TimeLapseViewScreen() {
           </View>
         </LinearGradient>
 
-        {/* Stats Cards */}
+        {/* Stats Cards – full color, no grey strip; Result value on one line */}
         <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, styles.statCardGreen]}>
             <LinearGradient
               colors={[colors.primary, colors.primaryDark]}
               style={styles.statCardGradient}
@@ -419,7 +498,7 @@ export default function TimeLapseViewScreen() {
               <Text style={styles.statLabel}>Total Scans</Text>
             </LinearGradient>
           </View>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, styles.statCardOrange]}>
             <LinearGradient
               colors={[colors.warning, '#D97706']}
               style={styles.statCardGradient}
@@ -431,69 +510,66 @@ export default function TimeLapseViewScreen() {
               <Text style={styles.statLabel}>Avg Severity</Text>
             </LinearGradient>
           </View>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, stats?.trend === 'improving' ? styles.statCardGreen : styles.statCardOrange]}>
             <LinearGradient
               colors={
-                stats?.trend === 'improving' 
+                stats?.trend === 'improving'
                   ? [colors.success, colors.primaryDark]
-                  : stats?.trend === 'worsening'
-                  ? [colors.error, '#DC2626']
                   : [colors.warning, '#D97706']
               }
               style={styles.statCardGradient}
             >
               {stats?.trend === 'improving' ? (
                 <TrendingDown size={24} color="white" />
-              ) : stats?.trend === 'worsening' ? (
-                <TrendingUp size={24} color="white" />
               ) : (
-                <Minus size={24} color="white" />
+                <TrendingUp size={24} color="white" />
               )}
-              <Text style={styles.statLabel}>
-                {stats?.trend ? stats.trend.charAt(0).toUpperCase() + stats.trend.slice(1) : 'Stable'}
+              <Text style={styles.statValue} numberOfLines={1}>
+                {stats?.trend === 'improving' ? 'Improving' : 'Not Improving'}
               </Text>
+              <Text style={styles.statLabel}>Result</Text>
             </LinearGradient>
           </View>
         </View>
 
-        {/* Additional Stats */}
-        <View style={styles.additionalStatsContainer}>
-          <View style={styles.additionalStatCard}>
-            <Thermometer size={20} color={colors.warning} />
-            <Text style={styles.additionalStatValue}>
-              {stats?.avgTemp !== null && stats?.avgTemp !== undefined 
-                ? `${stats.avgTemp.toFixed(1)}°C` 
-                : 'N/A'}
-            </Text>
-            <Text style={styles.additionalStatLabel}>Avg Temp</Text>
+        {/* Additional Stats: 2x2 grid from scanned images (avg temp, humidity, AI confidence, top disease) */}
+        <View style={styles.additionalStatsGrid}>
+          <View style={styles.additionalStatsRow}>
+            <View style={styles.additionalStatCard}>
+              <Thermometer size={22} color={colors.warning} />
+              <Text style={styles.additionalStatValue}>
+                {stats?.avgTemp != null ? `${Number(stats.avgTemp).toFixed(1)}° C` : 'N/A'}
+              </Text>
+              <Text style={styles.additionalStatLabel}>Avg Temp</Text>
+            </View>
+            <View style={styles.additionalStatCard}>
+              <Droplets size={22} color={colors.info} />
+              <Text style={styles.additionalStatValue}>
+                {stats?.avgHumidity != null ? `${Number(stats.avgHumidity).toFixed(0)}%` : 'N/A'}
+              </Text>
+              <Text style={styles.additionalStatLabel}>Avg Humidity</Text>
+            </View>
           </View>
-          <View style={styles.additionalStatCard}>
-            <Droplets size={20} color={colors.info} />
-            <Text style={styles.additionalStatValue}>
-              {stats?.avgHumidity !== null && stats?.avgHumidity !== undefined 
-                ? `${stats.avgHumidity.toFixed(0)}%` 
-                : 'N/A'}
-            </Text>
-            <Text style={styles.additionalStatLabel}>Avg Humidity</Text>
-          </View>
-          <View style={styles.additionalStatCard}>
-            <Activity size={20} color={colors.primary} />
-            <Text style={styles.additionalStatValue}>
-              {((stats?.avgConfidence ?? 0) * 100).toFixed(0)}%
-            </Text>
-            <Text style={styles.additionalStatLabel}>AI Confidence</Text>
-          </View>
-          <View style={styles.additionalStatCard}>
-            <AlertCircle size={20} color={colors.error} />
-            <Text style={styles.additionalStatValue} numberOfLines={1}>
-              {stats?.mostCommonDisease || 'None'}
-            </Text>
-            <Text style={styles.additionalStatLabel}>Top Disease</Text>
+          <View style={styles.additionalStatsRow}>
+            <View style={styles.additionalStatCard}>
+              <LineChartIcon size={22} color={colors.primary} />
+              <Text style={styles.additionalStatValue}>
+                {((stats?.avgConfidence ?? 0) * 100).toFixed(0)}%
+              </Text>
+              <Text style={styles.additionalStatLabel}>AI Confidence</Text>
+            </View>
+            <View style={styles.additionalStatCard}>
+              <AlertCircle size={22} color={colors.error} />
+              <Text style={styles.additionalStatValue} numberOfLines={2}>
+                {stats?.mostCommonDisease || 'None'}
+              </Text>
+              <Text style={styles.additionalStatLabel}>Top Disease</Text>
+            </View>
           </View>
         </View>
 
-        {/* Comparison Section - First vs Latest */}
-        {data.entries.length >= 2 && (
+        {/* Progress Comparison: all data from backend (entries from get_timelapse API – date, image, severity, confidence, score) */}
+        {firstScanEntry && latestScanEntry && data.entries.length >= 2 && (
           <View style={styles.comparisonSection}>
             <View style={styles.comparisonHeader}>
               <GitCompare size={24} color={colors.primary} />
@@ -501,129 +577,121 @@ export default function TimeLapseViewScreen() {
             </View>
             <View style={styles.comparisonCard}>
               <View style={styles.comparisonRow}>
-                {/* First Entry */}
+                {/* First Scan: earliest by user-input date */}
                 <View style={styles.comparisonItem}>
                   <Text style={styles.comparisonLabel}>First Scan</Text>
                   <Text style={styles.comparisonDate}>
-                    {new Date(data.entries[data.entries.length - 1].date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {formatEntryDate(firstScanEntry.date)}
                   </Text>
-                  <Image
-                    source={{ 
-                      uri: `${getApiBaseUrl()}${data.entries[data.entries.length - 1].photo_url}`,
-                      cache: 'force-cache'
-                    }}
-                    style={styles.comparisonImage}
-                    onError={(e) => {
-                      console.error('❌ Failed to load first scan image:', e.nativeEvent.error);
-                      console.error('   URL:', `${getApiBaseUrl()}${data.entries[data.entries.length - 1].photo_url}`);
-                    }}
-                    onLoad={() => {
-                      console.log('✅ First scan image loaded successfully');
-                    }}
-                  />
+                  {getTimelapseImageUrl(firstScanEntry.photo_url) ? (
+                    <Image
+                      source={{ uri: getTimelapseImageUrl(firstScanEntry.photo_url)!, cache: 'reload' }}
+                      style={styles.comparisonImage}
+                      onError={() => markImageFailed(firstScanEntry.id)}
+                    />
+                  ) : (
+                    <View style={[styles.comparisonImage, styles.imagePlaceholder]}>
+                      <Text style={styles.imagePlaceholderText}>No image</Text>
+                    </View>
+                  )}
                   <View style={styles.comparisonStats}>
                     <View style={styles.comparisonStat}>
                       <Text style={styles.comparisonStatLabel}>Severity</Text>
                       <View
                         style={[
                           styles.comparisonSeverityBadge,
-                          { backgroundColor: getSeverityColor(data.entries[data.entries.length - 1].severity_score) },
+                          { backgroundColor: getSeverityColor(firstScanEntry.severity_score) },
                         ]}
                       >
                         <Text style={styles.comparisonSeverityText}>
-                          {getSeverityLabel(data.entries[data.entries.length - 1].severity)}
+                          {getSeverityLabel(firstScanEntry.severity)}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.comparisonStat}>
                       <Text style={styles.comparisonStatLabel}>Confidence</Text>
                       <Text style={styles.comparisonStatValue}>
-                        {data.entries[data.entries.length - 1]?.ai_confidence != null
-                          ? `${((data.entries[data.entries.length - 1]?.ai_confidence ?? 0) * 100).toFixed(0)}%`
+                        {firstScanEntry.ai_confidence != null
+                          ? `${(firstScanEntry.ai_confidence * 100).toFixed(0)}%`
                           : 'N/A'}
                       </Text>
                     </View>
                     <View style={styles.comparisonStat}>
                       <Text style={styles.comparisonStatLabel}>Score</Text>
                       <Text style={styles.comparisonStatValue}>
-                        {data.entries[data.entries.length - 1].severity_score ?? 0}
+                        {firstScanEntry.severity_score ?? 0}
                       </Text>
                     </View>
                   </View>
                 </View>
 
-                {/* Arrow */}
                 <View style={styles.comparisonArrow}>
                   <ArrowRight size={32} color={colors.primary} />
                 </View>
 
-                {/* Latest Entry */}
+                {/* Latest Scan: most recent by user-input date */}
                 <View style={styles.comparisonItem}>
                   <Text style={styles.comparisonLabel}>Latest Scan</Text>
                   <Text style={styles.comparisonDate}>
-                    {new Date(data.entries[0].date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {formatEntryDate(latestScanEntry.date)}
                   </Text>
-                  <Image
-                    source={{ 
-                      uri: `${getApiBaseUrl()}${data.entries[0].photo_url}`,
-                      cache: 'force-cache'
-                    }}
-                    style={styles.comparisonImage}
-                    onError={(e) => {
-                      console.error('❌ Failed to load latest scan image:', e.nativeEvent.error);
-                      console.error('   URL:', `${getApiBaseUrl()}${data.entries[0].photo_url}`);
-                    }}
-                    onLoad={() => {
-                      console.log('✅ Latest scan image loaded successfully');
-                    }}
-                  />
+                  {getTimelapseImageUrl(latestScanEntry.photo_url) ? (
+                    <Image
+                      source={{ uri: getTimelapseImageUrl(latestScanEntry.photo_url)!, cache: 'reload' }}
+                      style={styles.comparisonImage}
+                      onError={() => markImageFailed(latestScanEntry.id)}
+                    />
+                  ) : (
+                    <View style={[styles.comparisonImage, styles.imagePlaceholder]}>
+                      <Text style={styles.imagePlaceholderText}>No image</Text>
+                    </View>
+                  )}
                   <View style={styles.comparisonStats}>
                     <View style={styles.comparisonStat}>
                       <Text style={styles.comparisonStatLabel}>Severity</Text>
                       <View
                         style={[
                           styles.comparisonSeverityBadge,
-                          { backgroundColor: getSeverityColor(data.entries[0].severity_score) },
+                          { backgroundColor: getSeverityColor(latestScanEntry.severity_score) },
                         ]}
                       >
                         <Text style={styles.comparisonSeverityText}>
-                          {getSeverityLabel(data.entries[0].severity)}
+                          {getSeverityLabel(latestScanEntry.severity)}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.comparisonStat}>
                       <Text style={styles.comparisonStatLabel}>Confidence</Text>
                       <Text style={styles.comparisonStatValue}>
-                        {data.entries[0].ai_confidence
-                          ? `${(data.entries[0].ai_confidence * 100).toFixed(0)}%`
+                        {latestScanEntry.ai_confidence != null
+                          ? `${(latestScanEntry.ai_confidence * 100).toFixed(0)}%`
                           : 'N/A'}
                       </Text>
                     </View>
                     <View style={styles.comparisonStat}>
                       <Text style={styles.comparisonStatLabel}>Score</Text>
                       <Text style={styles.comparisonStatValue}>
-                        {data.entries[0].severity_score ?? 0}
+                        {latestScanEntry.severity_score ?? 0}
                       </Text>
                     </View>
                   </View>
                 </View>
               </View>
 
-              {/* Improvement Summary */}
+              {/* Improvement: based on first vs latest scan details */}
               {(() => {
-                const firstEntry = data.entries[data.entries.length - 1];
-                const latestEntry = data.entries[0];
+                const firstEntry = firstScanEntry;
+                const latestEntry = latestScanEntry;
                 const severityChange = (latestEntry.severity_score ?? 0) - (firstEntry.severity_score ?? 0);
                 const confidenceChange = (latestEntry.ai_confidence ?? 0) - (firstEntry.ai_confidence ?? 0);
                 const isImproving = severityChange < 0;
-                const isWorsening = severityChange > 0;
-                const isStable = severityChange === 0;
+                const daysSpan = Math.max(
+                  0,
+                  Math.ceil(
+                    (new Date(latestEntry.date).getTime() - new Date(firstEntry.date).getTime()) /
+                      (1000 * 60 * 60 * 24)
+                  )
+                );
 
                 return (
                   <View style={styles.improvementCard}>
@@ -631,71 +699,42 @@ export default function TimeLapseViewScreen() {
                       colors={
                         isImproving
                           ? [colors.success, colors.primaryDark]
-                          : isWorsening
-                          ? [colors.error, '#DC2626']
                           : [colors.warning, '#D97706']
                       }
                       style={styles.improvementGradient}
                     >
                       {isImproving ? (
                         <Award size={24} color="white" />
-                      ) : isWorsening ? (
-                        <AlertTriangle size={24} color="white" />
                       ) : (
-                        <Minus size={24} color="white" />
+                        <AlertTriangle size={24} color="white" />
                       )}
                       <Text style={styles.improvementTitle}>
-                        {isImproving
-                          ? '🎉 Improvement Detected!'
-                          : isWorsening
-                          ? '⚠️ Condition Worsening'
-                          : '➡️ Condition Stable'}
+                        {isImproving ? 'Improvement detected' : 'No improvement detected'}
                       </Text>
                       <View style={styles.improvementDetails}>
                         <View style={styles.improvementDetail}>
-                          <Text style={styles.improvementLabel}>Severity Change:</Text>
+                          <Text style={styles.improvementLabel}>Severity change</Text>
                           <Text style={styles.improvementValue}>
-                            {severityChange > 0 ? '+' : ''}{severityChange.toFixed(1)} points
-                            {isImproving && ' ↓'}
-                            {isWorsening && ' ↑'}
+                            {severityChange > 0 ? '+' : ''}{severityChange.toFixed(1)} pts
+                            {isImproving ? ' ↓' : severityChange > 0 ? ' ↑' : ' —'}
                           </Text>
                         </View>
-                        {confidenceChange !== 0 && (
-                          <View style={styles.improvementDetail}>
-                            <Text style={styles.improvementLabel}>Confidence Change:</Text>
-                            <Text style={styles.improvementValue}>
-                              {confidenceChange > 0 ? '+' : ''}
-                              {(confidenceChange * 100).toFixed(1)}%
-                            </Text>
-                          </View>
-                        )}
                         <View style={styles.improvementDetail}>
-                          <Text style={styles.improvementLabel}>Time Span:</Text>
+                          <Text style={styles.improvementLabel}>Confidence change</Text>
                           <Text style={styles.improvementValue}>
-                            {Math.ceil(
-                              (new Date(latestEntry.date).getTime() -
-                                new Date(firstEntry.date).getTime()) /
-                                (1000 * 60 * 60 * 24)
-                            )}{' '}
-                            days
+                            {confidenceChange >= 0 ? '+' : ''}{(confidenceChange * 100).toFixed(1)}%
                           </Text>
+                        </View>
+                        <View style={styles.improvementDetail}>
+                          <Text style={styles.improvementLabel}>Time span</Text>
+                          <Text style={styles.improvementValue}>{daysSpan} days</Text>
                         </View>
                       </View>
-                      {isImproving && (
-                        <Text style={styles.improvementMessage}>
-                          Great progress! Your crop health is improving. Keep up the good work! 🌱
-                        </Text>
-                      )}
-                      {isWorsening && (
-                        <Text style={styles.improvementMessage}>
-                          Disease severity has increased. Consider applying treatment soon. 💊
-                        </Text>
-                      )}
-                      {isStable && (
-                        <Text style={styles.improvementMessage}>
-                          Condition remains stable. Continue monitoring regularly. 📊
-                        </Text>
-                      )}
+                      <Text style={styles.improvementMessage}>
+                        {isImproving
+                          ? 'Crop health is improving. Keep monitoring.'
+                          : 'Severity unchanged or increased. Consider treatment or more scans.'}
+                      </Text>
                     </LinearGradient>
                   </View>
                 );
@@ -704,14 +743,15 @@ export default function TimeLapseViewScreen() {
           </View>
         )}
 
-        {/* Chart Tabs */}
+        {/* Chart Tabs: Severity, Weather, Disease – selected tab highlighted */}
         <View style={styles.chartTabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartTabs}>
             <TouchableOpacity
               style={[styles.chartTab, activeChart === 'severity' && styles.chartTabActive]}
               onPress={() => setActiveChart('severity')}
+              activeOpacity={0.8}
             >
-              <LineChartIcon size={18} color={activeChart === 'severity' ? colors.primary : colors.text.secondary} />
+              <LineChartIcon size={20} color={activeChart === 'severity' ? colors.primary : colors.text.secondary} />
               <Text style={[styles.chartTabText, activeChart === 'severity' && styles.chartTabTextActive]}>
                 Severity
               </Text>
@@ -719,8 +759,9 @@ export default function TimeLapseViewScreen() {
             <TouchableOpacity
               style={[styles.chartTab, activeChart === 'weather' && styles.chartTabActive]}
               onPress={() => setActiveChart('weather')}
+              activeOpacity={0.8}
             >
-              <Cloud size={18} color={activeChart === 'weather' ? colors.primary : colors.text.secondary} />
+              <Cloud size={20} color={activeChart === 'weather' ? colors.primary : colors.text.secondary} />
               <Text style={[styles.chartTabText, activeChart === 'weather' && styles.chartTabTextActive]}>
                 Weather
               </Text>
@@ -728,27 +769,18 @@ export default function TimeLapseViewScreen() {
             <TouchableOpacity
               style={[styles.chartTab, activeChart === 'disease' && styles.chartTabActive]}
               onPress={() => setActiveChart('disease')}
+              activeOpacity={0.8}
             >
-              <PieChartIcon size={18} color={activeChart === 'disease' ? colors.primary : colors.text.secondary} />
+              <PieChartIcon size={20} color={activeChart === 'disease' ? colors.primary : colors.text.secondary} />
               <Text style={[styles.chartTabText, activeChart === 'disease' && styles.chartTabTextActive]}>
                 Disease
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.chartTab, activeChart === 'confidence' && styles.chartTabActive]}
-              onPress={() => setActiveChart('confidence')}
-            >
-              <BarChart3 size={18} color={activeChart === 'confidence' ? colors.primary : colors.text.secondary} />
-              <Text style={[styles.chartTabText, activeChart === 'confidence' && styles.chartTabTextActive]}>
-                Confidence
               </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
 
-        {/* Charts Section */}
+        {/* Charts Section – white background, one chart per tab */}
         <View style={styles.chartsSection}>
-          {/* Severity Trend Chart */}
           {activeChart === 'severity' && severityChartData && (
             <View style={styles.chartCard}>
               <View style={styles.chartHeader}>
@@ -757,24 +789,16 @@ export default function TimeLapseViewScreen() {
               </View>
               <LineChart
                 data={severityChartData}
-                width={cardWidth - spacing.lg * 2}
+                width={chartWidth}
                 height={isSmallScreen ? 200 : 240}
-                chartConfig={chartConfig}
+                chartConfig={chartConfigSeverity}
                 bezier
                 style={styles.chart}
+                verticalLabelRotation={-45}
               />
-              {prediction && (
-                <View style={styles.predictionCard}>
-                  <Text style={styles.predictionTitle}>📊 AI Prediction</Text>
-                  <Text style={styles.predictionText}>
-                    Next week: {prediction.predicted_severity} (score: {prediction.score.toFixed(1)})
-                  </Text>
-                </View>
-              )}
             </View>
           )}
 
-          {/* Weather Chart */}
           {activeChart === 'weather' && weatherChartData && (
             <View style={styles.chartCard}>
               <View style={styles.chartHeader}>
@@ -783,18 +807,16 @@ export default function TimeLapseViewScreen() {
               </View>
               <LineChart
                 data={weatherChartData}
-                width={cardWidth - spacing.lg * 2}
+                width={chartWidth}
                 height={isSmallScreen ? 200 : 240}
-                chartConfig={{
-                  ...chartConfig,
-                  color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
-                }}
+                chartConfig={chartConfigWeatherTemp}
                 bezier
                 style={styles.chart}
+                verticalLabelRotation={-45}
               />
               <View style={styles.weatherLegend}>
                 <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#FBBF24' }]} />
+                  <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
                   <Text style={styles.legendText}>Temperature (°C)</Text>
                 </View>
                 <View style={styles.legendItem}>
@@ -805,7 +827,6 @@ export default function TimeLapseViewScreen() {
             </View>
           )}
 
-          {/* Disease Distribution Pie Chart */}
           {activeChart === 'disease' && diseasePieData.length > 0 && (
             <View style={styles.chartCard}>
               <View style={styles.chartHeader}>
@@ -816,45 +837,38 @@ export default function TimeLapseViewScreen() {
                 data={diseasePieData}
                 width={cardWidth - spacing.lg * 2}
                 height={isSmallScreen ? 200 : 240}
-                chartConfig={chartConfig}
+                chartConfig={chartConfigPie}
                 accessor="population"
-                backgroundColor="transparent"
+                backgroundColor="#FFFFFF"
                 paddingLeft="15"
                 absolute
               />
-              <View style={styles.severityBarContainer}>
-                <Text style={styles.chartSubtitle}>Severity Breakdown</Text>
-                <BarChart
-                  data={severityBarData}
-                  width={cardWidth - spacing.lg * 2}
-                  height={isSmallScreen ? 160 : 200}
-                  chartConfig={chartConfig}
-                  style={styles.chart}
-                  yAxisLabel=""
-                  yAxisSuffix=""
-                />
+              <View style={styles.severityBreakdownList}>
+                <Text style={styles.chartSubtitle}>Severity by scan</Text>
+                {Object.entries(severityDistribution).length > 0 ? (
+                  Object.entries(severityDistribution).map(([severityLabel, count]) => (
+                    <View key={severityLabel} style={styles.severityBreakdownRow}>
+                      <View
+                        style={[
+                          styles.severityBreakdownDot,
+                          {
+                            backgroundColor: getSeverityColor(
+                              severityLabel === 'None' ? 0
+                                : severityLabel === 'Mild' ? 1
+                                : severityLabel === 'Moderate' ? 2
+                                : 3
+                            ),
+                          },
+                        ]}
+                      />
+                      <Text style={styles.severityBreakdownLabel}>{severityLabel || 'Healthy'}</Text>
+                      <Text style={styles.severityBreakdownCount}>{count} scan{count !== 1 ? 's' : ''}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.severityBreakdownEmpty}>No severity data</Text>
+                )}
               </View>
-            </View>
-          )}
-
-          {/* Confidence Chart */}
-          {activeChart === 'confidence' && confidenceChartData && (
-            <View style={styles.chartCard}>
-              <View style={styles.chartHeader}>
-                <BarChart3 size={24} color={colors.primary} />
-                <Text style={styles.chartTitle}>AI Confidence Over Time</Text>
-              </View>
-              <LineChart
-                data={confidenceChartData}
-                width={cardWidth - spacing.lg * 2}
-                height={isSmallScreen ? 200 : 240}
-                chartConfig={{
-                  ...chartConfig,
-                  color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
-                }}
-                bezier
-                style={styles.chart}
-              />
             </View>
           )}
         </View>
@@ -881,30 +895,33 @@ export default function TimeLapseViewScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
-              {isPlaying && data.entries[currentPlayIndex] && (
+              {currentPlayEntry && (
                 <View style={styles.playbackImageContainer}>
-                  <Image
-                    source={{
-                      uri: `${getApiBaseUrl()}${data.entries[currentPlayIndex].photo_url}`,
-                    }}
-                    style={styles.playbackImage}
-                  />
+                  {getTimelapseImageUrl(currentPlayEntry.photo_url) ? (
+                    <Image
+                      source={{ uri: getTimelapseImageUrl(currentPlayEntry.photo_url)!, cache: 'reload' }}
+                      style={styles.playbackImage}
+                      onError={() => markImageFailed(currentPlayEntry.id)}
+                    />
+                  ) : (
+                    <View style={[styles.playbackImage, styles.imagePlaceholder]}>
+                      <Text style={styles.imagePlaceholderText}>No image</Text>
+                    </View>
+                  )}
                   <View style={styles.playbackOverlay}>
                     <Text style={styles.playbackDate}>
-                      {new Date(data.entries[currentPlayIndex].date).toLocaleDateString()}
+                      {formatEntryDate(currentPlayEntry.date)}
                     </Text>
                     <View
                       style={[
                         styles.severityBadge,
                         {
-                          backgroundColor: getSeverityColor(
-                            data.entries[currentPlayIndex].severity_score
-                          ),
+                          backgroundColor: getSeverityColor(currentPlayEntry.severity_score),
                         },
                       ]}
                     >
                       <Text style={styles.severityBadgeText}>
-                        {getSeverityLabel(data.entries[currentPlayIndex].severity)}
+                        {getSeverityLabel(currentPlayEntry.severity)}
                       </Text>
                     </View>
                   </View>
@@ -925,16 +942,17 @@ export default function TimeLapseViewScreen() {
               activeOpacity={0.8}
             >
               <View style={styles.timelineCard}>
-                <Image
-                  source={{ 
-                    uri: `${getApiBaseUrl()}${entry.photo_url}`,
-                    cache: 'force-cache'
-                  }}
-                  style={styles.timelineImage}
-                  onError={(e) => {
-                    console.error(`❌ Failed to load timeline image for entry ${entry.id}:`, e.nativeEvent.error);
-                  }}
-                />
+                {getTimelapseImageUrl(entry.photo_url) && !failedImageIds.has(entry.id) ? (
+                  <Image
+                    source={{ uri: getTimelapseImageUrl(entry.photo_url)!, cache: 'reload' }}
+                    style={styles.timelineImage}
+                    onError={() => markImageFailed(entry.id)}
+                  />
+                ) : (
+                  <View style={[styles.timelineImage, styles.imagePlaceholder]}>
+                    <Text style={styles.imagePlaceholderText}>No image</Text>
+                  </View>
+                )}
                 <View style={styles.timelineContent}>
                   <View style={styles.timelineHeader}>
                     <Calendar size={16} color={colors.text.secondary} />
@@ -1020,13 +1038,21 @@ export default function TimeLapseViewScreen() {
               >
                 <Text style={styles.modalCloseText}>✕</Text>
               </TouchableOpacity>
-              <Image
-                source={{
-                  uri: `${getApiBaseUrl()}${selectedEntry.highlighted_photo_url || selectedEntry.photo_url}`,
-                }}
-                style={styles.modalImage}
-                resizeMode="contain"
-              />
+              {getTimelapseImageUrl(selectedEntry.highlighted_photo_url || selectedEntry.photo_url) ? (
+                <Image
+                  source={{
+                    uri: getTimelapseImageUrl(selectedEntry.highlighted_photo_url || selectedEntry.photo_url)!,
+                    cache: 'reload',
+                  }}
+                  style={styles.modalImage}
+                  resizeMode="contain"
+                  onError={() => markImageFailed(selectedEntry.id)}
+                />
+              ) : (
+                <View style={[styles.modalImage, styles.imagePlaceholder]}>
+                  <Text style={styles.imagePlaceholderText}>No image</Text>
+                </View>
+              )}
               <View style={styles.modalDetails}>
                 <Text style={styles.modalDate}>
                   {new Date(selectedEntry.date).toLocaleDateString('en-US', {
@@ -1146,16 +1172,25 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadows.lg,
   },
+  statCardGreen: {
+    backgroundColor: colors.primaryDark,
+  },
+  statCardOrange: {
+    backgroundColor: '#D97706',
+  },
   statCardGradient: {
+    flex: 1,
     padding: spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.sm,
-    minHeight: 120,
+    minHeight: 112,
   },
   statValue: {
-    fontSize: isSmallScreen ? typography.fontSize.xl : typography.fontSize['2xl'],
+    fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold as any,
     color: 'white',
+    textAlign: 'center',
   },
   statLabel: {
     fontSize: typography.fontSize.sm,
@@ -1163,30 +1198,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: typography.fontWeight.medium as any,
   },
-  additionalStatsContainer: {
-    flexDirection: 'row',
+  additionalStatsGrid: {
     paddingHorizontal: spacing.base,
     marginBottom: spacing.xl,
-    gap: spacing.sm,
-    flexWrap: 'wrap',
+  },
+  additionalStatsRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
   additionalStatCard: {
-    width: additionalStatCardWidth,
-    minWidth: isSmallScreen ? (width - spacing.base * 2 - spacing.sm) / 2 : additionalStatCardWidth,
+    flex: 1,
     backgroundColor: colors.bg.primary,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 96,
     ...shadows.md,
     borderWidth: 1,
     borderColor: colors.border.light,
   },
   additionalStatValue: {
-    fontSize: typography.fontSize.xl,
+    fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold as any,
     color: colors.text.primary,
     marginTop: spacing.xs,
+    textAlign: 'center',
   },
   additionalStatLabel: {
     fontSize: typography.fontSize.sm,
@@ -1233,7 +1271,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   chartCard: {
-    backgroundColor: colors.bg.primary,
+    backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
     ...shadows.lg,
@@ -1285,6 +1323,39 @@ const styles = StyleSheet.create({
   severityBarContainer: {
     marginTop: spacing.base,
   },
+  severityBreakdownList: {
+    marginTop: spacing.base,
+    paddingTop: spacing.base,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+  },
+  severityBreakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  severityBreakdownDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  severityBreakdownLabel: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium as any,
+    color: colors.text.primary,
+  },
+  severityBreakdownCount: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.secondary,
+  },
+  severityBreakdownEmpty: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.tertiary,
+    fontStyle: 'italic',
+    paddingVertical: spacing.sm,
+  },
   predictionCard: {
     marginTop: spacing.base,
     padding: spacing.md,
@@ -1302,6 +1373,11 @@ const styles = StyleSheet.create({
   predictionText: {
     fontSize: typography.fontSize.sm,
     color: colors.text.secondary,
+  },
+  predictionTextMuted: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.tertiary,
+    fontStyle: 'italic',
   },
   playbackSection: {
     paddingHorizontal: spacing.base,
@@ -1628,12 +1704,14 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold as any,
     color: colors.text.primary,
     marginBottom: spacing.xs,
+    textAlign: 'center',
   },
   comparisonDate: {
     fontSize: typography.fontSize.sm,
     color: colors.text.secondary,
     marginBottom: spacing.md,
     fontWeight: typography.fontWeight.medium as any,
+    textAlign: 'center',
   },
   comparisonImage: {
     width: isSmallScreen ? 120 : 110,
@@ -1642,6 +1720,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.tertiary,
     marginBottom: spacing.md,
     ...shadows.sm,
+  },
+  imagePlaceholder: {
+    backgroundColor: colors.bg.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.tertiary,
   },
   comparisonStats: {
     width: '100%',

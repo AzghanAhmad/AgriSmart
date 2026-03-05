@@ -19,7 +19,7 @@ import {
   Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Camera, Image as ImageIcon, Upload, X, Sparkles, CheckCircle2, AlertCircle, Plus, Trash2 } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Upload, X, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 // Use React Native's built-in Animated for Expo Go compatibility
@@ -52,6 +52,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, spacing, borderRadius, shadows, typography } from '@/utils/designSystem';
 import { ArrowLeft } from 'lucide-react-native';
 import { TextInput } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -59,6 +60,30 @@ interface Crop {
   id: number;
   name: string;
   crop_type: string;
+}
+
+/** One selected image; date is set by the user 1 by 1 after picking */
+export interface SelectedImageItem {
+  uri: string;
+  /** Unix timestamp (ms); null until user sets date for this image */
+  createdAt: number | null;
+  /** Display string e.g. "Jan 2025"; null until user sets date */
+  monthYear: string | null;
+}
+
+const ORDINALS = ['1st', '2nd', '3rd'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Fixed crops for timelapse: Wheat, Rice, Cotton only */
+const CROP_TYPES = ['wheat', 'rice', 'cotton'] as const;
+const CROP_NAMES: Record<(typeof CROP_TYPES)[number], string> = { wheat: 'Wheat', rice: 'Rice', cotton: 'Cotton' };
+
+function formatMonthYear(monthIndex: number, year: number): string {
+  return `${MONTHS[monthIndex]} ${year}`;
+}
+
+function monthYearToTimestamp(monthIndex: number, year: number): number {
+  return new Date(year, monthIndex, 1).getTime();
 }
 
 interface DetectionResult {
@@ -79,15 +104,16 @@ export default function TimeLapseUploadScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
   const [crops, setCrops] = useState<Crop[]>([]);
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [selectedImages, setSelectedImages] = useState<SelectedImageItem[]>([]);
   const [notes, setNotes] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [activeTab, setActiveTab] = useState<'camera' | 'gallery'>('camera');
-  const [showCreateCropModal, setShowCreateCropModal] = useState(false);
-  const [newCropName, setNewCropName] = useState('');
-  const [newCropType, setNewCropType] = useState<'wheat' | 'rice' | 'cotton' | ''>('');
+  /** Which image index is having its date set; null = date picker closed */
+  const [datePickerIndex, setDatePickerIndex] = useState<number | null>(null);
+  const [tempMonth, setTempMonth] = useState(0);
+  const [tempYear, setTempYear] = useState(new Date().getFullYear());
   
   // Animation values
   const sparkleRotation = useSharedValue(0);
@@ -130,7 +156,6 @@ export default function TimeLapseUploadScreen() {
         return;
       }
 
-      console.log('🌾 Loading crops from:', `${getApiBaseUrl()}/api/timelapse/crops`);
       const response = await fetch(`${getApiBaseUrl()}/api/timelapse/crops`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -138,22 +163,44 @@ export default function TimeLapseUploadScreen() {
         },
       });
 
-      console.log('📥 Crops response status:', response.status);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Crops loaded:', data.crops?.length || 0, 'crops');
-        setCrops(data.crops || []);
-        
-        // If no crops and we have a cropId param, try to create a default crop
-        if ((data.crops || []).length === 0) {
-          console.log('⚠️ No crops found. User needs to create a crop first.');
-        }
-      } else {
+      if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Failed to load crops:', response.status, errorText);
         Alert.alert('Error', 'Failed to load crops. Please try again.');
+        return;
       }
+
+      const data = await response.json();
+      let list: Crop[] = data.crops || [];
+
+      // Ensure we have exactly one crop per type (Wheat, Rice, Cotton); create any missing
+      for (const type of CROP_TYPES) {
+        if (!list.some((c: Crop) => (c.crop_type || '').toLowerCase() === type)) {
+          try {
+            const createRes = await fetch(`${getApiBaseUrl()}/api/timelapse/crops`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: JSON.stringify({ name: CROP_NAMES[type], crop_type: type }),
+            });
+            if (createRes.ok) {
+              const created = await createRes.json();
+              list = [...list, created];
+            }
+          } catch (e) {
+            console.warn('Could not create crop for', type, e);
+          }
+        }
+      }
+
+      // Display exactly 3 crops in fixed order: Wheat, Rice, Cotton
+      const threeCrops: Crop[] = CROP_TYPES.map((type) =>
+        list.find((c: Crop) => (c.crop_type || '').toLowerCase() === type)
+      ).filter(Boolean) as Crop[];
+      setCrops(threeCrops);
     } catch (error: any) {
       console.error('❌ Failed to load crops:', error);
       Alert.alert('Error', `Failed to load crops: ${error.message || 'Network error'}`);
@@ -193,7 +240,12 @@ export default function TimeLapseUploadScreen() {
       });
 
       if (photo?.uri) {
-        setSelectedImages(prev => [...prev, photo.uri].slice(0, 3));
+        const newItem: SelectedImageItem = {
+          uri: photo.uri,
+          createdAt: null,
+          monthYear: null,
+        };
+        setSelectedImages(prev => [...prev, newItem].slice(0, 3));
         setShowCamera(false);
         setActiveTab('gallery');
       }
@@ -216,8 +268,12 @@ export default function TimeLapseUploadScreen() {
       });
 
       if (!result.canceled && result.assets) {
-        const newUris = result.assets.map(asset => asset.uri);
-        setSelectedImages(prev => [...prev, ...newUris].slice(0, 3));
+        const newItems: SelectedImageItem[] = result.assets.map((asset) => ({
+          uri: asset.uri,
+          createdAt: null,
+          monthYear: null,
+        }));
+        setSelectedImages(prev => [...prev, ...newItems].slice(0, 3));
       }
     } catch (error) {
       console.error('Gallery error:', error);
@@ -227,145 +283,34 @@ export default function TimeLapseUploadScreen() {
 
   const removeImage = (index: number) => {
     setSelectedImages(prev => prev.filter((_, i) => i !== index));
+    if (datePickerIndex === index) setDatePickerIndex(null);
+    else if (datePickerIndex !== null && datePickerIndex > index) setDatePickerIndex(datePickerIndex - 1);
   };
 
-  const createNewCrop = () => {
-    console.log('🔘 Create crop button pressed');
-    setNewCropName('');
-    setNewCropType('');
-    setShowCreateCropModal(true);
-    console.log('✅ Modal state set to true');
-  };
-
-  const handleCreateCrop = async () => {
-    if (!newCropName.trim()) {
-      Alert.alert('Error', 'Please enter a crop name');
-      return;
+  const openDatePickerFor = (index: number) => {
+    const item = selectedImages[index];
+    if (item?.createdAt != null) {
+      const d = new Date(item.createdAt);
+      setTempMonth(d.getMonth());
+      setTempYear(d.getFullYear());
+    } else {
+      const d = new Date();
+      setTempMonth(d.getMonth());
+      setTempYear(d.getFullYear());
     }
-    if (!newCropType) {
-      Alert.alert('Error', 'Please select a crop type');
-      return;
-    }
-
-    await createCropWithType(newCropName.trim(), newCropType);
-    setShowCreateCropModal(false);
-    setNewCropName('');
-    setNewCropType('');
+    setDatePickerIndex(index);
   };
 
-  const createCropWithType = async (name: string, cropType: string) => {
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        Alert.alert('Error', 'Please login again');
-        return;
-      }
-
-      console.log('🌾 Creating crop:', name, cropType);
-
-      const response = await fetch(`${getApiBaseUrl()}/api/timelapse/crops`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          name,
-          crop_type: cropType,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Crop created:', data);
-        
-        // Reload crops and select the new one
-        await loadCrops();
-        setSelectedCrop(data);
-        
-        Alert.alert('Success', `Crop "${name}" created successfully!`);
-      } else {
-        const errorData = await response.json().catch(() => ({ error: 'Failed to create crop' }));
-        throw new Error(errorData.error || 'Failed to create crop');
-      }
-    } catch (error: any) {
-      console.error('❌ Failed to create crop:', error);
-      Alert.alert('Error', error.message || 'Failed to create crop. Please try again.');
-    }
-  };
-
-  const deleteCrop = async (cropId: number, cropName: string) => {
-    Alert.alert(
-      'Delete Crop',
-      `Are you sure you want to delete "${cropName}"? This will also delete all associated timelapse entries. This action cannot be undone.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const token = await AsyncStorage.getItem('authToken');
-              if (!token) {
-                Alert.alert('Error', 'Please login again');
-                return;
-              }
-
-              console.log('🗑️ Deleting crop:', cropId);
-
-              const response = await fetch(`${getApiBaseUrl()}/api/timelapse/crops/${cropId}`, {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Accept': 'application/json',
-                },
-              });
-
-              const responseText = await response.text();
-              console.log('📥 Delete response status:', response.status);
-              console.log('📥 Delete response:', responseText);
-
-              if (response.ok) {
-                let data;
-                try {
-                  data = JSON.parse(responseText);
-                } catch {
-                  data = { success: true, message: 'Crop deleted successfully' };
-                }
-                console.log('✅ Crop deleted:', data);
-                
-                // Clear selection if deleted crop was selected
-                if (selectedCrop?.id === cropId) {
-                  setSelectedCrop(null);
-                }
-                
-                // Reload crops
-                await loadCrops();
-                
-                Alert.alert('Success', data.message || `Crop "${cropName}" deleted successfully!`);
-              } else {
-                let errorMessage = 'Failed to delete crop';
-                try {
-                  const errorData = JSON.parse(responseText);
-                  errorMessage = errorData.error || errorMessage;
-                } catch {
-                  errorMessage = responseText || errorMessage;
-                }
-                console.error('❌ Delete failed:', response.status, errorMessage);
-                throw new Error(errorMessage);
-              }
-            } catch (error: any) {
-              console.error('❌ Failed to delete crop:', error);
-              Alert.alert('Error', error.message || 'Failed to delete crop. Please try again.');
-            }
-          },
-        },
-      ]
+  const confirmDatePicker = () => {
+    if (datePickerIndex === null) return;
+    const createdAt = monthYearToTimestamp(tempMonth, tempYear);
+    const monthYear = formatMonthYear(tempMonth, tempYear);
+    setSelectedImages(prev =>
+      prev.map((it, i) =>
+        i === datePickerIndex ? { ...it, createdAt, monthYear } : it
+      )
     );
+    setDatePickerIndex(null);
   };
 
   const uploadPhotos = async () => {
@@ -376,6 +321,16 @@ export default function TimeLapseUploadScreen() {
 
     if (selectedImages.length === 0) {
       Alert.alert('No Photos', 'Please select at least one photo');
+      return;
+    }
+
+    const missingDateIndex = selectedImages.findIndex((item) => item.createdAt == null || item.monthYear == null);
+    if (missingDateIndex !== -1) {
+      Alert.alert(
+        'Set date for each image',
+        `Please set the capture date for the ${ORDINALS[missingDateIndex]} image. Tap on it to pick month and year.`,
+        [{ text: 'OK' }]
+      );
       return;
     }
 
@@ -390,18 +345,21 @@ export default function TimeLapseUploadScreen() {
 
       const formData = new FormData();
 
-      // Add photos - React Native FormData format
-      selectedImages.forEach((uri, index) => {
+      // Add photos and per-image capture dates (user-set 1 by 1)
+      selectedImages.forEach((item, index) => {
+        const uri = item.uri;
         const filename = uri.split('/').pop() || `photo_${index}.jpg`;
         const match = /\.(\w+)$/.exec(filename);
         const type = match ? `image/${match[1]}` : 'image/jpeg';
 
-        // React Native FormData format
         formData.append('files[]', {
           uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
           name: filename,
           type: type,
         } as any);
+        const d = new Date(item.createdAt!);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        formData.append('dates[]', dateStr);
       });
 
       formData.append('crop_id', selectedCrop.id.toString());
@@ -463,37 +421,12 @@ export default function TimeLapseUploadScreen() {
         );
       }
 
-      // Success animation
-      setTimeout(() => {
-        successScale.value = 0;
-        Alert.alert(
-          'Upload Successful!',
-          `${data.entries?.length || 0} photo(s) uploaded with AI analysis`,
-          [
-            { 
-              text: 'View TimeLapse', 
-              onPress: () => {
-                // Reset and navigate to timelapse view
-                setSelectedImages([]);
-                setNotes('');
-                setDetectionResult(null);
-                router.push(`/(farmer)/timelapse-view?cropId=${selectedCrop.id}`);
-              },
-              style: 'default'
-            },
-            { 
-              text: 'OK', 
-              onPress: () => {
-                // Reset and navigate
-                setSelectedImages([]);
-                setNotes('');
-                setDetectionResult(null);
-                router.back();
-              }
-            }
-          ]
-        );
-      }, 2000);
+      // Reset form and redirect directly to timelapse view
+      setSelectedImages([]);
+      setNotes('');
+      setDetectionResult(null);
+      successScale.value = 0;
+      router.push(`/(farmer)/timelapse-view?cropId=${selectedCrop.id}`);
 
     } catch (error: any) {
       console.error('❌ Upload error:', error);
@@ -601,92 +534,30 @@ export default function TimeLapseUploadScreen() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* Crop Selection */}
+        {/* Three crops at top: Wheat, Rice, Cotton – user just selects one */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Select Crop</Text>
-            <TouchableOpacity
-              style={styles.createCropButton}
-              onPress={() => {
-                console.log('🔘 Header Create Crop button pressed');
-                createNewCrop();
-              }}
-              activeOpacity={0.7}
-            >
-              <Plus size={16} color="white" />
-              <Text style={styles.createCropButtonText}>Add Crop</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cropScroll}>
-            {crops.length === 0 ? (
-              <View style={styles.emptyCropCard}>
-                <Text style={styles.emptyCropText}>No crops available</Text>
+          <Text style={styles.sectionTitle}>Select Crop</Text>
+          <View style={styles.threeCropsRow}>
+            {CROP_TYPES.map((type) => {
+              const crop = crops.find((c) => (c.crop_type || '').toLowerCase() === type);
+              const isSelected = selectedCrop?.crop_type?.toLowerCase() === type;
+              return (
                 <TouchableOpacity
-                  style={styles.createCropButtonInline}
-                  onPress={() => {
-                    console.log('🔘 Inline Create Crop button pressed');
-                    createNewCrop();
-                  }}
+                  key={type}
+                  style={[styles.cropCard, isSelected && styles.cropCardSelected]}
+                  onPress={() => crop && setSelectedCrop(crop)}
                   activeOpacity={0.7}
+                  disabled={!crop}
                 >
-                  <LinearGradient
-                    colors={[colors.primary, colors.primaryDark]}
-                    style={styles.createCropButtonGradient}
-                  >
-                    <Plus size={20} color="white" />
-                    <Text style={styles.createCropButtonTextInline}>Create Your First Crop</Text>
-                  </LinearGradient>
+                  <View style={[styles.cropCardContent, isSelected && styles.cropCardContentSelected]}>
+                    <Text style={[styles.cropName, isSelected && styles.cropNameSelected]}>
+                      {CROP_NAMES[type]}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              crops.map((crop) => (
-                <View
-                  key={crop.id}
-                  style={[
-                    styles.cropCard,
-                    selectedCrop?.id === crop.id && styles.cropCardSelected,
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.cropCardTouchable}
-                    onPress={() => {
-                      console.log('🌾 Crop selected:', crop.id, crop.name);
-                      setSelectedCrop(crop);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[
-                      styles.cropCardContent,
-                      selectedCrop?.id === crop.id && styles.cropCardContentSelected
-                    ]}>
-                      <Text style={[
-                        styles.cropName,
-                        selectedCrop?.id === crop.id && styles.cropNameSelected
-                      ]} numberOfLines={1}>
-                        {crop.name}
-                      </Text>
-                      <Text style={[
-                        styles.cropType,
-                        selectedCrop?.id === crop.id && styles.cropTypeSelected
-                      ]}>
-                        {crop.crop_type}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteCropButton}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      deleteCrop(crop.id, crop.name);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Trash2 size={16} color={colors.error} />
-                  </TouchableOpacity>
-                </View>
-              ))
-            )}
-          </ScrollView>
+              );
+            })}
+          </View>
         </View>
 
         {/* Upload Tabs */}
@@ -756,21 +627,33 @@ export default function TimeLapseUploadScreen() {
               )}
             </View>
 
-            {/* Selected Images */}
+            {/* Selected Images with date (month/year) per image */}
             {selectedImages.length > 0 && (
               <View style={styles.imagesContainer}>
                 <Text style={styles.imagesTitle}>
                   Selected ({selectedImages.length}/3)
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {selectedImages.map((uri, index) => (
-                    <View key={index} style={styles.imageWrapper}>
-                      <Image source={{ uri }} style={styles.selectedImage} />
+                  {selectedImages.map((item, index) => (
+                    <View key={`${item.uri}-${index}`} style={styles.imageWrapper}>
+                      <Image source={{ uri: item.uri }} style={styles.selectedImage} />
                       <TouchableOpacity
                         style={styles.removeImageButton}
                         onPress={() => removeImage(index)}
                       >
                         <X size={16} color="white" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.imageMeta}
+                        onPress={() => openDatePickerFor(index)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.imageOrdinal}>
+                          {ORDINALS[index]} image
+                        </Text>
+                        <Text style={item.monthYear ? styles.imageDateSet : styles.imageDatePlaceholder}>
+                          {item.monthYear ?? 'Tap to set date'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -888,70 +771,63 @@ export default function TimeLapseUploadScreen() {
         </View>
       </ScrollView>
 
-      {/* Create Crop Modal */}
+      {/* Date picker modal: set capture date (month & year) for each image 1 by 1 */}
       <Modal
-        visible={showCreateCropModal}
-        transparent={true}
+        visible={datePickerIndex !== null}
+        transparent
         animationType="slide"
-        onRequestClose={() => setShowCreateCropModal(false)}
+        onRequestClose={() => setDatePickerIndex(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create New Crop</Text>
-            
-            <Text style={styles.modalLabel}>Crop Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g., Wheat Field A"
-              placeholderTextColor={colors.text.tertiary}
-              value={newCropName}
-              onChangeText={setNewCropName}
-              autoFocus
-            />
-
-            <Text style={styles.modalLabel}>Crop Type</Text>
-            <View style={styles.cropTypeButtons}>
-              {(['wheat', 'rice', 'cotton'] as const).map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[
-                    styles.cropTypeButton,
-                    newCropType === type && styles.cropTypeButtonSelected,
-                  ]}
-                  onPress={() => setNewCropType(type)}
+          <View style={styles.datePickerModalContent}>
+            <Text style={styles.datePickerModalTitle}>
+              {datePickerIndex !== null ? `${ORDINALS[datePickerIndex]} image – set date` : 'Set date'}
+            </Text>
+            <Text style={styles.datePickerModalSubtitle}>Month & year when this photo was taken</Text>
+            <View style={styles.datePickerRow}>
+              <View style={styles.datePickerHalf}>
+                <Text style={styles.datePickerLabel}>Month</Text>
+                <Picker
+                  selectedValue={tempMonth}
+                  onValueChange={(v) => setTempMonth(v)}
+                  style={styles.picker}
+                  itemStyle={Platform.OS === 'ios' ? { fontSize: 18 } : undefined}
                 >
-                  <Text
-                    style={[
-                      styles.cropTypeButtonText,
-                      newCropType === type && styles.cropTypeButtonTextSelected,
-                    ]}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                  {MONTHS.map((m, i) => (
+                    <Picker.Item key={m} label={m} value={i} />
+                  ))}
+                </Picker>
+              </View>
+              <View style={styles.datePickerHalf}>
+                <Text style={styles.datePickerLabel}>Year</Text>
+                <Picker
+                  selectedValue={tempYear}
+                  onValueChange={(v) => setTempYear(v)}
+                  style={styles.picker}
+                  itemStyle={Platform.OS === 'ios' ? { fontSize: 18 } : undefined}
+                >
+                  {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map((y) => (
+                    <Picker.Item key={y} label={String(y)} value={y} />
+                  ))}
+                </Picker>
+              </View>
             </View>
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setShowCreateCropModal(false);
-                  setNewCropName('');
-                  setNewCropType('');
-                }}
+                onPress={() => setDatePickerIndex(null)}
               >
                 <Text style={styles.modalButtonTextCancel}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCreate]}
-                onPress={handleCreateCrop}
+                onPress={confirmDatePicker}
               >
                 <LinearGradient
                   colors={[colors.primary, colors.primaryDark]}
                   style={styles.modalButtonGradient}
                 >
-                  <Text style={styles.modalButtonTextCreate}>Create</Text>
+                  <Text style={styles.modalButtonTextCreate}>Set date</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -1048,40 +924,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
   },
   cropCard: {
-    marginRight: spacing.md,
+    flex: 1,
     borderRadius: borderRadius.lg,
     backgroundColor: colors.bg.primary,
     borderWidth: 2,
     borderColor: colors.border.light,
-    minWidth: 140,
-    position: 'relative',
     ...shadows.sm,
   },
   cropCardSelected: {
     borderColor: colors.primary,
     ...shadows.lg,
   },
-  cropCardTouchable: {
-    flex: 1,
-  },
   cropCardContent: {
-    padding: spacing.base,
-    paddingRight: spacing.xl + spacing.sm, // Make room for delete button
+    padding: spacing.md,
     alignItems: 'center',
-  },
-  deleteCropButton: {
-    position: 'absolute',
-    top: spacing.xs,
-    right: spacing.xs,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.bg.secondary,
-    borderWidth: 1,
-    borderColor: colors.border.light,
     justifyContent: 'center',
-    alignItems: 'center',
-    ...shadows.sm,
   },
   cropCardContentSelected: {
     backgroundColor: colors.primaryBg,
@@ -1194,12 +1051,34 @@ const styles = StyleSheet.create({
   imageWrapper: {
     marginRight: spacing.md,
     position: 'relative',
+    alignItems: 'center',
   },
   selectedImage: {
     width: 120,
     height: 120,
     borderRadius: borderRadius.md,
     backgroundColor: colors.bg.tertiary,
+  },
+  imageMeta: {
+    marginTop: spacing.xs,
+    alignItems: 'center',
+  },
+  imageOrdinal: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600' as const,
+    color: colors.text.primary,
+  },
+  imageDateSet: {
+    fontSize: typography.fontSize.xs,
+    color: colors.primary,
+    marginTop: 2,
+    fontWeight: '600' as const,
+  },
+  imageDatePlaceholder: {
+    fontSize: typography.fontSize.xs,
+    color: colors.text.tertiary,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   removeImageButton: {
     position: 'absolute',
@@ -1422,6 +1301,51 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     fontWeight: '600' as const,
     color: 'white',
+  },
+  datePickerModalContent: {
+    backgroundColor: colors.bg.primary,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 400,
+    ...shadows['2xl'],
+  },
+  datePickerModalTitle: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: '700' as const,
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  datePickerModalSubtitle: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.secondary,
+    marginBottom: spacing.lg,
+    textAlign: 'center',
+  },
+  datePickerRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  datePickerHalf: {
+    flex: 1,
+  },
+  datePickerLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600' as const,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
+  },
+  picker: {
+    backgroundColor: colors.bg.secondary,
+    borderRadius: borderRadius.md,
+    ...(Platform.OS === 'android' && { height: 100 }),
+  },
+  threeCropsRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.sm,
   },
 });
 
