@@ -13,6 +13,7 @@ try:
     from .routes.guidance import guidance_bp
     from .routes.schedule import schedule_bp
     from .routes.timelapse import timelapse_bp
+    from .routes.chatbot_bp import chatbot_bp
     from .modules.yield_estimation import yield_estimation_bp
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
@@ -27,6 +28,7 @@ except ImportError:
     from routes.guidance import guidance_bp
     from routes.schedule import schedule_bp
     from routes.timelapse import timelapse_bp
+    from routes.chatbot_bp import chatbot_bp
     from modules.yield_estimation import yield_estimation_bp
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
@@ -93,6 +95,7 @@ app.register_blueprint(guidance_bp)
 app.register_blueprint(schedule_bp)
 app.register_blueprint(timelapse_bp)  # Smart TimeLapse Module
 app.register_blueprint(yield_estimation_bp)  # Yield Estimation Module
+app.register_blueprint(chatbot_bp)  # LangGraph + Chroma + Groq assistant
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
@@ -130,7 +133,8 @@ def home():
             "guidance": "/api/guidance",
             "schedule": "/api/farmer/schedule/*",
             "yield": "/api/yield/*",
-            "predict": "/predict"
+            "predict": "/predict",
+            "chatbot": "/api/chatbot/chat"
         }
     })
 
