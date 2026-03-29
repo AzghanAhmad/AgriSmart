@@ -62,7 +62,7 @@ ENV/
 .ipynb_checkpoints/
 
 # Database (local SQLite)
-# *.db
+#  *.db
 # *.sqlite3
 # *.sqlite
 
@@ -92,15 +92,15 @@ Desktop.ini
 build/
 out/
 
-# Large / generated ML & RAG artifacts (teammates rebuild or download separately)
+# Large model checkpoints (add via Git LFS if you must ship weights)
 *.pt
 *.pth
 *.onnx
 *.pkl
-*.bin
-**/chroma_db/
-**/Chroma/
-Backend/chatbot/pdfs/
+# NOTE: Do not add "*.bin" here — ChromaDB stores vector chunks as .bin files under chroma_db/
+
+# RAG data: chroma_db/ and Backend/chatbot/pdfs/ are tracked on purpose for this repo
+
 Backend/static/uploads/
 Backend/**/uploads/detections/
 
