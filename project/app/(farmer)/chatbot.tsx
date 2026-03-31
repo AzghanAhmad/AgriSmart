@@ -9,27 +9,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  ActivityIndicator,
+  PermissionsAndroid,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Send, Mic, MicOff, Bot, User, RotateCcw } from 'lucide-react-native';
+import Voice from '@react-native-voice/voice';
+import Tts from 'react-native-tts';
 import { useApp } from '@/contexts/AppContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { translate } from '@/utils/translations';
 import {
   getStoredChatbotSessionId,
   saveChatbotSessionId,
   clearStoredChatbotSessionId,
-  getStoredConversationId,
-  saveConversationId,
-  clearConversationId,
-  createChatConversation,
-  fetchChatMessages,
   sendChatbotMessage,
   resetChatbotServerSession,
-  warmupChatbot,
-  isConversationsApiMissing,
 } from '@/services/chatbotService';
 
 interface Message {
@@ -48,171 +40,90 @@ function welcomeText(language: 'en' | 'ur'): string {
 
 export default function ChatbotScreen() {
   const { language } = useApp();
-  const { colors: tc } = useTheme();
-  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
+  // Voice status states: Idle → Listening → Processing
+  const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening' | 'processing'>('idle');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
-  const [historyReady, setHistoryReady] = useState(false);
-  const [chromaReady, setChromaReady] = useState(false);
-  const [warmupError, setWarmupError] = useState<string | null>(null);
-  /** False when backend has no `/api/chatbot/conversations` routes (old server) — use session_id chat only. */
-  const [useServerConversations, setUseServerConversations] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const canUseChat = sessionReady && chromaReady && historyReady;
+  // Newly added refs for voice workflow (recognized text + control flags)
+  const recognizedTextRef = useRef<string>('');
+  const manualStopRef = useRef<boolean>(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      setWarmupError(null);
-      (async () => {
-        try {
-          await warmupChatbot();
-          if (!cancelled) setChromaReady(true);
-        } catch (e: any) {
-          if (!cancelled) {
-            setChromaReady(false);
-            setWarmupError(e?.message || translate('networkError', language));
-          }
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }, [])
-  );
-
-  const retryWarmup = useCallback(() => {
-    setWarmupError(null);
-    setChromaReady(false);
-    (async () => {
-      try {
-        await warmupChatbot();
-        setChromaReady(true);
-      } catch (e: any) {
-        setChromaReady(false);
-        setWarmupError(e?.message || translate('networkError', language));
-      }
-    })();
-  }, [language]);
+  const isListening = voiceStatus === 'listening';
+  const isProcessing = voiceStatus === 'processing';
 
   useEffect(() => {
     let cancelled = false;
-    const welcomeMsg = (): Message => ({
-      id: 'welcome',
-      text: welcomeText(language),
-      isUser: false,
-      timestamp: new Date(),
-    });
-
     (async () => {
-      setHistoryReady(false);
-      setSessionReady(false);
-
-      if (!user?.id) {
-        const stored = await getStoredChatbotSessionId();
-        if (!cancelled) {
-          setSessionId(stored);
-          setConversationId(null);
-          setUseServerConversations(false);
-          setMessages([welcomeMsg()]);
-          setSessionReady(true);
-          setHistoryReady(true);
-        }
-        return;
-      }
-
-      const runLegacyOnly = async () => {
-        const stored = await getStoredChatbotSessionId();
-        if (cancelled) return;
-        setUseServerConversations(false);
-        setConversationId(null);
+      const stored = await getStoredChatbotSessionId();
+      if (!cancelled) {
         setSessionId(stored);
-        setMessages([welcomeMsg()]);
-      };
-
-      try {
-        let cid = await getStoredConversationId(user.id);
-        let rows: { id: string; role: string; content: string; created_at: string | null }[] = [];
-
-        if (cid) {
-          try {
-            const r = await fetchChatMessages(cid);
-            rows = r.messages;
-          } catch (e) {
-            if (isConversationsApiMissing(e)) {
-              await runLegacyOnly();
-              return;
-            }
-            await clearConversationId(user.id);
-            cid = null;
-          }
-        }
-
-        if (!cid) {
-          try {
-            const created = await createChatConversation();
-            cid = created.conversation_id;
-            await saveConversationId(user.id, cid);
-          } catch (e) {
-            if (isConversationsApiMissing(e)) {
-              await runLegacyOnly();
-              return;
-            }
-            throw e;
-          }
-        }
-
-        if (cancelled) return;
-
-        setConversationId(cid);
-
-        if (rows.length === 0) {
-          setMessages([welcomeMsg()]);
-        } else {
-          setMessages(
-            rows.map((m) => ({
-              id: m.id,
-              text: m.content,
-              isUser: m.role === 'user',
-              timestamp: m.created_at ? new Date(m.created_at) : new Date(),
-            }))
-          );
-        }
-      } catch (e: any) {
-        if (!cancelled && isConversationsApiMissing(e)) {
-          await runLegacyOnly();
-          return;
-        }
-        if (!cancelled) {
-          Alert.alert(translate('error', language), e?.message || 'Chat load failed');
-          setMessages([welcomeMsg()]);
-        }
-      } finally {
-        if (!cancelled) {
-          setSessionReady(true);
-          setHistoryReady(true);
-        }
+        setMessages([
+          {
+            id: 'welcome',
+            text: welcomeText(language),
+            isUser: false,
+            timestamp: new Date(),
+          },
+        ]);
+        setSessionReady(true);
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [user?.id, language]);
+  }, [language]);
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
+  // Newly added: Configure TTS language once (English only: en-US)
+  useEffect(() => {
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        // Some environments may not have the native TTS module ready yet.
+        const getInitStatus = (Tts as any).getInitStatus;
+        if (typeof getInitStatus === 'function') {
+          const status = await getInitStatus();
+          if (cancelled) return;
+
+          // react-native-tts usually returns 'succeeded' / 'failed'
+          if (status === 'succeeded') {
+            Tts.setDefaultLanguage('en-US');
+          }
+        } else {
+          // Fallback (older versions): attempt directly, but keep it safe.
+          try {
+            Tts.setDefaultLanguage('en-US');
+          } catch {
+            // ignore init issues
+          }
+        }
+      } catch {
+        // Ignore TTS init errors; we still try speaking inside try/catch later.
+      }
+    };
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!text.trim() || !canUseChat) return;
+      if (!text.trim() || !sessionReady) {
+        return;
+      }
+
+      // While the chatbot request is in-flight, we treat this as "Processing"
+      setVoiceStatus('processing');
 
       const userMessage: Message = {
         id: Date.now().toString(),
@@ -221,26 +132,13 @@ export default function ChatbotScreen() {
         timestamp: new Date(),
       };
 
-      setMessages((prev) => {
-        const withoutWelcome = prev.filter((m) => m.id !== 'welcome');
-        return [...withoutWelcome, userMessage];
-      });
+      setMessages((prev) => [...prev, userMessage]);
       setInputText('');
-      setIsTyping(true);
 
       try {
-        const { response, session_id, conversation_id: convReturned } = await sendChatbotMessage(
-          text.trim(),
-          {
-            conversationId: user?.id && useServerConversations ? conversationId : null,
-            sessionId: !user?.id || !useServerConversations ? sessionId : null,
-          }
-        );
-        if (convReturned) setConversationId(convReturned);
-        if (session_id) {
-          setSessionId(session_id);
-          await saveChatbotSessionId(session_id);
-        }
+        const { response, session_id } = await sendChatbotMessage(text.trim(), sessionId);
+        setSessionId(session_id);
+        await saveChatbotSessionId(session_id);
 
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -249,52 +147,40 @@ export default function ChatbotScreen() {
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, botMessage]);
+
+        // Newly added: Speak bot response aloud (English TTS config)
+        try {
+          Tts.stop();
+        } catch {
+          // ignore
+        }
+        try {
+          Tts.speak(response);
+        } catch (e) {
+          console.warn('TTS error:', e);
+        }
       } catch (e: any) {
-        const msg = e?.message || translate('networkError', language);
+        const msg =
+          e?.message ||
+          translate('networkError', language);
         Alert.alert(translate('error', language), msg);
       } finally {
-        setIsTyping(false);
+        setVoiceStatus('idle');
       }
     },
-    [sessionId, conversationId, user?.id, useServerConversations, canUseChat, language]
+    [sessionId, sessionReady, language]
   );
 
   const handleNewChat = useCallback(async () => {
-    if (user?.id && useServerConversations) {
-      try {
-        await clearConversationId(user.id);
-        const { conversation_id } = await createChatConversation();
-        await saveConversationId(user.id, conversation_id);
-        setConversationId(conversation_id);
-      } catch (e) {
-        if (isConversationsApiMissing(e)) {
-          setUseServerConversations(false);
-          try {
-            if (sessionId) await resetChatbotServerSession(sessionId);
-          } catch {
-            /* ignore */
-          }
-          await clearStoredChatbotSessionId();
-          setSessionId(null);
-        } else {
-          Alert.alert(
-            translate('error', language),
-            language === 'ur' ? 'نئی گفتگو شروع نہیں ہو سکی' : 'Could not start a new conversation'
-          );
-          return;
-        }
+    try {
+      if (sessionId) {
+        await resetChatbotServerSession(sessionId);
       }
-    } else {
-      try {
-        if (sessionId) {
-          await resetChatbotServerSession(sessionId);
-        }
-      } catch {
-        /* ignore */
-      }
-      await clearStoredChatbotSessionId();
-      setSessionId(null);
+    } catch {
+      // Still clear local session if server reset fails
     }
+    await clearStoredChatbotSessionId();
+    setSessionId(null);
     setMessages([
       {
         id: 'welcome',
@@ -303,17 +189,169 @@ export default function ChatbotScreen() {
         timestamp: new Date(),
       },
     ]);
-  }, [sessionId, user?.id, useServerConversations, language]);
+  }, [sessionId, language]);
 
-  const handleVoiceInput = () => {
-    setIsRecording(!isRecording);
-    if (!isRecording) {
-      setTimeout(() => {
-        setIsRecording(false);
-        setInputText('Mock voice input: How to treat wheat rust?');
-      }, 2000);
+  const requestMicPermission = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+
+    const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
+      title: 'Microphone Permission',
+      message: 'We need access to your microphone to take voice input.',
+      buttonPositive: 'OK',
+      buttonNegative: 'Cancel',
+    });
+
+    // DEBUG: log permission result
+    console.log('[VOICE][DEBUG] RECORD_AUDIO permission result:', result);
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  }, []);
+
+  // FIX: centralize start logic; prevents overlapping starts and logs root cause
+  const startListening = useCallback(async () => {
+    if (isProcessing) return;
+    if (isListening) return;
+
+    // DEBUG: emulator note (cannot reliably detect without extra deps)
+    // If you are testing on an Android emulator, SpeechRecognizer may fail.
+    // Prefer testing on a real device.
+
+    const granted = await requestMicPermission();
+    if (!granted) {
+      Alert.alert('Microphone permission denied', 'Enable microphone access and try again.');
+      setVoiceStatus('idle');
+      return;
     }
-  };
+
+    recognizedTextRef.current = '';
+    manualStopRef.current = false;
+
+    try {
+      // FIX: ensure prior session isn't still active
+      try {
+        await Voice.cancel();
+      } catch {
+        // ignore
+      }
+      try {
+        await Voice.stop();
+      } catch {
+        // ignore
+      }
+
+      setVoiceStatus('listening');
+      console.log('[VOICE][DEBUG] Voice.start(en-US) calling...');
+      await Voice.start('en-US'); // English only
+      console.log('[VOICE][DEBUG] Voice.start(en-US) returned successfully');
+    } catch (e: any) {
+      console.log('[VOICE][DEBUG] Voice.start failed:', e);
+      setVoiceStatus('idle');
+
+      const details =
+        e?.message ||
+        e?.toString?.() ||
+        'Unknown error';
+
+      Alert.alert(
+        'Voice error',
+        `Could not start voice recognition. Please try again.\n\nDetails: ${details}\n\nIf you're using Expo Go or an emulator, voice recognition may not work—try a real device + a native build.`
+      );
+    }
+  }, [isListening, isProcessing, requestMicPermission]);
+
+  // Newly added: Start/stop listening with real voice recognition
+  const handleVoiceInput = useCallback(async () => {
+    if (isProcessing) return;
+
+    // Stop if currently listening
+    if (isListening) {
+      manualStopRef.current = true;
+      try {
+        await Voice.stop();
+      } catch {
+        // ignore
+      }
+      setVoiceStatus('idle');
+      return;
+    }
+    // FIX: single entrypoint for starting
+    await startListening();
+  }, [isListening, isProcessing, startListening]);
+
+  // Newly added: Voice event wiring + cleanup
+  useEffect(() => {
+    Voice.onSpeechStart = () => {
+      // DEBUG
+      console.log('[VOICE][DEBUG] onSpeechStart');
+      setVoiceStatus('listening');
+    };
+
+    Voice.onSpeechResults = (event: any) => {
+      // DEBUG
+      console.log('[VOICE][DEBUG] onSpeechResults:', event?.value);
+      const text = event?.value?.[0];
+      if (typeof text === 'string' && text.trim()) {
+        recognizedTextRef.current = text.trim();
+      }
+    };
+
+    Voice.onSpeechEnd = () => {
+      // DEBUG
+      console.log('[VOICE][DEBUG] onSpeechEnd');
+      const manualStopped = manualStopRef.current;
+      manualStopRef.current = false;
+
+      const text = recognizedTextRef.current.trim();
+      recognizedTextRef.current = '';
+
+      // If the user stopped manually, don't auto-send.
+      if (manualStopped) {
+        setVoiceStatus('idle');
+        return;
+      }
+
+      if (!text) {
+        setVoiceStatus('idle');
+        Alert.alert('No speech detected', 'Please try again.');
+        return;
+      }
+
+      // Auto-send recognized speech through the same existing API flow.
+      sendMessage(text);
+    };
+
+    Voice.onSpeechError = (event: any) => {
+      // DEBUG
+      console.log('[VOICE][DEBUG] onSpeechError:', event);
+      recognizedTextRef.current = '';
+      manualStopRef.current = false;
+      setVoiceStatus('idle');
+
+      const message =
+        event?.error?.message ||
+        event?.error?.code ||
+        event?.error?.toString?.() ||
+        'Speech recognition error. Please try again.';
+
+      Alert.alert('Voice recognition error', message);
+    };
+
+    return () => {
+      // Cleanup listeners on unmount to avoid duplicate events
+      Voice.destroy()
+        .catch(() => {
+          // ignore
+        })
+        .finally(() => {
+          Voice.removeAllListeners();
+        });
+
+      try {
+        Tts.stop();
+      } catch {
+        // ignore
+      }
+    };
+  }, [sendMessage]);
 
   const quickQuestions = [
     'How to treat wheat rust disease?',
@@ -325,40 +363,18 @@ export default function ChatbotScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: tc.screen }]}
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
-        <View style={[styles.headerIcon, { backgroundColor: tc.screenSecondary }]}>
+      <View style={styles.header}>
+        <View style={styles.headerIcon}>
           <Bot color="#22C55E" size={24} />
         </View>
         <View style={styles.headerTextBlock}>
-          <Text style={[styles.headerTitle, { color: tc.text }]}>AgriSmart</Text>
-          {!chromaReady && !warmupError ? (
-            <View style={styles.warmupRow}>
-              <ActivityIndicator size="small" color="#22C55E" />
-              <Text style={[styles.headerSubtitle, { color: tc.textMuted }]}>
-                {language === 'ur'
-                  ? 'علم کا ذخیرہ لوڈ ہو رہا ہے…'
-                  : 'Loading knowledge base…'}
-              </Text>
-            </View>
-          ) : warmupError ? (
-            <View style={styles.warmupRow}>
-              <Text style={styles.warmupErrorText} numberOfLines={2}>
-                {warmupError}
-              </Text>
-              <TouchableOpacity onPress={retryWarmup} style={styles.retryChip}>
-                <Text style={styles.retryChipText}>
-                  {language === 'ur' ? 'دوبارہ' : 'Retry'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <Text style={[styles.headerSubtitle, { color: tc.textMuted }]}>
-              {language === 'ur' ? 'ذریعی معاون — بیک اینڈ سے منسلک' : 'Farming assistant — connected to backend'}
-            </Text>
-          )}
+          <Text style={styles.headerTitle}>AgriSmart</Text>
+          <Text style={styles.headerSubtitle}>
+            {language === 'ur' ? 'ذریعی معاون — بیک اینڈ سے منسلک' : 'Farming assistant — connected to backend'}
+          </Text>
         </View>
         <TouchableOpacity
           style={styles.newChatButton}
@@ -371,7 +387,7 @@ export default function ChatbotScreen() {
 
       <ScrollView
         ref={scrollViewRef}
-        style={[styles.messagesContainer, { backgroundColor: tc.screen }]}
+        style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
       >
         {messages.map((message) => (
@@ -399,18 +415,18 @@ export default function ChatbotScreen() {
             <View
               style={[
                 styles.messageBubble,
-                message.isUser ? styles.userMessage : [styles.botMessage, { backgroundColor: tc.card, borderColor: tc.border }],
+                message.isUser ? styles.userMessage : styles.botMessage,
               ]}
             >
               <Text
                 style={[
                   styles.messageText,
-                  message.isUser ? styles.userMessageText : [styles.botMessageText, { color: tc.text }],
+                  message.isUser ? styles.userMessageText : styles.botMessageText,
                 ]}
               >
                 {message.text}
               </Text>
-              <Text style={[styles.messageTime, { color: message.isUser ? 'rgba(255,255,255,0.8)' : tc.textMuted }]}>
+              <Text style={styles.messageTime}>
                 {message.timestamp.toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
@@ -420,13 +436,13 @@ export default function ChatbotScreen() {
           </View>
         ))}
 
-        {isTyping && (
+        {isProcessing && (
           <View style={styles.typingIndicator}>
             <View style={styles.botIconWrap}>
               <Bot color="white" size={16} />
             </View>
-            <View style={[styles.typingBubble, { backgroundColor: tc.card, borderColor: tc.border }]}>
-              <Text style={[styles.typingText, { color: tc.textMuted }]}>
+            <View style={styles.typingBubble}>
+              <Text style={styles.typingText}>
                 {language === 'ur' ? 'جواب تیار ہو رہا ہے…' : 'Thinking…'}
               </Text>
               <View style={styles.typingDots}>
@@ -438,15 +454,15 @@ export default function ChatbotScreen() {
           </View>
         )}
 
-        {canUseChat && messages.length === 1 && messages[0]?.id === 'welcome' && !isTyping && (
+        {messages.length === 1 && !isProcessing && (
           <View style={styles.quickQuestionsContainer}>
-            <Text style={[styles.quickQuestionsTitle, { color: tc.textSecondary }]}>
+            <Text style={styles.quickQuestionsTitle}>
               {language === 'ur' ? 'فوری سوالات:' : 'Quick questions:'}
             </Text>
             {quickQuestions.map((question, index) => (
               <TouchableOpacity
                 key={index}
-                style={[styles.quickQuestionButton, { backgroundColor: tc.card, borderColor: tc.border }]}
+                style={styles.quickQuestionButton}
                 onPress={() => sendMessage(question)}
               >
                 <Text style={styles.quickQuestionText}>{question}</Text>
@@ -456,58 +472,52 @@ export default function ChatbotScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.inputContainer, { backgroundColor: tc.headerBg, borderTopColor: tc.border }]}>
+      <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
           <TextInput
-            style={[
-              styles.textInput,
-              { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text },
-              !canUseChat && styles.textInputDisabled,
-            ]}
+            style={styles.textInput}
             placeholder={
-              !chromaReady
-                ? language === 'ur'
-                  ? 'لوڈ ہونے کا انتظار…'
-                  : 'Waiting for assistant to load…'
-                : !historyReady
-                  ? language === 'ur'
-                    ? 'گفتگو لوڈ ہو رہی ہے…'
-                    : 'Loading conversation…'
-                  : language === 'ur'
-                    ? 'فصل، بیماری، کھاد، آبپاشی…'
-                    : 'Ask about crops, disease, fertilizer, irrigation…'
+              language === 'ur'
+                ? 'فصل، بیماری، کھاد، آبپاشی…'
+                : 'Ask about crops, disease, fertilizer, irrigation…'
             }
-            placeholderTextColor={tc.textMuted}
+            placeholderTextColor="#9CA3AF"
             value={inputText}
             onChangeText={setInputText}
             multiline
             maxLength={500}
-            editable={canUseChat}
+            editable={!isProcessing}
           />
 
           <TouchableOpacity
-            style={[styles.voiceButton, { backgroundColor: tc.screenSecondary }, isRecording && styles.recordingButton]}
+            style={[styles.voiceButton, isListening && styles.recordingButton]}
             onPress={handleVoiceInput}
-            disabled={!canUseChat}
+            accessibilityLabel="Voice input"
           >
-            {isRecording ? (
+            {isListening ? (
               <MicOff color="white" size={20} />
             ) : (
-              <Mic color={tc.textMuted} size={20} />
+              <Mic color="#6B7280" size={20} />
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (!inputText.trim() || !canUseChat) && styles.disabledButton,
-            ]}
-            onPress={() => sendMessage(inputText)}
-            disabled={!inputText.trim() || !canUseChat}
+            style={[styles.sendButton, !inputText.trim() && styles.disabledButton]}
+            onPress={() => {
+              sendMessage(inputText);
+            }}
+            disabled={!inputText.trim() || isProcessing || isListening}
           >
             <Send color="white" size={20} />
           </TouchableOpacity>
         </View>
+
+        {/* Newly added: Listening indicator */}
+        {isListening && (
+          <View style={styles.listeningIndicator}>
+            <Text style={styles.listeningText}>Listening...</Text>
+          </View>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -548,30 +558,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
-  },
-  warmupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-    flexWrap: 'wrap',
-  },
-  warmupErrorText: {
-    fontSize: 11,
-    color: '#B45309',
-    flex: 1,
-    minWidth: 120,
-  },
-  retryChip: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  retryChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#B45309',
   },
   newChatButton: {
     width: 40,
@@ -732,9 +718,6 @@ const styles = StyleSheet.create({
     maxHeight: 100,
     backgroundColor: '#F9FAFB',
   },
-  textInputDisabled: {
-    opacity: 0.75,
-  },
   voiceButton: {
     width: 44,
     height: 44,
@@ -745,6 +728,16 @@ const styles = StyleSheet.create({
   },
   recordingButton: {
     backgroundColor: '#EF4444',
+  },
+  // Newly added: minimal listening feedback
+  listeningIndicator: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  listeningText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontWeight: '600',
   },
   sendButton: {
     width: 44,

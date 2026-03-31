@@ -13,4 +13,9 @@ psycopg2-binary>=2.9
 opencv-python
 scikit-learn
 numpy
-reportlab
+langgraph
+langchain-groq
+langchain_huggingface
+langchain_community
+sentence-transformers
+chromadb
