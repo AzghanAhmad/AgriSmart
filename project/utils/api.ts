@@ -63,19 +63,20 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
     console.log(`✅ API Response: ${res.status} ${res.statusText}`);
     
     const text = await res.text();
+    const trimmed = text.trim();
     let data: any;
-    try { 
-      data = text ? JSON.parse(text) : {}; 
-    } catch { 
+    try {
+      data = trimmed ? JSON.parse(trimmed) : {};
+    } catch {
+      const preview = trimmed.slice(0, 120).replace(/\s+/g, ' ');
       data = {
-        error: `Invalid response (${res.status}). Is the backend running at ${base}? If you see HTML or a proxy page, check EXPO_PUBLIC_API_BASE_URL / network IP in project/utils/env.ts.`,
-      }; 
+        error: `Invalid response (${res.status}). Is the backend running at ${base}? If you see HTML or a proxy page, check EXPO_PUBLIC_API_BASE_URL / network IP in project/utils/env.ts.${preview ? ` (${preview.slice(0, 80)}…)` : ''}`,
+      };
     }
-    
+
     if (!res.ok) {
       // Handle 401 Unauthorized - clear invalid token
       if (res.status === 401) {
-        // Clear invalid token from storage
         AsyncStorage.removeItem('authToken').catch(() => {});
         AsyncStorage.removeItem('user').catch(() => {});
       }

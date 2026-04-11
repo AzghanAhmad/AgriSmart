@@ -163,6 +163,36 @@ def run_migrations(engine):
                     conn.execute(text('ALTER TABLE "OutbreakAlerts" ADD COLUMN disease_name VARCHAR(120)'))
                     conn.commit()
                     print("    ✅ Added 'disease_name' column to OutbreakAlerts")
+
+            # Chatbot conversation persistence (ChatGPT-style threads)
+            if not table_exists(inspector, 'chat_conversations'):
+                print("  🔍 Creating chat_conversations table...")
+                conn.execute(text("""
+                    CREATE TABLE chat_conversations (
+                        id VARCHAR(36) PRIMARY KEY,
+                        user_id VARCHAR(50) NOT NULL,
+                        title VARCHAR(200),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES Users(user_id)
+                    )
+                """))
+                conn.commit()
+                print("  ✅ Created 'chat_conversations' table")
+            if not table_exists(inspector, 'chat_messages'):
+                print("  🔍 Creating chat_messages table...")
+                conn.execute(text("""
+                    CREATE TABLE chat_messages (
+                        id VARCHAR(36) PRIMARY KEY,
+                        conversation_id VARCHAR(36) NOT NULL,
+                        role VARCHAR(20) NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(conversation_id) REFERENCES chat_conversations(id)
+                    )
+                """))
+                conn.commit()
+                print("  ✅ Created 'chat_messages' table")
         
         print("✅ Migration completed successfully")
         

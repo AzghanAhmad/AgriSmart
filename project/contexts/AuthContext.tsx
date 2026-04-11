@@ -147,6 +147,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async (): Promise<void> => {
     try {
+      const uid = user?.id;
+      if (uid) {
+        await AsyncStorage.removeItem(`agri_chatbot_conversation_${uid}`);
+      }
       await AsyncStorage.removeItem('user');
       await AsyncStorage.removeItem('authToken');
       setUser(null);

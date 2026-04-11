@@ -12,6 +12,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { resolveWeatherCoordinates } from '@/utils/pakistanGeocode';
 import { CropHealthPieSummary } from '@/components/farmer/CropHealthPieSummary';
 import { YieldTrendChart } from '@/components/farmer/YieldTrendChart';
+import { warmupChatbot } from '@/services/chatbotService';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -150,6 +151,9 @@ export default function FarmerHomeScreen() {
   ];
 
   const handleQuickAction = (route: string) => {
+    if (route === '/chatbot') {
+      warmupChatbot().catch((err) => console.warn('Chatbot warmup (prefetch):', err));
+    }
     router.push(route as any);
   };
 

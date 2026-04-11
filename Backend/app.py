@@ -7,6 +7,7 @@ import os
 import datetime
 try:
     from .db import Base, engine
+    from .schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401 — register tables
     from .routes.farmer import farmer_bp
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp
@@ -23,6 +24,7 @@ try:
 except ImportError:
     # Fallback for running as a script: python Backend/app.py
     from db import Base, engine
+    from schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401
     from routes.farmer import farmer_bp
     from routes.admin import admin_bp
     from routes.auth import auth_bp
@@ -139,7 +141,8 @@ def home():
             "schedule": "/api/farmer/schedule/*",
             "yield": "/api/yield/*",
             "predict": "/predict",
-            "chatbot": "/api/chatbot/chat"
+            "chatbot": "/api/chatbot/chat",
+            "chatbot_warmup": "/api/chatbot/warmup"
         }
     })
 

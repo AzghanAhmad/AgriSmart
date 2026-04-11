@@ -3,7 +3,7 @@ import sys
 import warnings
 warnings.filterwarnings("ignore")
 
-from typing import TypedDict, List, Annotated
+from typing import TypedDict, List, Annotated, Any
 from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
@@ -143,6 +143,16 @@ AGRI_WORDS = [
 ]
 
 # ═══════════════════════════════════════════════════════════
+# Multi-turn context (must be fed to the LLM, not only stored after the fact)
+# ═══════════════════════════════════════════════════════════
+
+def _prior_messages_plus_current_user(state: AgriState) -> List[Any]:
+    """Prior conversation turns, then the current user message (query is not in prior yet)."""
+    prior = list(state.get("messages") or [])
+    return prior + [HumanMessage(content=state["query"])]
+
+
+# ═══════════════════════════════════════════════════════════
 # LANGGRAPH NODES
 # ═══════════════════════════════════════════════════════════
 
@@ -224,11 +234,11 @@ Keep answers practical and farmer-friendly."""
         print("=" * 72 + "\n")
 
     try:
-        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
-        response = llm.invoke([
-            SM(content=system_msg),
-            HM(content=query)
-        ])
+        from langchain_core.messages import SystemMessage as SM
+        # Full chat history + current question so follow-ups like "from above" work
+        response = llm.invoke(
+            [SM(content=system_msg)] + _prior_messages_plus_current_user(state)
+        )
         response_text = response.content.strip()
 
     except Exception as e:
@@ -268,11 +278,10 @@ def direct_response_node(state: AgriState) -> AgriState:
         system = "You are AgriSmart, an agricultural assistant for Pakistani farmers. Be friendly. If not agriculture related, politely guide back to farming topics."
 
     try:
-        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
-        response = llm.invoke([
-            SM(content=system),
-            HM(content=query)
-        ])
+        from langchain_core.messages import SystemMessage as SM
+        response = llm.invoke(
+            [SM(content=system)] + _prior_messages_plus_current_user(state)
+        )
         response_text = response.content.strip()
     except Exception as e:
         print(f"LLM Error: {e}")
@@ -331,6 +340,21 @@ class AgriSmartChatbot:
         )
         result       = self.graph.invoke(state)
         self.history = result["messages"]
+        return result["response"]
+
+    def chat_with_prior(self, prior_messages: List, user_input: str) -> str:
+        """
+        Run one turn using prior LangChain messages (caller trims to last N, e.g. 20).
+        Does not mutate self.history — for DB-backed threads.
+        """
+        state = AgriState(
+            messages=list(prior_messages),
+            query=user_input,
+            language="english",
+            context="",
+            response=""
+        )
+        result = self.graph.invoke(state)
         return result["response"]
 
     def reset(self):
