@@ -20,7 +20,9 @@ import {
   RefreshCw,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { translate } from '@/utils/translations';
 import { getApiBaseUrl } from '@/utils/env';
 import { resolveWeatherCoordinates } from '@/utils/pakistanGeocode';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -47,10 +49,46 @@ interface WeatherData {
   forecast: WeatherDay[];
 }
 
+function localizeWeatherDescription(desc: string, language: 'en' | 'ur'): string {
+  if (language !== 'ur') return desc;
+  const k = desc.trim().toLowerCase();
+  const map: Record<string, string> = {
+    'clear sky': 'صاف آسمان',
+    'few clouds': 'چند بادل',
+    'scattered clouds': 'بکھری بادل',
+    'broken clouds': 'بادل',
+    'overcast clouds': 'ابر آلود',
+    'light rain': 'ہلکی بارش',
+    'moderate rain': 'درمیانی بارش',
+    'heavy intensity rain': 'شدید بارش',
+    'very heavy rain': 'بہت شدید بارش',
+    'extreme rain': 'انتہائی بارش',
+    'freezing rain': 'برفیلی بارش',
+    'light intensity shower rain': 'ہلکی بارش',
+    'shower rain': 'تیز بارش',
+    'rain': 'بارش',
+    'thunderstorm': 'طوفان',
+    'snow': 'برفباری',
+    'mist': 'دھند',
+    'fog': 'کہر',
+    'haze': 'دھندلا پن',
+    'drizzle': 'بوندا باندی',
+    'light intensity drizzle': 'ہلکی بوندا باندی',
+    'smoke': 'دھواں',
+    'dust': 'گرد',
+    'sand': 'ریت',
+    'squalls': 'اچانک ہوائیں',
+    'tornado': 'طوفان',
+  };
+  return map[k] || desc;
+}
+
 export default function WeatherScreen() {
   const { user } = useAuth();
+  const { language } = useApp();
   const { colors: tc } = useTheme();
   const router = useRouter();
+  const dateLocale = language === 'ur' ? 'ur-PK' : 'en-US';
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -76,11 +114,11 @@ export default function WeatherScreen() {
         const data = await response.json();
         setWeatherData(data);
       } else {
-        setError('Failed to load weather data. Please try again.');
+        setError(translate('weatherFailedLoad', language));
       }
     } catch (err) {
       console.error('Error loading weather:', err);
-      setError('Unable to connect to weather service.');
+      setError(translate('weatherUnableConnect', language));
     } finally {
       setIsLoading(false);
     }
@@ -115,24 +153,24 @@ export default function WeatherScreen() {
 
   const getFarmingRecommendation = (day: WeatherDay) => {
     const temp_avg = (day.temp_min + day.temp_max) / 2;
-    const recommendations = [];
+    const recommendations: string[] = [];
 
     if (temp_avg < 10) {
-      recommendations.push('🌡️ Protect crops from frost');
+      recommendations.push(translate('weatherRecFrost', language));
     } else if (temp_avg > 35) {
-      recommendations.push('🌡️ Increase irrigation frequency');
+      recommendations.push(translate('weatherRecHeat', language));
     }
 
     if (day.precipitation > 5) {
-      recommendations.push('🌧️ Avoid irrigation, ensure drainage');
+      recommendations.push(translate('weatherRecHeavyRain', language));
     } else if (day.precipitation > 0) {
-      recommendations.push('🌧️ Reduce irrigation, natural watering');
+      recommendations.push(translate('weatherRecLightRain', language));
     } else if (day.precipitation == 0 && temp_avg > 25) {
-      recommendations.push('☀️ Increase irrigation, monitor soil');
+      recommendations.push(translate('weatherRecDryHot', language));
     }
 
     if (day.wind_speed > 15) {
-      recommendations.push('💨 Secure plants, avoid spraying');
+      recommendations.push(translate('weatherRecWind', language));
     }
 
     return recommendations;
@@ -142,7 +180,7 @@ export default function WeatherScreen() {
     return (
       <View style={[styles.container, { backgroundColor: tc.screen, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={tc.primary} />
-        <Text style={{ marginTop: 12, color: tc.textMuted }}>Loading weather forecast...</Text>
+        <Text style={{ marginTop: 12, color: tc.textMuted }}>{translate('weatherLoading', language)}</Text>
       </View>
     );
   }
@@ -154,7 +192,7 @@ export default function WeatherScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft color={tc.text} size={24} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tc.text }]}>Weather Forecast</Text>
+          <Text style={[styles.title, { color: tc.text }]}>{translate('weatherTitleShort', language)}</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.errorContainer}>
@@ -162,7 +200,7 @@ export default function WeatherScreen() {
           <Text style={[styles.errorText, { color: tc.textMuted }]}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadWeather}>
             <RefreshCw color="white" size={16} />
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{translate('retry', language)}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -176,11 +214,11 @@ export default function WeatherScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft color={tc.text} size={24} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tc.text }]}>Weather Forecast</Text>
+          <Text style={[styles.title, { color: tc.text }]}>{translate('weatherTitleShort', language)}</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.errorContainer}>
-          <Text style={[styles.errorText, { color: tc.textMuted }]}>No weather data available</Text>
+          <Text style={[styles.errorText, { color: tc.textMuted }]}>{translate('weatherNoData', language)}</Text>
         </View>
       </View>
     );
@@ -192,7 +230,7 @@ export default function WeatherScreen() {
         <TouchableOpacity onPress={() => router.push('/schedule' as any)} style={styles.backButton}>
           <ArrowLeft color={tc.text} size={24} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: tc.text }]}>7-Day Weather Forecast</Text>
+        <Text style={[styles.title, { color: tc.text }]}>{translate('weatherTitle7Day', language)}</Text>
         <TouchableOpacity style={[styles.refreshButton, { backgroundColor: tc.screenSecondary }]} onPress={onRefresh}>
           <RefreshCw color={tc.primary} size={20} />
         </TouchableOpacity>
@@ -214,9 +252,9 @@ export default function WeatherScreen() {
             >
               <View style={styles.currentDayContent}>
                 <View style={styles.currentDayLeft}>
-                  <Text style={styles.currentDayLabel}>Today</Text>
+                  <Text style={styles.currentDayLabel}>{translate('weatherToday', language)}</Text>
                   <Text style={styles.currentDayDate}>
-                    {new Date(weatherData.forecast[0].date).toLocaleDateString('en-US', {
+                    {new Date(weatherData.forecast[0].date).toLocaleDateString(dateLocale, {
                       weekday: 'long',
                       month: 'long',
                       day: 'numeric'
@@ -226,7 +264,7 @@ export default function WeatherScreen() {
                     {Math.round(weatherData.forecast[0].temp_max)}°C
                   </Text>
                   <Text style={styles.currentDayDesc}>
-                    {weatherData.forecast[0].description}
+                    {localizeWeatherDescription(weatherData.forecast[0].description, language)}
                   </Text>
                 </View>
                 <View style={styles.currentDayRight}>
@@ -264,7 +302,7 @@ export default function WeatherScreen() {
 
         {/* 7-Day Forecast - Show exactly 7 days from today */}
         <View style={styles.forecastSection}>
-          <Text style={[styles.sectionTitle, { color: tc.text }]}>7-Day Forecast</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('weather7DayForecast', language)}</Text>
           {weatherData.forecast.slice(0, 7).map((day, index) => {
             const WeatherIcon = getWeatherIcon(day.main, day.icon);
             const recommendations = getFarmingRecommendation(day);
@@ -283,11 +321,11 @@ export default function WeatherScreen() {
                   <View style={styles.dayInfo}>
                     <Text style={[styles.dayName, { color: tc.text }]}>
                       {isToday
-                        ? 'Today'
-                        : new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' })}
+                        ? translate('weatherToday', language)
+                        : new Date(day.date).toLocaleDateString(dateLocale, { weekday: 'long' })}
                     </Text>
                     <Text style={[styles.dayDate, { color: tc.textMuted }]}>
-                      {new Date(day.date).toLocaleDateString('en-US', {
+                      {new Date(day.date).toLocaleDateString(dateLocale, {
                         month: 'short',
                         day: 'numeric'
                       })}
@@ -308,12 +346,16 @@ export default function WeatherScreen() {
                 
                 <View style={styles.dayDetails}>
                   <View style={styles.dayDetailRow}>
-                    <Text style={[styles.dayDescription, { color: tc.textSecondary }]}>{day.description}</Text>
+                    <Text style={[styles.dayDescription, { color: tc.textSecondary }]}>
+                      {localizeWeatherDescription(day.description, language)}
+                    </Text>
                   </View>
                   <View style={styles.dayMetrics}>
                     <View style={styles.metricItem}>
                       <Droplets color={tc.primary} size={14} />
-                      <Text style={[styles.metricText, { color: tc.textMuted }]}>{day.humidity}% humidity</Text>
+                      <Text style={[styles.metricText, { color: tc.textMuted }]}>
+                        {day.humidity}%{translate('weatherHumiditySuffix', language)}
+                      </Text>
                     </View>
                     <View style={styles.metricItem}>
                       <Wind color={tc.textMuted} size={14} />
@@ -322,14 +364,18 @@ export default function WeatherScreen() {
                     {day.precipitation > 0 && (
                       <View style={styles.metricItem}>
                         <CloudRain color={tc.primary} size={14} />
-                        <Text style={[styles.metricText, { color: tc.textMuted }]}>{day.precipitation.toFixed(1)}mm rain</Text>
+                        <Text style={[styles.metricText, { color: tc.textMuted }]}>
+                          {day.precipitation.toFixed(1)}mm{translate('weatherRainSuffix', language)}
+                        </Text>
                       </View>
                     )}
                   </View>
                   
                   {recommendations.length > 0 && (
                     <View style={[styles.recommendationsBox, { backgroundColor: tc.screenSecondary, borderLeftColor: tc.primary }]}>
-                      <Text style={[styles.recommendationsTitle, { color: tc.text }]}>Farming Recommendations:</Text>
+                      <Text style={[styles.recommendationsTitle, { color: tc.text }]}>
+                        {translate('weatherFarmingRecTitle', language)}
+                      </Text>
                       {recommendations.map((rec, idx) => (
                         <Text key={idx} style={[styles.recommendationItem, { color: tc.textSecondary }]}>
                           • {rec}

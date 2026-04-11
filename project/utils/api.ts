@@ -4,6 +4,25 @@ import { getApiBaseUrl } from './env';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/**
+ * Thrown when the server returns a non-OK status or a JSON body with `error`.
+ * Used so we do not `console.error` expected 4xx cases — in dev, RN LogBox turns
+ * `console.error` into the black dismissible banners on top of your own modals.
+ */
+export class ApiResponseError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiResponseError';
+    this.status = status;
+  }
+}
+
+function shouldSilenceDevErrorLog(error: unknown): boolean {
+  if (isExpectedAuthFailure(error)) return true;
+  return error instanceof ApiResponseError && error.status >= 400 && error.status < 500;
+}
+
 /** Expired/invalid session is normal on cold start; do not log as ERROR. */
 function isExpectedAuthFailure(error: unknown): boolean {
   const msg = String((error as Error)?.message || '').toLowerCase();
@@ -66,17 +85,18 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
           : res.status === 404
             ? `Not found (${res.status}). Check that the API includes this route (e.g. restart Flask after updating Backend). URL: ${fullUrl}`
             : `Request failed (${res.status})`;
-      throw new Error(message);
+      throw new ApiResponseError(message, res.status);
     }
     
     if (data?.error) {
       const message = typeof data?.error === 'string' ? data.error : `Request failed`;
-      throw new Error(message);
+      // HTTP may still be 200 with an `error` field — treat as client-style failure for logging/UI
+      throw new ApiResponseError(message, 422);
     }
     
     return data as T;
   } catch (error: any) {
-    if (!isExpectedAuthFailure(error)) {
+    if (!shouldSilenceDevErrorLog(error)) {
       console.error(`❌ API Error:`, error);
     }
     

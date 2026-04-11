@@ -3,11 +3,21 @@ try:
     from ..db import SessionLocal
     from ..schemas.detection import Detection, OutbreakAlert
     from ..schemas.user import User
+    from ..core.outbreak_config import (
+        cluster_sensitivity_percent,
+        severity_from_sensitivity_pct,
+        heatmap_point_intensity_percent,
+    )
 except ImportError:
     # Fallback when running as a script: python Backend/app.py
     from db import SessionLocal
     from schemas.detection import Detection, OutbreakAlert
     from schemas.user import User
+    from core.outbreak_config import (
+        cluster_sensitivity_percent,
+        severity_from_sensitivity_pct,
+        heatmap_point_intensity_percent,
+    )
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
@@ -235,9 +245,8 @@ def heatmap_points():
                     if distance_km <= 10.0:
                         nearby_count += 1
             
-            # Intensity is based on nearby count (normalized to 0-100)
-            # Minimum intensity is 30 (so all points are visible), each nearby detection adds 15
-            intensity = min(30 + (nearby_count * 15), 100)
+            # Intensity from regional peer density as 0–100% (same scale as outbreak sensitivity)
+            intensity = heatmap_point_intensity_percent(nearby_count)
             
             points.append({
                 'latitude': float(det.latitude),
@@ -268,7 +277,11 @@ def alert_details(alert_id):
         
         alert = db.query(OutbreakAlert).filter(OutbreakAlert.alert_id == alert_id).first()
         if not alert:
-            return jsonify({'cases': 0}), 404
+            return jsonify({
+                'cases': 0,
+                'sensitivityPercent': 0.0,
+                'severity': 'low',
+            }), 404
         
         # Count detections within the alert's radius
         def _haversine_km(lat1, lng1, lat2, lng2):
@@ -303,10 +316,20 @@ def alert_details(alert_id):
             ) <= alert.radius_km
         )
         
-        return jsonify({'cases': case_count})
+        sensitivity_pct = cluster_sensitivity_percent(case_count)
+        severity = severity_from_sensitivity_pct(sensitivity_pct)
+        return jsonify({
+            'cases': case_count,
+            'sensitivityPercent': round(sensitivity_pct, 1),
+            'severity': severity,
+        })
     except Exception as e:
         print('❌ Error fetching alert details:', str(e))
-        return jsonify({'cases': 0}), 500
+        return jsonify({
+            'cases': 0,
+            'sensitivityPercent': 0.0,
+            'severity': 'low',
+        }), 500
     finally:
         db.close()
 

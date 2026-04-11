@@ -12,12 +12,22 @@ try:
     from ..schemas.detection import Detection, OutbreakAlert
     from ..schemas.guidance import DiseaseGuidance
     from ..core.yolo import get_model_for_crop
+    from ..core.outbreak_config import (
+        cluster_sensitivity_percent,
+        should_raise_outbreak_alert,
+        OUTBREAK_ADMIN_ALERT_MIN_PCT,
+    )
 except ImportError:
     # Fallback when running as a script: python Backend/app.py
     from db import SessionLocal
     from schemas.detection import Detection, OutbreakAlert
     from schemas.guidance import DiseaseGuidance
     from core.yolo import get_model_for_crop
+    from core.outbreak_config import (
+        cluster_sensitivity_percent,
+        should_raise_outbreak_alert,
+        OUTBREAK_ADMIN_ALERT_MIN_PCT,
+    )
 
 farmer_bp = Blueprint('farmer', __name__, url_prefix='/api/farmer')
 
@@ -128,9 +138,13 @@ def create_detection():
                     if _haversine_km(latitude, longitude, d.latitude, d.longitude) <= 10.0
                 ]
                 
-                print(f"📍 {len(nearby)} detections within 10km radius")
+                sensitivity_pct = cluster_sensitivity_percent(len(nearby))
+                print(
+                    f"📍 {len(nearby)} reports in 10km → regional sensitivity {sensitivity_pct:.1f}% "
+                    f"(admin threshold {OUTBREAK_ADMIN_ALERT_MIN_PCT}%)"
+                )
 
-                if len(nearby) >= 3:
+                if should_raise_outbreak_alert(len(nearby)):
                     # Check if there's already a pending/approved alert for this disease in this area
                     existing_alert = db.query(OutbreakAlert).filter(
                         OutbreakAlert.disease_name == disease_name,
@@ -185,7 +199,10 @@ def create_detection():
                         db.commit()
                         print(f"🚨 NEW OUTBREAK ALERT CREATED: {alert_id} for {disease_name}")
                 else:
-                    print(f"ℹ️ Not enough detections for outbreak (need 3, have {len(nearby)})")
+                    print(
+                        f"ℹ️ Below admin-review sensitivity threshold "
+                        f"({OUTBREAK_ADMIN_ALERT_MIN_PCT}%): {sensitivity_pct:.1f}% with {len(nearby)} reports"
+                    )
         finally:
             db.close()
 

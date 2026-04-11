@@ -64,28 +64,28 @@ export function CropHealthPieSummary({
   const data = useMemo(
     () => [
       {
-        name: 'Healthy',
+        name: translate('pieHealthy', language),
         population: Math.max(0, sliceHealthy),
         color: '#22C55E',
         legendFontColor: tc.text,
         legendFontSize: 12,
       },
       {
-        name: 'At risk',
+        name: translate('pieAtRisk', language),
         population: Math.max(0, sliceAtRisk),
         color: '#F59E0B',
         legendFontColor: tc.text,
         legendFontSize: 12,
       },
       {
-        name: 'Diseased',
+        name: translate('pieDiseased', language),
         population: Math.max(0, sliceDiseased),
         color: '#EF4444',
         legendFontColor: tc.text,
         legendFontSize: 12,
       },
     ],
-    [sliceHealthy, sliceAtRisk, sliceDiseased, tc.text]
+    [sliceHealthy, sliceAtRisk, sliceDiseased, tc.text, language],
   );
 
   const totalPop = Math.max(sliceHealthy + sliceAtRisk + sliceDiseased, 1);
@@ -109,9 +109,7 @@ export function CropHealthPieSummary({
 
       {totalScans === 0 ? (
         <View style={[styles.emptyChart, { backgroundColor: tc.screenSecondary }]}>
-          <Text style={[styles.emptyText, { color: tc.textMuted }]}>
-            No scan data yet. Use Scan Crop to build your health summary.
-          </Text>
+          <Text style={[styles.emptyText, { color: tc.textMuted }]}>{translate('noScanDataHint', language)}</Text>
         </View>
       ) : (
         <PieChart
@@ -131,7 +129,7 @@ export function CropHealthPieSummary({
         <View style={styles.legendRow}>
           <View style={styles.legendLeft}>
             <View style={[styles.swatch, { backgroundColor: '#22C55E' }]} />
-            <Text style={[styles.legendLabel, { color: tc.textSecondary }]}>Healthy</Text>
+            <Text style={[styles.legendLabel, { color: tc.textSecondary }]}>{translate('pieHealthy', language)}</Text>
           </View>
           <Text style={[styles.legendValue, { color: tc.text }]}>
             {totalScans === 0 ? '—' : `${pct(sliceHealthy)}%`}
@@ -140,7 +138,7 @@ export function CropHealthPieSummary({
         <View style={styles.legendRow}>
           <View style={styles.legendLeft}>
             <View style={[styles.swatch, { backgroundColor: '#F59E0B' }]} />
-            <Text style={[styles.legendLabel, { color: tc.textSecondary }]}>At risk</Text>
+            <Text style={[styles.legendLabel, { color: tc.textSecondary }]}>{translate('pieAtRisk', language)}</Text>
           </View>
           <Text style={[styles.legendValue, { color: tc.text }]}>
             {totalScans === 0 ? '—' : `${pct(sliceAtRisk)}%`}
@@ -149,7 +147,7 @@ export function CropHealthPieSummary({
         <View style={styles.legendRow}>
           <View style={styles.legendLeft}>
             <View style={[styles.swatch, { backgroundColor: '#EF4444' }]} />
-            <Text style={[styles.legendLabel, { color: tc.textSecondary }]}>Diseased</Text>
+            <Text style={[styles.legendLabel, { color: tc.textSecondary }]}>{translate('pieDiseased', language)}</Text>
           </View>
           <Text style={[styles.legendValue, { color: tc.text }]}>
             {totalScans === 0 ? '—' : `${pct(sliceDiseased)}%`}

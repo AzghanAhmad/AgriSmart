@@ -38,6 +38,8 @@ except ImportError:
     from core.seed_schedules import seed_schedules_if_needed
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
+# Timelapse JSON uploads send multiple base64 images; allow a generous body size
+app.config['MAX_CONTENT_LENGTH'] = 48 * 1024 * 1024
 # Configure CORS via env; default to permissive in dev
 allowed_origins = get_allowed_origins()
 if allowed_origins == '*':

@@ -22,6 +22,7 @@ import { apiGet } from '@/utils/api';
 import { geocodeLocationInPakistan, isInPakistan } from '@/utils/pakistanGeocode';
 import { LocationPickerModal } from '@/components/LocationPickerModal';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { translate } from '@/utils/translations';
 
 const HEADER_FIELD_BG = require('@/assets/crops/background.jpg');
 
@@ -101,7 +102,7 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     if (!editData.name.trim()) {
-      Alert.alert('Error', 'Name is required');
+      Alert.alert(translate('error', language), translate('nameRequired', language));
       return;
     }
     const locTrim = (editData.location || '').trim();
@@ -121,7 +122,7 @@ export default function ProfileScreen() {
       Number.isNaN(farmHealthScore) ||
       Number.isNaN(farmMonthlyRevenue)
     ) {
-      Alert.alert('Error', 'Farm overview fields must be valid numbers.');
+      Alert.alert(translate('error', language), translate('farmFieldsMustBeNumbers', language));
       return;
     }
     setSaving(true);
@@ -164,19 +165,22 @@ export default function ProfileScreen() {
 
       if (locTrim && !geocoded) {
         Alert.alert(
-          'Location not pinned automatically',
-          'Online lookup did not find coordinates. Tap “Set on map” to choose your position on the Pakistan map, then tap Save again. Or check internet and retry.',
+          translate('locationNotPinnedTitle', language),
+          translate('locationNotPinnedMsg', language),
           [
-            { text: 'Set on map', onPress: () => setMapPickerOpen(true) },
-            { text: 'OK', style: 'cancel', onPress: () => setIsEditing(false) },
+            { text: translate('setOnMap', language), onPress: () => setMapPickerOpen(true) },
+            { text: translate('ok', language), style: 'cancel', onPress: () => setIsEditing(false) },
           ],
         );
       } else {
-        Alert.alert('Success', 'Profile updated successfully');
+        Alert.alert(translate('profileUpdatedTitle', language), translate('profileUpdatedBody', language));
         setIsEditing(false);
       }
     } catch (e: any) {
-      Alert.alert('Update failed', e?.message || 'Could not save profile. Try again.');
+      Alert.alert(
+        translate('updateFailedTitle', language),
+        e?.message || translate('couldNotSaveProfile', language),
+      );
     } finally {
       setSaving(false);
     }
@@ -216,8 +220,8 @@ export default function ProfileScreen() {
     try {
       await uploadProfileImage(uri);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Could not upload photo';
-      Alert.alert('Upload failed', msg);
+      const msg = e instanceof Error ? e.message : translate('couldNotUploadPhoto', language);
+      Alert.alert(translate('uploadFailedTitle', language), msg);
     } finally {
       setPhotoUploading(false);
     }
@@ -226,7 +230,7 @@ export default function ProfileScreen() {
   const openAvatarCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera access is required to take a profile photo.');
+      Alert.alert(translate('permissionNeeded', language), translate('cameraRequiredPhoto', language));
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -243,7 +247,7 @@ export default function ProfileScreen() {
   const openAvatarLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Photo library access is required.');
+      Alert.alert(translate('permissionNeeded', language), translate('photoLibraryRequired', language));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -258,31 +262,46 @@ export default function ProfileScreen() {
   };
 
   const pickAvatar = () => {
-    Alert.alert('Profile photo', 'Choose a source', [
-      { text: 'Take photo', onPress: () => void openAvatarCamera() },
-      { text: 'Choose from library', onPress: () => void openAvatarLibrary() },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(translate('profilePhoto', language), translate('chooseSource', language), [
+      { text: translate('takePhoto', language), onPress: () => void openAvatarCamera() },
+      { text: translate('chooseFromLibrary', language), onPress: () => void openAvatarLibrary() },
+      { text: translate('cancel', language), style: 'cancel' },
     ]);
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
+  const handleLogout = useCallback(() => {
+    Alert.alert(translate('logoutConfirmTitle', language), translate('logoutConfirmBody', language), [
+      { text: translate('cancel', language), style: 'cancel' },
+      { text: translate('logoutNav', language), style: 'destructive', onPress: logout },
     ]);
-  };
+  }, [language, logout]);
 
-  const profileSections = [
-    {
-      title: 'Account Information',
-      items: [
-        { icon: User, label: 'Full Name', value: isEditing ? editData.name : user?.name, editable: true, key: 'name' },
-        { icon: Mail, label: 'Email', value: user?.email, editable: false },
-        { icon: Phone, label: 'Phone', value: isEditing ? editData.phone : user?.phone || 'Not provided', editable: true, key: 'phone' },
-        { icon: MapPin, label: 'Location', value: isEditing ? editData.location : user?.location || 'Not provided', editable: true, key: 'location' },
-      ],
-    },
-  ];
+  const profileSections = useMemo(
+    () => [
+      {
+        title: translate('accountInformation', language),
+        items: [
+          { icon: User, label: translate('name', language), value: isEditing ? editData.name : user?.name, editable: true, key: 'name' },
+          { icon: Mail, label: translate('email', language), value: user?.email, editable: false },
+          {
+            icon: Phone,
+            label: translate('phoneShort', language),
+            value: isEditing ? editData.phone : user?.phone || translate('notProvided', language),
+            editable: true,
+            key: 'phone',
+          },
+          {
+            icon: MapPin,
+            label: translate('location', language),
+            value: isEditing ? editData.location : user?.location || translate('notProvided', language),
+            editable: true,
+            key: 'location',
+          },
+        ],
+      },
+    ],
+    [language, isEditing, editData.name, editData.phone, editData.location, user?.name, user?.email, user?.phone, user?.location],
+  );
 
   const statCards = useMemo(() => {
     const dash = '—';
@@ -304,57 +323,60 @@ export default function ProfileScreen() {
           ? `Rs ${Math.round(profileStats.monthlyRevenue).toLocaleString()}`
           : dash;
     return [
-      { v: acres, l: 'Acres Farmed' },
-      { v: crops, l: 'Crop Types' },
-      { v: health, l: 'Health Score' },
-      { v: revenue, l: 'Monthly Revenue' },
+      { v: acres, l: translate('acresFarmed', language) },
+      { v: crops, l: translate('cropTypes', language) },
+      { v: health, l: translate('statHealthScore', language) },
+      { v: revenue, l: translate('monthlyRevenueLabel', language) },
     ];
-  }, [profileStats, statsLoading]);
+  }, [profileStats, statsLoading, language]);
 
-  const settingsSections = [
-    {
-      title: 'Preferences',
-      items: [
-        {
-          icon: Globe,
-          label: 'Language',
-          value: language === 'en' ? 'English' : 'اردو',
-          type: 'toggle' as const,
-          onPress: () => setLanguage(language === 'en' ? 'ur' : 'en'),
-        },
-        {
-          icon: Moon,
-          label: 'Dark Mode',
-          value: isDark,
-          type: 'switch' as const,
-          onPress: (value: boolean) => setDarkMode(value),
-        },
-        {
-          icon: Bell,
-          label: 'Notifications',
-          value: notifications,
-          type: 'switch' as const,
-          onPress: (value: boolean) => setNotifications(value),
-        },
-      ],
-    },
-    {
-      title: 'Security & Support',
-      items: [
-        {
-          icon: Shield,
-          label: 'Privacy Settings',
-          onPress: () => router.push('/(farmer)/privacy-settings' as any),
-        },
-        {
-          icon: HelpCircle,
-          label: 'Help & Support',
-          onPress: () => router.push('/(farmer)/help-support' as any),
-        },
-        { icon: LogOut, label: 'Logout', onPress: handleLogout, danger: true },
-      ],
-    },
-  ];
+  const settingsSections = useMemo(
+    () => [
+      {
+        title: translate('preferences', language),
+        items: [
+          {
+            icon: Globe,
+            label: translate('language', language),
+            value: language === 'en' ? translate('langEnglish', language) : translate('langUrdu', language),
+            type: 'toggle' as const,
+            onPress: () => setLanguage(language === 'en' ? 'ur' : 'en'),
+          },
+          {
+            icon: Moon,
+            label: translate('darkMode', language),
+            value: isDark,
+            type: 'switch' as const,
+            onPress: (value: boolean) => setDarkMode(value),
+          },
+          {
+            icon: Bell,
+            label: translate('notifications', language),
+            value: notifications,
+            type: 'switch' as const,
+            onPress: (value: boolean) => setNotifications(value),
+          },
+        ],
+      },
+      {
+        title: translate('securitySupport', language),
+        items: [
+          {
+            icon: Shield,
+            label: translate('privacySettingsNav', language),
+            onPress: () => router.push('/(farmer)/privacy-settings' as any),
+          },
+          {
+            icon: HelpCircle,
+            label: translate('helpSupportNav', language),
+            onPress: () => router.push('/(farmer)/help-support' as any),
+          },
+          { icon: LogOut, label: translate('logoutNav', language), onPress: handleLogout, danger: true },
+        ],
+      },
+    ],
+    [language, isDark, notifications, router, setLanguage, setDarkMode, handleLogout],
+  );
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
@@ -387,7 +409,9 @@ export default function ProfileScreen() {
 
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user?.name}</Text>
-              <Text style={styles.userRole}>{user?.role === 'farmer' ? '🌾 Farmer' : '👨‍💼 Administrator'}</Text>
+              <Text style={styles.userRole}>
+                {user?.role === 'farmer' ? translate('farmerBadge', language) : translate('adminBadge', language)}
+              </Text>
               <Text style={styles.userLocation}>📍 {user?.location || '—'}</Text>
             </View>
           </View>
@@ -396,7 +420,7 @@ export default function ProfileScreen() {
             {isEditing ? (
               <View style={styles.editActions}>
                 <TouchableOpacity style={styles.headerTextBtn} onPress={cancelEdit} disabled={saving}>
-                  <Text style={styles.headerTextBtnLabelMuted}>Cancel</Text>
+                  <Text style={styles.headerTextBtnLabelMuted}>{translate('cancel', language)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.headerTextBtnPrimary, saving && { opacity: 0.75 }]}
@@ -406,7 +430,7 @@ export default function ProfileScreen() {
                   {saving ? (
                     <ActivityIndicator color="#15803d" size="small" />
                   ) : (
-                    <Text style={styles.headerTextBtnLabelPrimary}>Save</Text>
+                    <Text style={styles.headerTextBtnLabelPrimary}>{translate('saveChanges', language)}</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -415,7 +439,7 @@ export default function ProfileScreen() {
                 style={[styles.editButton, { backgroundColor: 'rgba(255,255,255,0.95)', borderWidth: 1, borderColor: tc.primary }]}
                 onPress={startEdit}
               >
-                <Text style={{ color: tc.primaryDark, fontWeight: '700', fontSize: 15 }}>Edit</Text>
+                <Text style={{ color: tc.primaryDark, fontWeight: '700', fontSize: 15 }}>{translate('edit', language)}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -425,10 +449,10 @@ export default function ProfileScreen() {
       <View style={styles.statsContainer}>
         {isEditing
           ? [
-              { key: 'farmAcres', label: 'Acres Farmed', editable: true },
-              { key: 'farmCropTypes', label: 'Crop Types', editable: false },
-              { key: 'farmHealthScore', label: 'Health Score %', editable: false },
-              { key: 'farmMonthlyRevenue', label: 'Monthly Revenue', editable: true },
+              { key: 'farmAcres', label: translate('acresFarmed', language), editable: true },
+              { key: 'farmCropTypes', label: translate('cropTypes', language), editable: false },
+              { key: 'farmHealthScore', label: translate('healthScorePercent', language), editable: false },
+              { key: 'farmMonthlyRevenue', label: translate('monthlyRevenueLabel', language), editable: true },
             ].map((s, i) => (
               <View key={i} style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
                 {s.editable ? (
@@ -490,8 +514,8 @@ export default function ProfileScreen() {
                         }}
                         placeholder={
                           item.key === 'location'
-                            ? 'City or area in Pakistan (e.g. Lahore)'
-                            : `Enter ${item.label.toLowerCase()}`
+                            ? translate('locationPlaceholderCity', language)
+                            : translate('enterFieldHint', language)
                         }
                         placeholderTextColor={tc.textMuted}
                       />
@@ -503,7 +527,7 @@ export default function ProfileScreen() {
                         >
                           <MapPin color={tc.primary} size={18} />
                           <Text style={[styles.mapPickerLinkText, { color: tc.primary }]}>
-                            Set pin on map of Pakistan (manual)
+                            {translate('setPinManual', language)}
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -584,15 +608,15 @@ export default function ProfileScreen() {
       ))}
 
       <View style={styles.versionContainer}>
-        <Text style={[styles.versionText, { color: tc.textMuted }]}>AgriSmart v1.0.0</Text>
-        <Text style={[styles.buildText, { color: tc.textMuted }]}>Build 2024.01.15</Text>
+        <Text style={[styles.versionText, { color: tc.textMuted }]}>{translate('agriSmartVersion', language)}</Text>
+        <Text style={[styles.buildText, { color: tc.textMuted }]}>{translate('buildDate', language)}</Text>
       </View>
 
       <LocationPickerModal
         visible={mapPickerOpen}
         onClose={() => setMapPickerOpen(false)}
         constrainToPakistan
-        title="Pakistan — set your location"
+        title={translate('mapPickerTitlePK', language)}
         initialLocation={
           manualCoords
             ? { latitude: manualCoords.lat, longitude: manualCoords.lng }

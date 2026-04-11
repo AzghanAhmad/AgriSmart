@@ -9,9 +9,12 @@ import {
   UserCircle,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useApp } from '@/contexts/AppContext';
+import { translate } from '@/utils/translations';
 
 export default function FarmerTabLayout() {
   const { colors: tc, isDark } = useTheme();
+  const { language } = useApp();
 
   return (
     <Tabs
@@ -48,7 +51,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: translate('tabHome', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
               <Home size={22} color={color} />
@@ -59,7 +62,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen
         name="disease-detection"
         options={{
-          title: 'Scan Crop',
+          title: translate('tabScanCrop', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
               <ScanLine size={22} color={color} />
@@ -70,7 +73,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen
         name="schedule"
         options={{
-          title: 'Schedule',
+          title: translate('tabSchedule', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
               <CalendarCheck size={22} color={color} />
@@ -81,7 +84,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen
         name="heatmap"
         options={{
-          title: 'Disease Map',
+          title: translate('tabDiseaseMap', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
               <MapPin size={22} color={color} />
@@ -92,7 +95,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: 'Assistant',
+          title: translate('tabAssistant', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
               <MessageSquare size={22} color={color} />
@@ -103,7 +106,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: translate('tabProfile', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
               <UserCircle size={22} color={color} />
@@ -113,7 +116,6 @@ export default function FarmerTabLayout() {
       />
       {/* Hidden pages — accessible via navigation but not visible in tab bar */}
       <Tabs.Screen name="weather" options={{ href: null }} />
-      <Tabs.Screen name="yield-estimation" options={{ href: null }} />
       <Tabs.Screen name="schedule-select" options={{ href: null }} />
       <Tabs.Screen name="timelapse-upload" options={{ href: null }} />
       <Tabs.Screen name="timelapse-view" options={{ href: null }} />
