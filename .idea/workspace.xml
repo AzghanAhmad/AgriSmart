@@ -8,45 +8,12 @@
       <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/core/schedule_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/core/schedule_generator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/migrate_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/migrate_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/auth.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/farmer.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/farmer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/schedule.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/schedule.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/timelapse.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/timelapse.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/schemas/user.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/schemas/user.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/android/app/src/main/res/xml/network_security_config.xml" beforeDir="false" afterPath="$PROJECT_DIR$/project/android/app/src/main/res/xml/network_security_config.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/data.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/data.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/farmers.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/farmers.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/heatmap.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/heatmap.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/reports.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/reports.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/settings.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/settings.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/subsidies.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/subsidies.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/chatbot.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/chatbot.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/disease-detection.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/disease-detection.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/heatmap.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/heatmap.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/profile.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/profile.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-view.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-view.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/auth/signup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/auth/signup.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/components/LocationPickerModal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/components/LocationPickerModal.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/contexts/AppContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AppContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AuthContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/types/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/types/index.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FIXES_APPLIED.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/GEOTAGGING_QUICK_START.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/MANUAL_TESTING_GUIDE.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/SCHEDULE_FEATURE_UPDATE.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/TIMELAPSE_TESTING_GUIDE.md" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/translations.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/translations.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -71,20 +38,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;azghan&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "main",
+    "settings.editor.selected.configurable": "AndroidSdkUpdater"
   }
-}</component>
+}]]></component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
       <changelist id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="" />

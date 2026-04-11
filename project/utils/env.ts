@@ -25,7 +25,7 @@ function normalizeApiBaseUrl(raw: string | undefined): string | null {
  */
 export function getApiBaseUrl(): string {
   const fromEnv = normalizeApiBaseUrl(
-    typeof process !== 'undefined' ? process.env.EXPO_PUBLIC_API_BASE_URL : undefined
+    typeof process !== 'undefined' ? process.env.EXPO_PUBLIC_API_BASE_URL : undefined,
   );
   if (fromEnv) {
     console.log('📡 API base (EXPO_PUBLIC_API_BASE_URL):', fromEnv, `(Platform: ${Platform.OS})`);
@@ -45,7 +45,7 @@ export function getApiBaseUrl(): string {
       console.warn(
         '📡 API base (Android emulator default):',
         url,
-        '— on a real phone set app.json extra.API_BASE_URL to your PC IP'
+        '— on a real phone set app.json extra.API_BASE_URL to your PC IP',
       );
       return url;
     }
