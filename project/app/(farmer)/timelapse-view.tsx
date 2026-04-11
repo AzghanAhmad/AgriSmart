@@ -46,6 +46,7 @@ import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getApiBaseUrl } from '@/utils/env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '@/contexts/ThemeContext';
 import { colors, spacing, borderRadius, shadows, typography } from '@/utils/designSystem';
 
 const { width, height } = Dimensions.get('window');
@@ -105,7 +106,8 @@ function getTimelapseImageUrl(photoUrl: string | null | undefined): string | nul
 export default function TimeLapseViewScreen() {
   const router = useRouter();
   const { cropId } = useLocalSearchParams<{ cropId: string }>();
-  
+  const { colors: tc, isDark } = useTheme();
+
   const [data, setData] = useState<TimelapseData | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [loading, setLoading] = useState(true);
@@ -319,22 +321,28 @@ export default function TimeLapseViewScreen() {
   } : null;
 
   // Disease distribution
-  const diseaseDistribution = data?.entries.reduce((acc, entry) => {
-    const disease = entry.detected_disease || 'Healthy';
-    acc[disease] = (acc[disease] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>) || {};
+  const diseaseDistribution = React.useMemo(() => {
+    return (
+      data?.entries.reduce((acc, entry) => {
+        const disease = entry.detected_disease || 'Healthy';
+        acc[disease] = (acc[disease] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>) || {}
+    );
+  }, [data?.entries]);
 
-  const diseasePieData = Object.entries(diseaseDistribution).map(([name, count], index) => {
-    const colors_list = ['#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6', '#EC4899'];
-    return {
-      name: name.length > 15 ? name.substring(0, 15) + '...' : name,
-      population: count,
-      color: colors_list[index % colors_list.length],
-      legendFontColor: '#374151',
-      legendFontSize: 12,
-    };
-  });
+  const diseasePieData = React.useMemo(() => {
+    return Object.entries(diseaseDistribution).map(([name, count], index) => {
+      const colors_list = ['#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6', '#EC4899'];
+      return {
+        name: name.length > 15 ? name.substring(0, 15) + '...' : name,
+        population: count,
+        color: colors_list[index % colors_list.length],
+        legendFontColor: tc.chartLabel,
+        legendFontSize: 12,
+      };
+    });
+  }, [diseaseDistribution, tc.chartLabel]);
 
   // Severity distribution
   const severityDistribution = data?.entries.reduce((acc, entry) => {
@@ -397,26 +405,40 @@ export default function TimeLapseViewScreen() {
     ? (playbackEntries[currentPlayIndex] ?? playbackEntries[0])
     : null;
 
-  // White background chart config – readable and appealing
-  const chartConfigWhite = {
-    backgroundColor: '#FFFFFF',
-    backgroundGradientFrom: '#FFFFFF',
-    backgroundGradientTo: '#FFFFFF',
-    decimalPlaces: 1,
-    color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-    labelColor: () => '#374151',
-    style: { borderRadius: borderRadius.lg, padding: 8 },
-    propsForDots: { r: 5, strokeWidth: 2, stroke: '#22C55E' },
-    propsForBackgroundLines: { strokeDasharray: '', stroke: '#E5E7EB', strokeWidth: 1 },
-  };
-  const chartConfigSeverity = { ...chartConfigWhite, color: (o = 1) => `rgba(34, 197, 94, ${o})` };
-  const chartConfigWeatherTemp = { ...chartConfigWhite, color: (o = 1) => `rgba(245, 158, 11, ${o})` };
-  const chartConfigWeatherHumid = { ...chartConfigWhite, color: (o = 1) => `rgba(59, 130, 246, ${o})` };
-  const chartConfigPie = { ...chartConfigWhite, color: () => '#22C55E' };
+  const chartConfigBase = React.useMemo(
+    () => ({
+      backgroundColor: tc.chartBg,
+      backgroundGradientFrom: tc.chartBg,
+      backgroundGradientTo: tc.chartBg,
+      decimalPlaces: 1,
+      color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+      labelColor: () => tc.chartLabel,
+      style: { borderRadius: borderRadius.lg, padding: 8 },
+      propsForDots: { r: 5, strokeWidth: 2, stroke: '#22C55E' },
+      propsForBackgroundLines: { strokeDasharray: '', stroke: tc.chartGrid, strokeWidth: 1 },
+    }),
+    [tc.chartBg, tc.chartLabel, tc.chartGrid]
+  );
+  const chartConfigSeverity = React.useMemo(
+    () => ({ ...chartConfigBase, color: (o = 1) => `rgba(34, 197, 94, ${o})` }),
+    [chartConfigBase]
+  );
+  const chartConfigWeatherTemp = React.useMemo(
+    () => ({ ...chartConfigBase, color: (o = 1) => `rgba(245, 158, 11, ${o})` }),
+    [chartConfigBase]
+  );
+  const chartConfigWeatherHumid = React.useMemo(
+    () => ({ ...chartConfigBase, color: (o = 1) => `rgba(59, 130, 246, ${o})` }),
+    [chartConfigBase]
+  );
+  const chartConfigPie = React.useMemo(
+    () => ({ ...chartConfigBase, color: () => '#22C55E' }),
+    [chartConfigBase]
+  );
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: tc.screen }]}>
         <LinearGradient
           colors={[colors.primary, colors.primaryDark]}
           style={styles.loadingContainer}
@@ -430,7 +452,7 @@ export default function TimeLapseViewScreen() {
 
   if (!data || data.entries.length === 0) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: tc.screen }]}>
         <LinearGradient
           colors={[colors.primary, colors.primaryDark]}
           style={styles.emptyContainer}
@@ -458,12 +480,12 @@ export default function TimeLapseViewScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
       <ScrollView
-        style={styles.scrollView}
+        style={[styles.scrollView, { backgroundColor: tc.screen }]}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tc.primary} />
         }
       >
         {/* Header */}
@@ -535,35 +557,35 @@ export default function TimeLapseViewScreen() {
         {/* Additional Stats: 2x2 grid from scanned images (avg temp, humidity, AI confidence, top disease) */}
         <View style={styles.additionalStatsGrid}>
           <View style={styles.additionalStatsRow}>
-            <View style={styles.additionalStatCard}>
+            <View style={[styles.additionalStatCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <Thermometer size={22} color={colors.warning} />
-              <Text style={styles.additionalStatValue}>
+              <Text style={[styles.additionalStatValue, { color: tc.text }]}>
                 {stats?.avgTemp != null ? `${Number(stats.avgTemp).toFixed(1)}° C` : 'N/A'}
               </Text>
-              <Text style={styles.additionalStatLabel}>Avg Temp</Text>
+              <Text style={[styles.additionalStatLabel, { color: tc.textMuted }]}>Avg Temp</Text>
             </View>
-            <View style={styles.additionalStatCard}>
+            <View style={[styles.additionalStatCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <Droplets size={22} color={colors.info} />
-              <Text style={styles.additionalStatValue}>
+              <Text style={[styles.additionalStatValue, { color: tc.text }]}>
                 {stats?.avgHumidity != null ? `${Number(stats.avgHumidity).toFixed(0)}%` : 'N/A'}
               </Text>
-              <Text style={styles.additionalStatLabel}>Avg Humidity</Text>
+              <Text style={[styles.additionalStatLabel, { color: tc.textMuted }]}>Avg Humidity</Text>
             </View>
           </View>
           <View style={styles.additionalStatsRow}>
-            <View style={styles.additionalStatCard}>
+            <View style={[styles.additionalStatCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <LineChartIcon size={22} color={colors.primary} />
-              <Text style={styles.additionalStatValue}>
+              <Text style={[styles.additionalStatValue, { color: tc.text }]}>
                 {((stats?.avgConfidence ?? 0) * 100).toFixed(0)}%
               </Text>
-              <Text style={styles.additionalStatLabel}>AI Confidence</Text>
+              <Text style={[styles.additionalStatLabel, { color: tc.textMuted }]}>AI Confidence</Text>
             </View>
-            <View style={styles.additionalStatCard}>
+            <View style={[styles.additionalStatCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <AlertCircle size={22} color={colors.error} />
-              <Text style={styles.additionalStatValue} numberOfLines={2}>
+              <Text style={[styles.additionalStatValue, { color: tc.text }]} numberOfLines={2}>
                 {stats?.mostCommonDisease || 'None'}
               </Text>
-              <Text style={styles.additionalStatLabel}>Top Disease</Text>
+              <Text style={[styles.additionalStatLabel, { color: tc.textMuted }]}>Top Disease</Text>
             </View>
           </View>
         </View>
@@ -573,14 +595,14 @@ export default function TimeLapseViewScreen() {
           <View style={styles.comparisonSection}>
             <View style={styles.comparisonHeader}>
               <GitCompare size={24} color={colors.primary} />
-              <Text style={styles.comparisonTitle}>Progress Comparison</Text>
+              <Text style={[styles.comparisonTitle, { color: tc.text }]}>Progress Comparison</Text>
             </View>
-            <View style={styles.comparisonCard}>
+            <View style={[styles.comparisonCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={styles.comparisonRow}>
                 {/* First Scan: earliest by user-input date */}
-                <View style={styles.comparisonItem}>
-                  <Text style={styles.comparisonLabel}>First Scan</Text>
-                  <Text style={styles.comparisonDate}>
+                <View style={[styles.comparisonItem, { backgroundColor: tc.screenSecondary }]}>
+                  <Text style={[styles.comparisonLabel, { color: tc.text }]}>First Scan</Text>
+                  <Text style={[styles.comparisonDate, { color: tc.textMuted }]}>
                     {formatEntryDate(firstScanEntry.date)}
                   </Text>
                   {getTimelapseImageUrl(firstScanEntry.photo_url) ? (
@@ -590,13 +612,13 @@ export default function TimeLapseViewScreen() {
                       onError={() => markImageFailed(firstScanEntry.id)}
                     />
                   ) : (
-                    <View style={[styles.comparisonImage, styles.imagePlaceholder]}>
-                      <Text style={styles.imagePlaceholderText}>No image</Text>
+                    <View style={[styles.comparisonImage, styles.imagePlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                      <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
                     </View>
                   )}
                   <View style={styles.comparisonStats}>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Severity</Text>
+                    <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                      <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Severity</Text>
                       <View
                         style={[
                           styles.comparisonSeverityBadge,
@@ -608,17 +630,17 @@ export default function TimeLapseViewScreen() {
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Confidence</Text>
-                      <Text style={styles.comparisonStatValue}>
+                    <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                      <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Confidence</Text>
+                      <Text style={[styles.comparisonStatValue, { color: tc.text }]}>
                         {firstScanEntry.ai_confidence != null
                           ? `${(firstScanEntry.ai_confidence * 100).toFixed(0)}%`
                           : 'N/A'}
                       </Text>
                     </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Score</Text>
-                      <Text style={styles.comparisonStatValue}>
+                    <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                      <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Score</Text>
+                      <Text style={[styles.comparisonStatValue, { color: tc.text }]}>
                         {firstScanEntry.severity_score ?? 0}
                       </Text>
                     </View>
@@ -630,9 +652,9 @@ export default function TimeLapseViewScreen() {
                 </View>
 
                 {/* Latest Scan: most recent by user-input date */}
-                <View style={styles.comparisonItem}>
-                  <Text style={styles.comparisonLabel}>Latest Scan</Text>
-                  <Text style={styles.comparisonDate}>
+                <View style={[styles.comparisonItem, { backgroundColor: tc.screenSecondary }]}>
+                  <Text style={[styles.comparisonLabel, { color: tc.text }]}>Latest Scan</Text>
+                  <Text style={[styles.comparisonDate, { color: tc.textMuted }]}>
                     {formatEntryDate(latestScanEntry.date)}
                   </Text>
                   {getTimelapseImageUrl(latestScanEntry.photo_url) ? (
@@ -642,13 +664,13 @@ export default function TimeLapseViewScreen() {
                       onError={() => markImageFailed(latestScanEntry.id)}
                     />
                   ) : (
-                    <View style={[styles.comparisonImage, styles.imagePlaceholder]}>
-                      <Text style={styles.imagePlaceholderText}>No image</Text>
+                    <View style={[styles.comparisonImage, styles.imagePlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                      <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
                     </View>
                   )}
                   <View style={styles.comparisonStats}>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Severity</Text>
+                    <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                      <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Severity</Text>
                       <View
                         style={[
                           styles.comparisonSeverityBadge,
@@ -660,17 +682,17 @@ export default function TimeLapseViewScreen() {
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Confidence</Text>
-                      <Text style={styles.comparisonStatValue}>
+                    <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                      <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Confidence</Text>
+                      <Text style={[styles.comparisonStatValue, { color: tc.text }]}>
                         {latestScanEntry.ai_confidence != null
                           ? `${(latestScanEntry.ai_confidence * 100).toFixed(0)}%`
                           : 'N/A'}
                       </Text>
                     </View>
-                    <View style={styles.comparisonStat}>
-                      <Text style={styles.comparisonStatLabel}>Score</Text>
-                      <Text style={styles.comparisonStatValue}>
+                    <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                      <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Score</Text>
+                      <Text style={[styles.comparisonStatValue, { color: tc.text }]}>
                         {latestScanEntry.severity_score ?? 0}
                       </Text>
                     </View>
@@ -747,32 +769,71 @@ export default function TimeLapseViewScreen() {
         <View style={styles.chartTabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartTabs}>
             <TouchableOpacity
-              style={[styles.chartTab, activeChart === 'severity' && styles.chartTabActive]}
+              style={[
+                styles.chartTab,
+                { backgroundColor: tc.card, borderColor: tc.border },
+                activeChart === 'severity' && [
+                  styles.chartTabActive,
+                  { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg, borderColor: colors.primary },
+                ],
+              ]}
               onPress={() => setActiveChart('severity')}
               activeOpacity={0.8}
             >
-              <LineChartIcon size={20} color={activeChart === 'severity' ? colors.primary : colors.text.secondary} />
-              <Text style={[styles.chartTabText, activeChart === 'severity' && styles.chartTabTextActive]}>
+              <LineChartIcon size={20} color={activeChart === 'severity' ? colors.primary : tc.textMuted} />
+              <Text
+                style={[
+                  styles.chartTabText,
+                  { color: tc.textMuted },
+                  activeChart === 'severity' && [styles.chartTabTextActive, { color: colors.primary }],
+                ]}
+              >
                 Severity
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.chartTab, activeChart === 'weather' && styles.chartTabActive]}
+              style={[
+                styles.chartTab,
+                { backgroundColor: tc.card, borderColor: tc.border },
+                activeChart === 'weather' && [
+                  styles.chartTabActive,
+                  { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg, borderColor: colors.primary },
+                ],
+              ]}
               onPress={() => setActiveChart('weather')}
               activeOpacity={0.8}
             >
-              <Cloud size={20} color={activeChart === 'weather' ? colors.primary : colors.text.secondary} />
-              <Text style={[styles.chartTabText, activeChart === 'weather' && styles.chartTabTextActive]}>
+              <Cloud size={20} color={activeChart === 'weather' ? colors.primary : tc.textMuted} />
+              <Text
+                style={[
+                  styles.chartTabText,
+                  { color: tc.textMuted },
+                  activeChart === 'weather' && [styles.chartTabTextActive, { color: colors.primary }],
+                ]}
+              >
                 Weather
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.chartTab, activeChart === 'disease' && styles.chartTabActive]}
+              style={[
+                styles.chartTab,
+                { backgroundColor: tc.card, borderColor: tc.border },
+                activeChart === 'disease' && [
+                  styles.chartTabActive,
+                  { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg, borderColor: colors.primary },
+                ],
+              ]}
               onPress={() => setActiveChart('disease')}
               activeOpacity={0.8}
             >
-              <PieChartIcon size={20} color={activeChart === 'disease' ? colors.primary : colors.text.secondary} />
-              <Text style={[styles.chartTabText, activeChart === 'disease' && styles.chartTabTextActive]}>
+              <PieChartIcon size={20} color={activeChart === 'disease' ? colors.primary : tc.textMuted} />
+              <Text
+                style={[
+                  styles.chartTabText,
+                  { color: tc.textMuted },
+                  activeChart === 'disease' && [styles.chartTabTextActive, { color: colors.primary }],
+                ]}
+              >
                 Disease
               </Text>
             </TouchableOpacity>
@@ -782,10 +843,10 @@ export default function TimeLapseViewScreen() {
         {/* Charts Section – white background, one chart per tab */}
         <View style={styles.chartsSection}>
           {activeChart === 'severity' && severityChartData && (
-            <View style={styles.chartCard}>
+            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={styles.chartHeader}>
                 <LineChartIcon size={24} color={colors.primary} />
-                <Text style={styles.chartTitle}>Disease Severity Trend</Text>
+                <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Severity Trend</Text>
               </View>
               <LineChart
                 data={severityChartData}
@@ -800,10 +861,10 @@ export default function TimeLapseViewScreen() {
           )}
 
           {activeChart === 'weather' && weatherChartData && (
-            <View style={styles.chartCard}>
+            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={styles.chartHeader}>
                 <Cloud size={24} color={colors.info} />
-                <Text style={styles.chartTitle}>Weather Trends</Text>
+                <Text style={[styles.chartTitle, { color: tc.text }]}>Weather Trends</Text>
               </View>
               <LineChart
                 data={weatherChartData}
@@ -817,21 +878,21 @@ export default function TimeLapseViewScreen() {
               <View style={styles.weatherLegend}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-                  <Text style={styles.legendText}>Temperature (°C)</Text>
+                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Temperature (°C)</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-                  <Text style={styles.legendText}>Humidity (%)</Text>
+                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Humidity (%)</Text>
                 </View>
               </View>
             </View>
           )}
 
           {activeChart === 'disease' && diseasePieData.length > 0 && (
-            <View style={styles.chartCard}>
+            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={styles.chartHeader}>
                 <PieChartIcon size={24} color={colors.primary} />
-                <Text style={styles.chartTitle}>Disease Distribution</Text>
+                <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Distribution</Text>
               </View>
               <PieChart
                 data={diseasePieData}
@@ -839,12 +900,12 @@ export default function TimeLapseViewScreen() {
                 height={isSmallScreen ? 200 : 240}
                 chartConfig={chartConfigPie}
                 accessor="population"
-                backgroundColor="#FFFFFF"
+                backgroundColor={tc.chartBg}
                 paddingLeft="15"
                 absolute
               />
-              <View style={styles.severityBreakdownList}>
-                <Text style={styles.chartSubtitle}>Severity by scan</Text>
+              <View style={[styles.severityBreakdownList, { borderTopColor: tc.border }]}>
+                <Text style={[styles.chartSubtitle, { color: tc.textMuted }]}>Severity by scan</Text>
                 {Object.entries(severityDistribution).length > 0 ? (
                   Object.entries(severityDistribution).map(([severityLabel, count]) => (
                     <View key={severityLabel} style={styles.severityBreakdownRow}>
@@ -861,24 +922,128 @@ export default function TimeLapseViewScreen() {
                           },
                         ]}
                       />
-                      <Text style={styles.severityBreakdownLabel}>{severityLabel || 'Healthy'}</Text>
-                      <Text style={styles.severityBreakdownCount}>{count} scan{count !== 1 ? 's' : ''}</Text>
+                      <Text style={[styles.severityBreakdownLabel, { color: tc.text }]}>{severityLabel || 'Healthy'}</Text>
+                      <Text style={[styles.severityBreakdownCount, { color: tc.textMuted }]}>
+                        {count} scan{count !== 1 ? 's' : ''}
+                      </Text>
                     </View>
                   ))
                 ) : (
-                  <Text style={styles.severityBreakdownEmpty}>No severity data</Text>
+                  <Text style={[styles.severityBreakdownEmpty, { color: tc.textMuted }]}>No severity data</Text>
                 )}
               </View>
             </View>
           )}
         </View>
 
+        {/* Growth Progress Graph - Line Chart */}
+        {monthGroups.length > 0 && (
+          <View style={styles.chartsSection}>
+            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
+              <View style={styles.chartHeader}>
+                <TrendingUp size={24} color={colors.primary} />
+                <Text style={[styles.chartTitle, { color: tc.text }]}>Growth Progress</Text>
+              </View>
+              <Text style={[styles.chartDesc, { color: tc.textMuted }]}>
+                Plant growth trend over time based on health scores
+              </Text>
+              <LineChart
+                data={{
+                  labels: monthGroups.map((g) => g.monthLabel),
+                  datasets: [{
+                    data: monthGroups.map((g) => {
+                      // Growth % = inverse of severity (higher health = more growth)
+                      const healthPct = Math.max(0, Math.min(100, 100 - (g.avgSeverity * 33.3)));
+                      return Math.round(healthPct * 10) / 10;
+                    }),
+                    color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+                    strokeWidth: 3,
+                  }],
+                }}
+                width={chartWidth}
+                height={isSmallScreen ? 200 : 240}
+                chartConfig={{
+                  ...chartConfigBase,
+                  color: (o = 1) => `rgba(34, 197, 94, ${o})`,
+                  propsForDots: { r: 6, strokeWidth: 2, stroke: '#22C55E', fill: tc.card },
+                }}
+                bezier
+                withShadow
+                withDots
+                withInnerLines
+                withOuterLines={false}
+                style={styles.chart}
+                verticalLabelRotation={-45}
+                yAxisSuffix="%"
+              />
+              <View style={styles.chartLegendRow}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
+                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Growth %</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Disease Occurrence Timeline - Bar Chart */}
+        {monthGroups.length > 0 && (
+          <View style={styles.chartsSection}>
+            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
+              <View style={styles.chartHeader}>
+                <BarChart3 size={24} color={colors.warning} />
+                <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Occurrence Timeline</Text>
+              </View>
+              <Text style={[styles.chartDesc, { color: tc.textMuted }]}>
+                Disease count distribution over time periods
+              </Text>
+              <BarChart
+                data={{
+                  labels: monthGroups.map((g) => g.monthLabel),
+                  datasets: [{
+                    data: monthGroups.map((g) => {
+                      // Count entries with disease in each month
+                      const entries = data?.entries ?? [];
+                      return entries.filter((e) => {
+                        const key = `${new Date(e.date).getFullYear()}-${String(new Date(e.date).getMonth() + 1).padStart(2, '0')}`;
+                        return key === g.key && e.detected_disease && e.detected_disease !== 'Healthy';
+                      }).length;
+                    }),
+                  }],
+                }}
+                width={chartWidth}
+                height={isSmallScreen ? 200 : 240}
+                yAxisLabel=""
+                yAxisSuffix=""
+                chartConfig={{
+                  ...chartConfigBase,
+                  color: (o = 1) => `rgba(34, 197, 94, ${o})`,
+                  barPercentage: 0.7,
+                  fillShadowGradient: '#22C55E',
+                  fillShadowGradientOpacity: 0.8,
+                }}
+                style={styles.chart}
+                verticalLabelRotation={-45}
+                showBarTops
+                showValuesOnTopOfBars
+                fromZero
+              />
+              <View style={styles.chartLegendRow}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
+                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Disease Cases</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Playback Section */}
         {data.entries.length > 0 && (
           <View style={styles.playbackSection}>
-            <View style={styles.playbackCard}>
+            <View style={[styles.playbackCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={styles.playbackHeader}>
-                <Text style={styles.playbackTitle}>TimeLapse Playback</Text>
+                <Text style={[styles.playbackTitle, { color: tc.text }]}>TimeLapse Playback</Text>
                 <TouchableOpacity
                   style={styles.playButton}
                   onPress={() => setIsPlaying(!isPlaying)}
@@ -904,8 +1069,8 @@ export default function TimeLapseViewScreen() {
                       onError={() => markImageFailed(currentPlayEntry.id)}
                     />
                   ) : (
-                    <View style={[styles.playbackImage, styles.imagePlaceholder]}>
-                      <Text style={styles.imagePlaceholderText}>No image</Text>
+                    <View style={[styles.playbackImage, styles.imagePlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                      <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
                     </View>
                   )}
                   <View style={styles.playbackOverlay}>
@@ -933,7 +1098,7 @@ export default function TimeLapseViewScreen() {
 
         {/* Timeline */}
         <View style={styles.timelineContainer}>
-          <Text style={styles.timelineTitle}>Timeline</Text>
+          <Text style={[styles.timelineTitle, { color: tc.text }]}>Timeline</Text>
           {data.entries.map((entry, index) => (
             <TouchableOpacity
               key={entry.id}
@@ -941,7 +1106,7 @@ export default function TimeLapseViewScreen() {
               onPress={() => setSelectedEntry(entry)}
               activeOpacity={0.8}
             >
-              <View style={styles.timelineCard}>
+              <View style={[styles.timelineCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
                 {getTimelapseImageUrl(entry.photo_url) && !failedImageIds.has(entry.id) ? (
                   <Image
                     source={{ uri: getTimelapseImageUrl(entry.photo_url)!, cache: 'reload' }}
@@ -949,14 +1114,14 @@ export default function TimeLapseViewScreen() {
                     onError={() => markImageFailed(entry.id)}
                   />
                 ) : (
-                  <View style={[styles.timelineImage, styles.imagePlaceholder]}>
-                    <Text style={styles.imagePlaceholderText}>No image</Text>
+                  <View style={[styles.timelineImage, styles.imagePlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                    <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
                   </View>
                 )}
                 <View style={styles.timelineContent}>
                   <View style={styles.timelineHeader}>
-                    <Calendar size={16} color={colors.text.secondary} />
-                    <Text style={styles.timelineDate}>
+                    <Calendar size={16} color={tc.textMuted} />
+                    <Text style={[styles.timelineDate, { color: tc.textMuted }]}>
                       {new Date(entry.date).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
@@ -965,7 +1130,7 @@ export default function TimeLapseViewScreen() {
                     </Text>
                   </View>
                   {entry.detected_disease && (
-                    <Text style={styles.timelineDisease}>
+                    <Text style={[styles.timelineDisease, { color: tc.text }]}>
                       {entry.detected_disease}
                     </Text>
                   )}
@@ -983,17 +1148,17 @@ export default function TimeLapseViewScreen() {
                       </Text>
                     </View>
                     {entry.weather_humidity && (
-                      <View style={styles.weatherBadge}>
+                      <View style={[styles.weatherBadge, { backgroundColor: tc.screenSecondary }]}>
                         <Droplets size={14} color={colors.info} />
-                        <Text style={styles.weatherText}>
+                        <Text style={[styles.weatherText, { color: tc.text }]}>
                           {entry.weather_humidity}%
                         </Text>
                       </View>
                     )}
                     {entry.weather_temp && (
-                      <View style={styles.weatherBadge}>
+                      <View style={[styles.weatherBadge, { backgroundColor: tc.screenSecondary }]}>
                         <Sun size={14} color={colors.warning} />
-                        <Text style={styles.weatherText}>
+                        <Text style={[styles.weatherText, { color: tc.text }]}>
                           {entry.weather_temp}°C
                         </Text>
                       </View>
@@ -1049,8 +1214,8 @@ export default function TimeLapseViewScreen() {
                   onError={() => markImageFailed(selectedEntry.id)}
                 />
               ) : (
-                <View style={[styles.modalImage, styles.imagePlaceholder]}>
-                  <Text style={styles.imagePlaceholderText}>No image</Text>
+                <View style={[styles.modalImage, styles.imagePlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                  <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
                 </View>
               )}
               <View style={styles.modalDetails}>
@@ -1815,5 +1980,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
     fontStyle: 'italic',
+  },
+  chartDesc: {
+    fontSize: typography.fontSize.sm,
+    marginBottom: spacing.md,
+    marginLeft: spacing.xs,
+  },
+  chartLegendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
   },
 });

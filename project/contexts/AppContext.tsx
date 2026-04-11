@@ -8,6 +8,7 @@ interface AppContextType {
   setLanguage: (lang: 'en' | 'ur') => void;
   cropDiseases: CropDisease[];
   addRecentDetection: (d: CropDisease) => void;
+  removeRecentDetection: (id: string) => void;
   farmingTasks: FarmingTask[];
   subsidyPrograms: SubsidyProgram[];
   isOffline: boolean;
@@ -95,6 +96,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setRecentDetections(prev => [d, ...prev].slice(0, 20));
   };
 
+  const removeRecentDetection = (id: string) => {
+    setRecentDetections(prev => prev.filter(x => x.id !== id));
+  };
+
   useEffect(() => {
     const loadRecent = async () => {
       if (!user?.id) return;
@@ -121,8 +126,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const value: AppContextType = {
     language,
     setLanguage,
-    cropDiseases: recentDetections.length ? recentDetections : mockCropDiseases,
+    cropDiseases: user?.id ? recentDetections : mockCropDiseases,
     addRecentDetection,
+    removeRecentDetection,
     farmingTasks: mockFarmingTasks,
     subsidyPrograms: mockSubsidyPrograms,
     isOffline,

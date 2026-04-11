@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Search, Users, MapPin, Phone, Mail, MoveVertical as MoreVertical, CircleCheck as CheckCircle, X } from 'lucide-react-native';
 import { apiGet } from '@/utils/api';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Farmer {
   id: string;
@@ -25,6 +26,7 @@ interface Farmer {
 }
 
 export default function FarmersScreen() {
+  const { colors: tc } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,28 +78,28 @@ export default function FarmersScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Farmers</Text>
-        <View style={styles.headerBadge}>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.title, { color: tc.text }]}>Farmers</Text>
+        <View style={[styles.headerBadge, { backgroundColor: tc.screenSecondary, borderColor: tc.primary }]}>
           <Text style={styles.headerBadgeText}>{farmers.length} Total</Text>
         </View>
       </View>
 
       {/* Search */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchContainer}>
-          <Search color="#6B7280" size={20} />
+      <View style={[styles.searchSection, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <View style={[styles.searchContainer, { backgroundColor: tc.inputBg }]}>
+          <Search color={tc.textMuted} size={20} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: tc.text }]}
             placeholder="Search by name, location, or email..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={tc.textMuted}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X color="#6B7280" size={18} />
+              <X color={tc.textMuted} size={18} />
             </TouchableOpacity>
           )}
         </View>
@@ -117,12 +119,12 @@ export default function FarmersScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#22C55E" />
-          <Text style={styles.loadingText}>Loading farmers...</Text>
+          <Text style={[styles.loadingText, { color: tc.textMuted }]}>Loading farmers...</Text>
         </View>
       ) : (
         /* Farmers List */
         <ScrollView 
-          style={styles.farmersList} 
+          style={[styles.farmersList, { backgroundColor: tc.screen }]} 
           contentContainerStyle={styles.farmersContent}
           refreshControl={
             <RefreshControl
@@ -134,17 +136,17 @@ export default function FarmersScreen() {
           }
         >
           {filteredFarmers.map((farmer) => (
-            <View key={farmer.id} style={styles.farmerCard}>
+            <View key={farmer.id} style={[styles.farmerCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               {/* Avatar and Name */}
               <View style={styles.farmerHeader}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
+                <View style={[styles.avatar, { backgroundColor: tc.primary + '33' }]}>
+                  <Text style={[styles.avatarText, { color: tc.primary }]}>
                     {farmer.name.charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={styles.farmerInfo}>
-                  <Text style={styles.farmerName}>{farmer.name}</Text>
-                  <Text style={styles.farmerDate}>
+                  <Text style={[styles.farmerName, { color: tc.text }]}>{farmer.name}</Text>
+                  <Text style={[styles.farmerDate, { color: tc.textMuted }]}>
                     Joined: {farmer.registrationDate 
                       ? new Date(farmer.registrationDate).toLocaleDateString() 
                       : 'Unknown'}
@@ -156,19 +158,19 @@ export default function FarmersScreen() {
               <View style={styles.farmerDetails}>
                 {farmer.email && (
                   <View style={styles.detailRow}>
-                    <Mail color="#6B7280" size={16} />
-                    <Text style={styles.detailText}>{farmer.email}</Text>
+                    <Mail color={tc.textMuted} size={16} />
+                    <Text style={[styles.detailText, { color: tc.textSecondary }]}>{farmer.email}</Text>
                   </View>
                 )}
                 {farmer.phone && (
                   <View style={styles.detailRow}>
-                    <Phone color="#6B7280" size={16} />
-                    <Text style={styles.detailText}>{farmer.phone}</Text>
+                    <Phone color={tc.textMuted} size={16} />
+                    <Text style={[styles.detailText, { color: tc.textSecondary }]}>{farmer.phone}</Text>
                   </View>
                 )}
                 <View style={styles.detailRow}>
                   <MapPin color="#22C55E" size={16} />
-                  <Text style={[styles.detailText, styles.locationText]}>
+                  <Text style={[styles.detailText, styles.locationText, { color: tc.textSecondary }]}>
                     {getLocationDisplay(farmer)}
                   </Text>
                 </View>
@@ -176,9 +178,9 @@ export default function FarmersScreen() {
 
               {/* Coordinates if available */}
               {farmer.latitude && farmer.longitude && (
-                <View style={styles.coordinatesContainer}>
-                  <Text style={styles.coordinatesLabel}>Coordinates:</Text>
-                  <Text style={styles.coordinatesValue}>
+                <View style={[styles.coordinatesContainer, { backgroundColor: tc.screenSecondary }]}>
+                  <Text style={[styles.coordinatesLabel, { color: tc.textMuted }]}>Coordinates:</Text>
+                  <Text style={[styles.coordinatesValue, { color: tc.text }]}>
                     {farmer.latitude.toFixed(6)}, {farmer.longitude.toFixed(6)}
                   </Text>
                 </View>
@@ -188,9 +190,9 @@ export default function FarmersScreen() {
 
           {filteredFarmers.length === 0 && !loading && (
             <View style={styles.emptyState}>
-              <Users color="#6B7280" size={48} />
-              <Text style={styles.emptyTitle}>No farmers found</Text>
-              <Text style={styles.emptyText}>
+              <Users color={tc.textMuted} size={48} />
+              <Text style={[styles.emptyTitle, { color: tc.text }]}>No farmers found</Text>
+              <Text style={[styles.emptyText, { color: tc.textMuted }]}>
                 {searchQuery 
                   ? 'Try adjusting your search terms' 
                   : 'No farmers have registered yet'}

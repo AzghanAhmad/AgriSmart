@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { X, MapPin, Search, Navigation } from 'lucide-react-native';
 import * as Location from 'expo-location';
+import { clampToPakistan, geocodeLocationInPakistan, isInPakistan } from '@/utils/pakistanGeocode';
 
 interface LocationPickerModalProps {
   visible: boolean;
@@ -24,6 +25,36 @@ interface LocationPickerModalProps {
     latitude: number;
     longitude: number;
   };
+  /** When true, map is centered on Pakistan and taps/drags are clamped inside the country. */
+  constrainToPakistan?: boolean;
+  title?: string;
+}
+
+const PK_CENTER = { latitude: 30.3753, longitude: 69.3451 };
+
+type Region = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
+
+function buildRegionFromInitial(
+  initialLocation: LocationPickerModalProps['initialLocation'],
+  constrainToPakistan: boolean,
+): { region: Region; marker: { latitude: number; longitude: number } } {
+  const rawLat = initialLocation?.latitude ?? PK_CENTER.latitude;
+  const rawLng = initialLocation?.longitude ?? PK_CENTER.longitude;
+  const c = constrainToPakistan ? clampToPakistan(rawLat, rawLng) : { latitude: rawLat, longitude: rawLng };
+  return {
+    region: {
+      latitude: c.latitude,
+      longitude: c.longitude,
+      latitudeDelta: constrainToPakistan ? 4.5 : 10,
+      longitudeDelta: constrainToPakistan ? 4.2 : 10,
+    },
+    marker: c,
+  };
 }
 
 export function LocationPickerModal({
@@ -31,70 +62,151 @@ export function LocationPickerModal({
   onClose,
   onSelect,
   initialLocation,
+  constrainToPakistan = false,
+  title = 'Select Location',
 }: LocationPickerModalProps) {
-  const [region, setRegion] = useState({
-    latitude: initialLocation?.latitude || 30.3753, // Pakistan center
-    longitude: initialLocation?.longitude || 69.3451,
-    latitudeDelta: 10,
-    longitudeDelta: 10,
-  });
+  const mapRef = useRef<any>(null);
   const [markerCoordinate, setMarkerCoordinate] = useState({
-    latitude: initialLocation?.latitude || 30.3753,
-    longitude: initialLocation?.longitude || 69.3451,
+    latitude: PK_CENTER.latitude,
+    longitude: PK_CENTER.longitude,
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [locationName, setLocationName] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
+  /** Uncontrolled map: use initialRegion only (no `region` prop) so zoom/pan keeps native labels. */
+  const mapInitialRegion = useMemo(() => {
+    if (!visible) {
+      return {
+        latitude: PK_CENTER.latitude,
+        longitude: PK_CENTER.longitude,
+        latitudeDelta: 10,
+        longitudeDelta: 10,
+      };
+    }
+    return buildRegionFromInitial(initialLocation, constrainToPakistan).region;
+  }, [visible, initialLocation?.latitude, initialLocation?.longitude, constrainToPakistan]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const { marker } = buildRegionFromInitial(initialLocation, constrainToPakistan);
+    setMarkerCoordinate(marker);
+    setLocationName('');
+    setSearchQuery('');
+  }, [visible, initialLocation?.latitude, initialLocation?.longitude, constrainToPakistan]);
+
+  const animateMapTo = (next: Region, delayMs = 0) => {
+    const run = () => {
+      const map = mapRef.current;
+      if (map && typeof map.animateToRegion === 'function') {
+        map.animateToRegion(next, 450);
+      }
+    };
+    if (delayMs > 0) {
+      setTimeout(run, delayMs);
+    } else {
+      requestAnimationFrame(() => setTimeout(run, 50));
+    }
+  };
+
   // Dynamically import MapView on native only
   const MapView = Platform.OS !== 'web' ? require('react-native-maps').default : null;
   const Marker = Platform.OS !== 'web' ? require('react-native-maps').Marker : null;
 
-  const handleMapPress = async (event: any) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setMarkerCoordinate({ latitude, longitude });
-    
-    // Reverse geocode to get address
+  const applyCoordinate = async (latitude: number, longitude: number) => {
+    const c = constrainToPakistan ? clampToPakistan(latitude, longitude) : { latitude, longitude };
+    setMarkerCoordinate(c);
     try {
       const [address] = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
+        latitude: c.latitude,
+        longitude: c.longitude,
       });
-      
       if (address) {
-        const name = [address.city, address.region, address.country]
-          .filter(Boolean)
-          .join(', ');
+        const name = [address.city, address.region, address.country].filter(Boolean).join(', ');
         setLocationName(name || 'Selected Location');
+      } else {
+        setLocationName('Selected Location');
       }
-    } catch (error) {
-      console.error('Reverse geocode error:', error);
+    } catch {
       setLocationName('Selected Location');
     }
   };
 
+  const handleMapPress = async (event: any) => {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    await applyCoordinate(latitude, longitude);
+  };
+
+  const handleMarkerDragEnd = (e: any) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    void applyCoordinate(latitude, longitude);
+  };
+
   const handleSearchLocation = async () => {
-    if (!searchQuery.trim()) return;
-    
+    const q = searchQuery.trim();
+    if (!q) return;
+
     try {
       setIsSearching(true);
-      const results = await Location.geocodeAsync(searchQuery);
-      
-      if (results.length > 0) {
-        const { latitude, longitude } = results[0];
-        setRegion({
-          latitude,
-          longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        });
-        setMarkerCoordinate({ latitude, longitude });
-        setLocationName(searchQuery);
+      let latitude: number;
+      let longitude: number;
+      let label = q;
+
+      // 1) Pakistan profile picker: OpenStreetMap Nominatim (works without Google Play geocoder)
+      if (constrainToPakistan) {
+        const g = await geocodeLocationInPakistan(q);
+        if (g) {
+          latitude = g.lat;
+          longitude = g.lng;
+          label = g.label;
+        } else {
+          // 2) Fallback: expo geocoder with explicit country (some devices)
+          try {
+            const results = await Location.geocodeAsync(`${q}, Pakistan`);
+            if (results.length === 0) {
+              Alert.alert(
+                'Not found',
+                'Try a major city (e.g. Lahore, Karachi, Islamabad) or check your internet connection.',
+              );
+              return;
+            }
+            latitude = results[0].latitude;
+            longitude = results[0].longitude;
+          } catch {
+            Alert.alert(
+              'Not found',
+              'Could not search this place. Check internet and try a city name in Pakistan.',
+            );
+            return;
+          }
+        }
       } else {
-        Alert.alert('Not Found', 'Location not found. Try a different search term.');
+        const results = await Location.geocodeAsync(q);
+        if (results.length === 0) {
+          Alert.alert('Not Found', 'Location not found. Try a different search term.');
+          return;
+        }
+        latitude = results[0].latitude;
+        longitude = results[0].longitude;
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to search location');
+
+      const c = constrainToPakistan ? clampToPakistan(latitude, longitude) : { latitude, longitude };
+      if (constrainToPakistan && !isInPakistan(latitude, longitude)) {
+        Alert.alert('Outside Pakistan', 'Pick a place inside Pakistan. Search again or tap the map.');
+        return;
+      }
+
+      const next: Region = {
+        latitude: c.latitude,
+        longitude: c.longitude,
+        latitudeDelta: 0.35,
+        longitudeDelta: 0.35,
+      };
+      setMarkerCoordinate({ latitude: c.latitude, longitude: c.longitude });
+      setLocationName(label);
+      animateMapTo(next, 120);
+    } catch (error: any) {
+      Alert.alert('Search failed', error?.message || 'Could not search. Check internet and try again.');
     } finally {
       setIsSearching(false);
     }
@@ -102,44 +214,112 @@ export function LocationPickerModal({
 
   const handleCurrentLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required.');
+      const servicesOk = await Location.hasServicesEnabledAsync();
+      if (!servicesOk) {
+        Alert.alert(
+          'Location services off',
+          'Turn on Location (GPS) in your device settings, then try again.',
+        );
         return;
       }
 
-      const loc = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = loc.coords;
-      
-      setRegion({
-        latitude,
-        longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      });
-      setMarkerCoordinate({ latitude, longitude });
-      
-      // Get address
-      const [address] = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      });
-      
-      if (address) {
-        const name = [address.city, address.region, address.country]
-          .filter(Boolean)
-          .join(', ');
-        setLocationName(name || 'Current Location');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission needed',
+          'Allow location access for AgriSmart in system settings to use your current position.',
+        );
+        return;
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to get current location');
+
+      let loc: Location.LocationObject | null = null;
+      const tryFix = async () => {
+        try {
+          return await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            mayShowUserSettingsDialog: true,
+          });
+        } catch {
+          try {
+            return await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+              mayShowUserSettingsDialog: true,
+            });
+          } catch {
+            return null;
+          }
+        }
+      };
+      loc = await tryFix();
+      if (!loc) {
+        loc = await Location.getLastKnownPositionAsync({
+          maxAge: 300000,
+          requiredAccuracy: 10000,
+        });
+      }
+
+      if (!loc) {
+        Alert.alert(
+          'Could not get GPS',
+          'Move near a window or outdoors, enable GPS, and try again. You can still tap the map to set your pin.',
+        );
+        return;
+      }
+
+      const { latitude, longitude } = loc.coords;
+
+      if (constrainToPakistan && !isInPakistan(latitude, longitude)) {
+        Alert.alert(
+          'Outside Pakistan',
+          'Your GPS position is outside Pakistan. Pan the map and drop the pin inside the country.',
+        );
+        return;
+      }
+
+      const c = constrainToPakistan ? clampToPakistan(latitude, longitude) : { latitude, longitude };
+      const next: Region = {
+        latitude: c.latitude,
+        longitude: c.longitude,
+        latitudeDelta: 0.35,
+        longitudeDelta: 0.35,
+      };
+      setMarkerCoordinate({ latitude: c.latitude, longitude: c.longitude });
+      animateMapTo(next, 120);
+
+      try {
+        const [address] = await Location.reverseGeocodeAsync({
+          latitude: c.latitude,
+          longitude: c.longitude,
+        });
+        if (address) {
+          const name = [address.city, address.region, address.country].filter(Boolean).join(', ');
+          setLocationName(name || 'Current location');
+        }
+      } catch {
+        setLocationName('Current location');
+      }
+    } catch (error: any) {
+      const msg = String(error?.message || error || '');
+      Alert.alert(
+        'Location error',
+        msg.includes('timeout') || msg.includes('unavailable')
+          ? 'GPS took too long. Try again in an open area or set your pin on the map.'
+          : 'Could not read your location. Check GPS permission and try again.',
+      );
     }
   };
 
   const handleConfirm = () => {
+    const c = constrainToPakistan
+      ? clampToPakistan(markerCoordinate.latitude, markerCoordinate.longitude)
+      : markerCoordinate;
+    if (constrainToPakistan && !isInPakistan(c.latitude, c.longitude)) {
+      Alert.alert('Invalid', 'Pin must be inside Pakistan.');
+      return;
+    }
     onSelect({
-      latitude: markerCoordinate.latitude,
-      longitude: markerCoordinate.longitude,
+      latitude: c.latitude,
+      longitude: c.longitude,
       address: locationName || 'Selected Location',
     });
     onClose();
@@ -171,7 +351,7 @@ export function LocationPickerModal({
           <TouchableOpacity onPress={onClose} style={styles.closeIcon}>
             <X color="#111827" size={24} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Select Location</Text>
+          <Text style={styles.headerTitle}>{title}</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -181,33 +361,51 @@ export function LocationPickerModal({
             <Search color="#6B7280" size={20} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search location..."
+              placeholder="Search city or area..."
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearchLocation}
               returnKeyType="search"
             />
+            <TouchableOpacity
+              onPress={handleSearchLocation}
+              disabled={isSearching}
+              accessibilityLabel="Search"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.searchGo}>{isSearching ? '…' : 'Go'}</Text>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={styles.currentLocationButton}
             onPress={handleCurrentLocation}
+            accessibilityLabel="Use current location"
           >
             <Navigation color="#22C55E" size={20} />
           </TouchableOpacity>
         </View>
 
-        {/* Map */}
-        {MapView && Marker && (
+        {/* Map: uncontrolled (initialRegion only) so city/road labels show when zooming */}
+        {visible && MapView && Marker && (
           <MapView
+            ref={mapRef}
             style={styles.map}
-            region={region}
+            initialRegion={mapInitialRegion}
+            mapType="standard"
+            rotateEnabled
+            pitchEnabled
+            scrollEnabled
+            zoomEnabled
+            showsBuildings
+            {...(Platform.OS === 'ios'
+              ? { showsPointsOfInterest: true, showsScale: true }
+              : { maxZoomLevel: 20, minZoomLevel: 2 })}
             onPress={handleMapPress}
-            onRegionChangeComplete={setRegion}
           >
             <Marker
               coordinate={markerCoordinate}
               draggable
-              onDragEnd={(e: any) => handleMapPress({ nativeEvent: e })}
+              onDragEnd={handleMarkerDragEnd}
             >
               <View style={styles.markerContainer}>
                 <MapPin color="#EF4444" size={32} fill="#EF4444" />
@@ -238,7 +436,9 @@ export function LocationPickerModal({
         {/* Instructions */}
         <View style={styles.instructions}>
           <Text style={styles.instructionText}>
-            💡 Tap anywhere on the map or drag the pin to select your location
+            {constrainToPakistan
+              ? 'Pinch to zoom — city names appear as you zoom in. Tap or drag the pin, then confirm.'
+              : 'Pinch to zoom for place names. Tap or drag the pin to select your location.'}
           </Text>
         </View>
       </View>
@@ -312,6 +512,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#111827',
+  },
+  searchGo: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#22C55E',
+    paddingVertical: 4,
   },
   currentLocationButton: {
     width: 48,

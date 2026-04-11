@@ -42,19 +42,16 @@ TREATMENT_SUGGESTIONS = {
 def get_user_from_token():
     """
     Extract user_id from JWT token in Authorization header.
-    Returns user_id or None if invalid/missing.
+    Returns user_id or None if invalid/missing or session revoked (logout-all).
     """
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Bearer '):
-        return None
-    
-    token = auth_header.replace('Bearer ', '')
     try:
-        from routes.auth import _decode_token
-        payload = _decode_token(token)
-        return payload.get('uid')
-    except Exception:
+        from ..routes.auth import get_auth_user
+    except ImportError:
+        from routes.auth import get_auth_user
+    user, err = get_auth_user()
+    if err or not user:
         return None
+    return user.user_id
 
 def fetch_weather_data(latitude: float, longitude: float) -> dict:
     """

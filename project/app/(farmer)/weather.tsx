@@ -20,8 +20,9 @@ import {
   RefreshCw,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getApiBaseUrl } from '@/utils/env';
-import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { resolveWeatherCoordinates } from '@/utils/pakistanGeocode';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 
@@ -48,6 +49,7 @@ interface WeatherData {
 
 export default function WeatherScreen() {
   const { user } = useAuth();
+  const { colors: tc } = useTheme();
   const router = useRouter();
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,16 +58,14 @@ export default function WeatherScreen() {
 
   useEffect(() => {
     loadWeather();
-  }, []);
+  }, [user?.id, user?.latitude, user?.longitude, user?.location]);
 
   const loadWeather = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
-      // Use user's coordinates if available, otherwise default to Lahore, Pakistan
-      const lat = user?.latitude || 31.5204;
-      const lon = user?.longitude || 74.3587;
+      const { latitude: lat, longitude: lon } = await resolveWeatherCoordinates(user);
       
       const API_BASE_URL = getApiBaseUrl();
       const response = await fetch(
@@ -139,22 +139,27 @@ export default function WeatherScreen() {
   };
 
   if (isLoading) {
-    return <LoadingSpinner text="Loading weather forecast..." />;
+    return (
+      <View style={[styles.container, { backgroundColor: tc.screen, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={tc.primary} />
+        <Text style={{ marginTop: 12, color: tc.textMuted }}>Loading weather forecast...</Text>
+      </View>
+    );
   }
 
   if (error) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: tc.screen }]}>
+        <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft color="#111827" size={24} />
+            <ArrowLeft color={tc.text} size={24} />
           </TouchableOpacity>
-          <Text style={styles.title}>Weather Forecast</Text>
+          <Text style={[styles.title, { color: tc.text }]}>Weather Forecast</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.errorContainer}>
           <Cloud color="#EF4444" size={48} />
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={[styles.errorText, { color: tc.textMuted }]}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadWeather}>
             <RefreshCw color="white" size={16} />
             <Text style={styles.retryText}>Retry</Text>
@@ -166,30 +171,30 @@ export default function WeatherScreen() {
 
   if (!weatherData || !weatherData.forecast) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: tc.screen }]}>
+        <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft color="#111827" size={24} />
+            <ArrowLeft color={tc.text} size={24} />
           </TouchableOpacity>
-          <Text style={styles.title}>Weather Forecast</Text>
+          <Text style={[styles.title, { color: tc.text }]}>Weather Forecast</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>No weather data available</Text>
+          <Text style={[styles.errorText, { color: tc.textMuted }]}>No weather data available</Text>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         <TouchableOpacity onPress={() => router.push('/schedule' as any)} style={styles.backButton}>
-          <ArrowLeft color="#111827" size={24} />
+          <ArrowLeft color={tc.text} size={24} />
         </TouchableOpacity>
-        <Text style={styles.title}>7-Day Weather Forecast</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-          <RefreshCw color="#22C55E" size={20} />
+        <Text style={[styles.title, { color: tc.text }]}>7-Day Weather Forecast</Text>
+        <TouchableOpacity style={[styles.refreshButton, { backgroundColor: tc.screenSecondary }]} onPress={onRefresh}>
+          <RefreshCw color={tc.primary} size={20} />
         </TouchableOpacity>
       </View>
 
@@ -197,7 +202,7 @@ export default function WeatherScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={tc.primary} />
         }
       >
         {/* Current Day Highlight */}
@@ -259,22 +264,29 @@ export default function WeatherScreen() {
 
         {/* 7-Day Forecast - Show exactly 7 days from today */}
         <View style={styles.forecastSection}>
-          <Text style={styles.sectionTitle}>7-Day Forecast</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>7-Day Forecast</Text>
           {weatherData.forecast.slice(0, 7).map((day, index) => {
             const WeatherIcon = getWeatherIcon(day.main, day.icon);
             const recommendations = getFarmingRecommendation(day);
             const isToday = index === 0;
             
             return (
-              <View key={index} style={[styles.dayCard, isToday && styles.todayCard]}>
+              <View
+                key={index}
+                style={[
+                  styles.dayCard,
+                  { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 },
+                  isToday && { borderColor: tc.primary, borderWidth: 2 },
+                ]}
+              >
                 <View style={styles.dayHeader}>
                   <View style={styles.dayInfo}>
-                    <Text style={styles.dayName}>
+                    <Text style={[styles.dayName, { color: tc.text }]}>
                       {isToday
                         ? 'Today'
                         : new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' })}
                     </Text>
-                    <Text style={styles.dayDate}>
+                    <Text style={[styles.dayDate, { color: tc.textMuted }]}>
                       {new Date(day.date).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric'
@@ -282,12 +294,12 @@ export default function WeatherScreen() {
                     </Text>
                   </View>
                   <View style={styles.dayWeather}>
-                    <WeatherIcon color="#3B82F6" size={32} />
+                    <WeatherIcon color={tc.primary} size={32} />
                     <View style={styles.dayTemps}>
-                      <Text style={styles.dayTempHigh}>
+                      <Text style={[styles.dayTempHigh, { color: tc.text }]}>
                         {Math.round(day.temp_max)}°
                       </Text>
-                      <Text style={styles.dayTempLow}>
+                      <Text style={[styles.dayTempLow, { color: tc.textMuted }]}>
                         {Math.round(day.temp_min)}°
                       </Text>
                     </View>
@@ -296,30 +308,30 @@ export default function WeatherScreen() {
                 
                 <View style={styles.dayDetails}>
                   <View style={styles.dayDetailRow}>
-                    <Text style={styles.dayDescription}>{day.description}</Text>
+                    <Text style={[styles.dayDescription, { color: tc.textSecondary }]}>{day.description}</Text>
                   </View>
                   <View style={styles.dayMetrics}>
                     <View style={styles.metricItem}>
-                      <Droplets color="#3B82F6" size={14} />
-                      <Text style={styles.metricText}>{day.humidity}% humidity</Text>
+                      <Droplets color={tc.primary} size={14} />
+                      <Text style={[styles.metricText, { color: tc.textMuted }]}>{day.humidity}% humidity</Text>
                     </View>
                     <View style={styles.metricItem}>
-                      <Wind color="#6B7280" size={14} />
-                      <Text style={styles.metricText}>{day.wind_speed.toFixed(1)} m/s</Text>
+                      <Wind color={tc.textMuted} size={14} />
+                      <Text style={[styles.metricText, { color: tc.textMuted }]}>{day.wind_speed.toFixed(1)} m/s</Text>
                     </View>
                     {day.precipitation > 0 && (
                       <View style={styles.metricItem}>
-                        <CloudRain color="#3B82F6" size={14} />
-                        <Text style={styles.metricText}>{day.precipitation.toFixed(1)}mm rain</Text>
+                        <CloudRain color={tc.primary} size={14} />
+                        <Text style={[styles.metricText, { color: tc.textMuted }]}>{day.precipitation.toFixed(1)}mm rain</Text>
                       </View>
                     )}
                   </View>
                   
                   {recommendations.length > 0 && (
-                    <View style={styles.recommendationsBox}>
-                      <Text style={styles.recommendationsTitle}>Farming Recommendations:</Text>
+                    <View style={[styles.recommendationsBox, { backgroundColor: tc.screenSecondary, borderLeftColor: tc.primary }]}>
+                      <Text style={[styles.recommendationsTitle, { color: tc.text }]}>Farming Recommendations:</Text>
                       {recommendations.map((rec, idx) => (
-                        <Text key={idx} style={styles.recommendationItem}>
+                        <Text key={idx} style={[styles.recommendationItem, { color: tc.textSecondary }]}>
                           • {rec}
                         </Text>
                       ))}

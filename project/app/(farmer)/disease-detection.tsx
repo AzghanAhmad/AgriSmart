@@ -9,19 +9,20 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Camera  as CameraIcon , Upload, Scan, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Wheat, Leaf, ArrowLeft } from 'lucide-react-native';
+import { Camera  as CameraIcon , Upload, Scan, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Wheat, Leaf, ArrowLeft, Trash2 } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
 import { ErrorAlert } from '@/components/ErrorAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
-import * as Location from 'expo-location';
-
 import axios from 'axios';
 import { Platform } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getApiBaseUrl } from '@/utils/env';
+import { apiDelete } from '@/utils/api';
+import { resolveScanCoordinates } from '@/utils/pakistanGeocode';
 
 
 type CropType = 'wheat' | 'rice' | 'cotton' | null;
@@ -38,6 +39,7 @@ interface Crop {
 
 export default function DiseaseDetectionScreen() {
   const { user } = useAuth();
+  const { colors: tc } = useTheme();
   const [selectedCrop, setSelectedCrop] = useState<CropType>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -45,65 +47,21 @@ export default function DiseaseDetectionScreen() {
   const [error, setError] = useState('');
   const [showError, setShowError] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const { language, cropDiseases, addRecentDetection } = useApp();
+  const { language, cropDiseases, addRecentDetection, removeRecentDetection } = useApp();
 
-  // Helper function to check if coordinates are within Pakistan bounds
-  const isInPakistan = (lat: number, lng: number): boolean => {
-    // Pakistan approximate bounds:
-    // Latitude: 23.5° N to 37.0° N
-    // Longitude: 60.0° E to 77.0° E
-    return lat >= 23.5 && lat <= 37.0 && lng >= 60.0 && lng <= 77.0;
-  };
-
-  // Get user's current location on mount
+  // GPS in Pakistan → profile lat/lng → geocode profile location text → Lahore
   React.useEffect(() => {
+    let cancelled = false;
     (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          const lat = location.coords.latitude;
-          const lng = location.coords.longitude;
-          
-          // Check if location is within Pakistan
-          if (isInPakistan(lat, lng)) {
-            setUserLocation({ latitude: lat, longitude: lng });
-            console.log('📍 Location acquired (Pakistan):', lat, lng);
-          } else {
-            // Use user's saved location as fallback
-            if (user?.latitude && user?.longitude && isInPakistan(user.latitude, user.longitude)) {
-              setUserLocation({ latitude: user.latitude, longitude: user.longitude });
-              console.log('⚠️ GPS outside Pakistan, using saved location:', user.latitude, user.longitude);
-            } else {
-              // Default to Lahore, Pakistan if all else fails
-              setUserLocation({ latitude: 31.5204, longitude: 74.3587 });
-              console.log('⚠️ Using default Pakistan location (Lahore)');
-            }
-          }
-        } else {
-          // Use user's saved location if permission denied
-          if (user?.latitude && user?.longitude && isInPakistan(user.latitude, user.longitude)) {
-            setUserLocation({ latitude: user.latitude, longitude: user.longitude });
-            console.log('📍 Using saved location (permission denied):', user.latitude, user.longitude);
-          } else {
-            // Default to Lahore, Pakistan
-            setUserLocation({ latitude: 31.5204, longitude: 74.3587 });
-            console.log('⚠️ Using default Pakistan location (Lahore) - permission denied');
-          }
-        }
-      } catch (err) {
-        console.log('⚠️ Could not get location:', err);
-        // Use user's saved location or default to Lahore
-        if (user?.latitude && user?.longitude && isInPakistan(user.latitude, user.longitude)) {
-          setUserLocation({ latitude: user.latitude, longitude: user.longitude });
-        } else {
-          setUserLocation({ latitude: 31.5204, longitude: 74.3587 });
-          console.log('⚠️ Using default Pakistan location (Lahore) - error');
-        }
+      const coords = await resolveScanCoordinates(user);
+      if (!cancelled) {
+        setUserLocation(coords);
+        console.log('📍 Scan location:', coords.latitude, coords.longitude);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   const crops: Crop[] = [
@@ -368,20 +326,54 @@ export default function DiseaseDetectionScreen() {
     setResult(null);
   };
 
+  const isBackendDetectionId = (id: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+
+  const formatScanDate = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleDeleteScan = (id: string) => {
+    Alert.alert('Delete scan', 'Remove this scan from your history?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            if (user?.id && isBackendDetectionId(id)) {
+              await apiDelete(`/api/farmer/detections/${encodeURIComponent(id)}?farmerId=${encodeURIComponent(user.id)}`);
+            }
+            removeRecentDetection(id);
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'Could not delete';
+            Alert.alert('Delete failed', msg);
+          }
+        },
+      },
+    ]);
+  };
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         {selectedCrop && (
-          <TouchableOpacity style={styles.backButton} onPress={goBackToCropSelection}>
-            <ArrowLeft color="#111827" size={24} />
+          <TouchableOpacity style={[styles.backButton, { backgroundColor: tc.screenSecondary }]} onPress={goBackToCropSelection}>
+            <ArrowLeft color={tc.text} size={24} />
           </TouchableOpacity>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>
+          <Text style={[styles.title, { color: tc.text }]}>
             {selectedCrop ? `${selectedCrop.charAt(0).toUpperCase() + selectedCrop.slice(1)} Disease Detection` : 'Select Your Crop'}
           </Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.subtitle, { color: tc.textMuted }]}>
             {selectedCrop ? 'Scan or upload crop images for AI analysis' : 'Choose a crop type to start disease detection'}
           </Text>
         </View>
@@ -451,13 +443,13 @@ export default function DiseaseDetectionScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.tipsCard}>
+          <View style={[styles.tipsCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
             <Scan color="#22C55E" size={24} />
-            <Text style={styles.tipsTitle}>Photo Tips for Best Results:</Text>
-            <Text style={styles.tipText}>✓ Capture clear, well-lit images</Text>
-            <Text style={styles.tipText}>✓ Focus on affected plant parts</Text>
-            <Text style={styles.tipText}>✓ Avoid shadows and blur</Text>
-            <Text style={styles.tipText}>✓ Include multiple angles if possible</Text>
+            <Text style={[styles.tipsTitle, { color: tc.text }]}>Photo Tips for Best Results:</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>✓ Capture clear, well-lit images</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>✓ Focus on affected plant parts</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>✓ Avoid shadows and blur</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>✓ Include multiple angles if possible</Text>
           </View>
         </View>
       )}
@@ -475,11 +467,11 @@ export default function DiseaseDetectionScreen() {
           </View>
 
           {result && (
-            <View style={styles.resultCard}>
+            <View style={[styles.resultCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
               <View style={styles.resultHeader}>
                 <View style={styles.diseaseInfo}>
-                  <Text style={styles.diseaseName}>{result.disease}</Text>
-                  <Text style={styles.confidence}>Confidence: {result.confidence}%</Text>
+                  <Text style={[styles.diseaseName, { color: tc.text }]}>{result.disease}</Text>
+                  <Text style={[styles.confidence, { color: tc.textMuted }]}>Confidence: {result.confidence}%</Text>
                 </View>
                 <View style={[
                   styles.severityBadge,
@@ -491,26 +483,26 @@ export default function DiseaseDetectionScreen() {
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Treatment Recommendation</Text>
-                <Text style={styles.treatmentText}>{result.treatment}</Text>
+                <Text style={[styles.sectionTitle, { color: tc.text }]}>Treatment Recommendation</Text>
+                <Text style={[styles.treatmentText, { color: tc.textSecondary }]}>{result.treatment}</Text>
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Symptoms Detected</Text>
+                <Text style={[styles.sectionTitle, { color: tc.text }]}>Symptoms Detected</Text>
                 {result.symptoms.map((symptom: string, index: number) => (
                   <View key={index} style={styles.listItem}>
                     <AlertCircle color="#F59E0B" size={16} />
-                    <Text style={styles.listText}>{symptom}</Text>
+                    <Text style={[styles.listText, { color: tc.textSecondary }]}>{symptom}</Text>
                   </View>
                 ))}
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Prevention Tips</Text>
+                <Text style={[styles.sectionTitle, { color: tc.text }]}>Prevention Tips</Text>
                 {result.prevention.map((tip: string, index: number) => (
                   <View key={index} style={styles.listItem}>
                     <CheckCircle color="#22C55E" size={16} />
-                    <Text style={styles.listText}>{tip}</Text>
+                    <Text style={[styles.listText, { color: tc.textSecondary }]}>{tip}</Text>
                   </View>
                 ))}
               </View>
@@ -518,30 +510,69 @@ export default function DiseaseDetectionScreen() {
           )}
 
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.resetButton} onPress={resetAnalysis}>
-              <Text style={styles.resetButtonText}>Analyze New Image</Text>
+            <TouchableOpacity style={[styles.resetButton, { backgroundColor: tc.card, borderColor: tc.primary }]} onPress={resetAnalysis}>
+              <Text style={[styles.resetButtonText, { color: tc.primary }]}>Analyze New Image</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Recent Detections */}
+      {/* Previous scans (history) */}
       <View style={styles.recentSection}>
-        <Text style={styles.sectionTitle}>Recent Detections</Text>
-        {cropDiseases.slice(0, 3).map((disease) => (
-          <View key={disease.id} style={styles.recentItem}>
-            <Image source={{ uri: disease.imageUrl }} style={styles.recentImage} />
-            <View style={styles.recentInfo}>
-              <Text style={styles.recentName}>{disease.name}</Text>
-              <Text style={styles.recentDate}>{disease.detectedAt}</Text>
+        <Text style={[styles.previousScansHeading, { color: tc.text }]}>Previous scans</Text>
+        <Text style={[styles.previousScansSub, { color: tc.textMuted }]}>
+          Your recent disease checks (newest first)
+        </Text>
+        {cropDiseases.length === 0 ? (
+          <Text style={[styles.previousScansSub, { marginTop: 8, color: tc.textMuted }]}>
+            No scans yet. Run a detection above to build history.
+          </Text>
+        ) : (
+          cropDiseases.map((disease) => (
+            <View
+              key={disease.id}
+              style={[
+                styles.recentItem,
+                { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border },
+              ]}
+            >
+              {disease.imageUrl ? (
+                <Image source={{ uri: disease.imageUrl }} style={styles.recentImage} />
+              ) : (
+                <View style={[styles.recentImage, { backgroundColor: tc.screenSecondary }]} />
+              )}
+              <View style={styles.recentInfo}>
+                <Text style={[styles.recentName, { color: tc.text }]}>{disease.name}</Text>
+                <Text style={[styles.recentDate, { color: tc.textMuted }]}>
+                  {formatScanDate(disease.detectedAt)}
+                </Text>
+              </View>
+              <View style={styles.recentRowEnd}>
+                <View
+                  style={[
+                    styles.severityIndicator,
+                    {
+                      backgroundColor:
+                        disease.severity === 'high'
+                          ? '#EF4444'
+                          : disease.severity === 'medium'
+                            ? '#F59E0B'
+                            : '#22C55E',
+                    },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => handleDeleteScan(disease.id)}
+                  style={[styles.deleteScanBtn, { backgroundColor: tc.screenSecondary }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Delete scan"
+                >
+                  <Trash2 color="#EF4444" size={20} />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={[
-              styles.severityIndicator,
-              { backgroundColor: disease.severity === 'high' ? '#EF4444' : 
-                disease.severity === 'medium' ? '#F59E0B' : '#22C55E' }
-            ]} />
-          </View>
-        ))}
+          ))
+        )}
       </View>
 
       <ErrorAlert
@@ -844,9 +875,17 @@ const styles = StyleSheet.create({
   recentSection: {
     marginBottom: 32,
   },
+  previousScansHeading: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  previousScansSub: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
   recentItem: {
     flexDirection: 'row',
-    backgroundColor: 'white',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -856,6 +895,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+  },
+  recentRowEnd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  deleteScanBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   recentImage: {
     width: 48,

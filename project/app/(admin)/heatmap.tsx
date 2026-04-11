@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Platf
 import { MapPin, TriangleAlert as AlertTriangle, Plus, Minus } from 'lucide-react-native';
 import { getApiBaseUrl } from '@/utils/env';
 import * as Location from 'expo-location';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -39,6 +40,7 @@ interface HeatmapPoint {
 }
 
 export default function AdminHeatmapScreen() {
+  const { colors: tc } = useTheme();
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [alerts, setAlerts] = useState<OutbreakAlertItem[]>([]);
   const [hotspots, setHotspots] = useState<HotspotData[]>([]);
@@ -236,10 +238,10 @@ export default function AdminHeatmapScreen() {
   }, [heatmapPoints, selectedFilter]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Disease Heatmap</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: tc.text }]}>Disease Heatmap</Text>
+        <Text style={[styles.subtitle, { color: tc.textMuted }]}>
           Real-time disease spread monitoring across regions
         </Text>
       </View>
@@ -247,19 +249,21 @@ export default function AdminHeatmapScreen() {
       {/* Disease Filter */}
       <View style={styles.controlsContainer}>
         <View style={styles.filterGroup}>
-          <Text style={styles.filterTitle}>Filter by Disease</Text>
+          <Text style={[styles.filterTitle, { color: tc.textSecondary }]}>Filter by Disease</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
             {filters.map((filter) => (
               <TouchableOpacity
                 key={filter.id}
                 style={[
                   styles.filterButton,
+                  { backgroundColor: tc.card, borderColor: tc.border },
                   selectedFilter === filter.id && styles.activeFilterButton
                 ]}
                 onPress={() => setSelectedFilter(filter.id)}
               >
                 <Text style={[
                   styles.filterText,
+                  { color: tc.textMuted },
                   selectedFilter === filter.id && styles.activeFilterText
                 ]}>
                   {filter.label}
@@ -271,17 +275,17 @@ export default function AdminHeatmapScreen() {
       </View>
 
       {/* Pakistan Map View */}
-      <View style={styles.mapContainer}>
+      <View style={[styles.mapContainer, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
         <View style={styles.mapHeader}>
           <MapPin color="#22C55E" size={20} />
-          <Text style={styles.mapTitle}>Pakistan Agricultural Map</Text>
+          <Text style={[styles.mapTitle, { color: tc.text }]}>Pakistan Agricultural Map</Text>
         </View>
 
         <View style={styles.mapWrapper}>
           {Platform.OS === 'web' ? (
-            <View style={styles.mapPlaceholder}>
-              <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-              <Text style={styles.mapSubtext}>
+            <View style={[styles.mapPlaceholder, { backgroundColor: tc.screenSecondary }]}>
+              <Text style={[styles.mapText, { color: tc.text }]}>Pakistan Disease Monitoring</Text>
+              <Text style={[styles.mapSubtext, { color: tc.textMuted }]}>
                 Interactive map showing disease hotspots across regions
               </Text>
             </View>
@@ -295,9 +299,9 @@ export default function AdminHeatmapScreen() {
 
                 if (!MapView || !Circle || !Marker) {
                   return (
-                    <View style={styles.mapPlaceholder}>
-                      <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-                      <Text style={styles.mapSubtext}>
+                    <View style={[styles.mapPlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                      <Text style={[styles.mapText, { color: tc.text }]}>Pakistan Disease Monitoring</Text>
+                      <Text style={[styles.mapSubtext, { color: tc.textMuted }]}>
                         Map component not available. Please check react-native-maps installation.
                       </Text>
                     </View>
@@ -381,10 +385,10 @@ export default function AdminHeatmapScreen() {
                     
                     {/* Zoom Controls */}
                     <View style={styles.zoomControls}>
-                      <TouchableOpacity style={styles.zoomButton} onPress={handleZoomIn}>
+                      <TouchableOpacity style={[styles.zoomButton, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]} onPress={handleZoomIn}>
                         <Plus color="#22C55E" size={20} />
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.zoomButton} onPress={handleZoomOut}>
+                      <TouchableOpacity style={[styles.zoomButton, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]} onPress={handleZoomOut}>
                         <Minus color="#22C55E" size={20} />
                       </TouchableOpacity>
                     </View>
@@ -392,9 +396,9 @@ export default function AdminHeatmapScreen() {
                 );
               } catch (e) {
                 return (
-                  <View style={styles.mapPlaceholder}>
-                    <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-                    <Text style={styles.mapSubtext}>
+                  <View style={[styles.mapPlaceholder, { backgroundColor: tc.screenSecondary }]}>
+                    <Text style={[styles.mapText, { color: tc.text }]}>Pakistan Disease Monitoring</Text>
+                    <Text style={[styles.mapSubtext, { color: tc.textMuted }]}>
                       Map component failed to load. Please verify react-native-maps setup.
                     </Text>
                   </View>
@@ -405,20 +409,20 @@ export default function AdminHeatmapScreen() {
         </View>
 
         {/* Legend */}
-        <View style={styles.legend}>
-          <Text style={styles.legendTitle}>Severity Levels</Text>
+        <View style={[styles.legend, { borderTopColor: tc.border }]}>
+          <Text style={[styles.legendTitle, { color: tc.text }]}>Severity Levels</Text>
           <View style={styles.legendItems}>
             <View style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: '#EF4444' }]} />
-              <Text style={styles.legendText}>High Risk</Text>
+              <Text style={[styles.legendText, { color: tc.textSecondary }]}>High Risk</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: '#F59E0B' }]} />
-              <Text style={styles.legendText}>Medium Risk</Text>
+              <Text style={[styles.legendText, { color: tc.textSecondary }]}>Medium Risk</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: '#22C55E' }]} />
-              <Text style={styles.legendText}>Low Risk</Text>
+              <Text style={[styles.legendText, { color: tc.textSecondary }]}>Low Risk</Text>
             </View>
           </View>
         </View>
@@ -426,20 +430,20 @@ export default function AdminHeatmapScreen() {
 
       {/* Disease Hotspots List */}
       <View style={styles.hotspotsSection}>
-        <Text style={styles.sectionTitle}>Active Disease Hotspots</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>Active Disease Hotspots</Text>
         {loading ? (
-          <Text style={styles.loadingText}>Loading hotspots...</Text>
+          <Text style={[styles.loadingText, { color: tc.textMuted }]}>Loading hotspots...</Text>
         ) : filteredHotspots.length === 0 ? (
-          <Text style={styles.emptyText}>No disease hotspots found</Text>
+          <Text style={[styles.emptyText, { color: tc.textMuted }]}>No disease hotspots found</Text>
         ) : (
           filteredHotspots.map((hotspot) => (
-            <TouchableOpacity key={hotspot.alertId} style={styles.hotspotCard}>
+            <TouchableOpacity key={hotspot.alertId} style={[styles.hotspotCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <View style={styles.hotspotHeader}>
                 <View style={styles.hotspotInfo}>
-                  <Text style={styles.hotspotName}>
+                  <Text style={[styles.hotspotName, { color: tc.text }]}>
                     {hotspot.diseaseName || hotspot.diseaseId || 'Disease Outbreak'}
                   </Text>
-                  <Text style={styles.hotspotLocation}>{hotspot.cityName}</Text>
+                  <Text style={[styles.hotspotLocation, { color: tc.textMuted }]}>{hotspot.cityName}</Text>
                 </View>
                 <View style={styles.hotspotStats}>
                   <View style={[
@@ -450,12 +454,12 @@ export default function AdminHeatmapScreen() {
                       {hotspot.severity.toUpperCase()}
                     </Text>
                   </View>
-                  <Text style={styles.casesText}>{hotspot.cases} cases</Text>
+                  <Text style={[styles.casesText, { color: tc.textSecondary }]}>{hotspot.cases} cases</Text>
                 </View>
               </View>
               
               <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
+                <View style={[styles.progressBar, { backgroundColor: tc.border }]}>
                   <View 
                     style={[
                       styles.progressFill,
@@ -466,7 +470,7 @@ export default function AdminHeatmapScreen() {
                     ]} 
                   />
                 </View>
-                <Text style={styles.progressText}>
+                <Text style={[styles.progressText, { color: tc.textMuted }]}>
                   Cases: {hotspot.cases} • Spread: {hotspot.radiusKm}km radius
                 </Text>
               </View>
@@ -477,27 +481,27 @@ export default function AdminHeatmapScreen() {
 
       {/* Statistics */}
       <View style={styles.statsSection}>
-        <Text style={styles.sectionTitle}>Regional Statistics</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>Regional Statistics</Text>
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{stats.totalCases}</Text>
-            <Text style={styles.statLabel}>Total Cases</Text>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+            <Text style={[styles.statValue, { color: tc.text }]}>{stats.totalCases}</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Cases</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{stats.affectedRegions}</Text>
-            <Text style={styles.statLabel}>Affected Regions</Text>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+            <Text style={[styles.statValue, { color: tc.text }]}>{stats.affectedRegions}</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>Affected Regions</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+            <Text style={[styles.statValue, { color: tc.text }]}>
               {formatStatValue(stats.weeklyIncrease, true)}
             </Text>
-            <Text style={styles.statLabel}>Weekly Increase</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>Weekly Increase</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+            <Text style={[styles.statValue, { color: tc.text }]}>
               {formatStatValue(stats.acresAffected, false, true)}
             </Text>
-            <Text style={styles.statLabel}>Acres Affected</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>Acres Affected</Text>
           </View>
         </View>
       </View>
