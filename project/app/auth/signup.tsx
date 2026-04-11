@@ -272,6 +272,8 @@ export default function SignupScreen() {
       <LocationPickerModal
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
+        constrainToPakistan
+        title="Pakistan — set your location"
         onSelect={handleLocationSelect}
         initialLocation={
           formData.latitude && formData.longitude

@@ -47,6 +47,7 @@ const ZoomIn = { springify: () => ({}), delay: () => ({}) };
 
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getApiBaseUrl } from '@/utils/env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, spacing, borderRadius, shadows, typography } from '@/utils/designSystem';
@@ -100,6 +101,7 @@ export default function TimeLapseUploadScreen() {
   const router = useRouter();
   const { cropId } = useLocalSearchParams<{ cropId?: string }>();
   const { user } = useAuth();
+  const { colors: tc, isDark } = useTheme();
   
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
@@ -507,7 +509,7 @@ export default function TimeLapseUploadScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
       {/* Header with Green Gradient */}
       <LinearGradient
         colors={['#22C55E', '#16A34A']}
@@ -529,14 +531,14 @@ export default function TimeLapseUploadScreen() {
       </LinearGradient>
 
       <ScrollView
-        style={styles.scrollView}
+        style={[styles.scrollView, { backgroundColor: tc.screen }]}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
 
         {/* Three crops at top: Wheat, Rice, Cotton – user just selects one */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Crop</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>Select Crop</Text>
           <View style={styles.threeCropsRow}>
             {CROP_TYPES.map((type) => {
               const crop = crops.find((c) => (c.crop_type || '').toLowerCase() === type);
@@ -544,13 +546,31 @@ export default function TimeLapseUploadScreen() {
               return (
                 <TouchableOpacity
                   key={type}
-                  style={[styles.cropCard, isSelected && styles.cropCardSelected]}
+                  style={[
+                    styles.cropCard,
+                    {
+                      backgroundColor: tc.card,
+                      borderColor: isSelected ? tc.primary : tc.border,
+                    },
+                    isSelected && styles.cropCardSelected,
+                  ]}
                   onPress={() => crop && setSelectedCrop(crop)}
                   activeOpacity={0.7}
                   disabled={!crop}
                 >
-                  <View style={[styles.cropCardContent, isSelected && styles.cropCardContentSelected]}>
-                    <Text style={[styles.cropName, isSelected && styles.cropNameSelected]}>
+                  <View
+                    style={[
+                      styles.cropCardContent,
+                      isSelected && { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.cropName,
+                        { color: tc.text },
+                        isSelected && { color: tc.primary },
+                      ]}
+                    >
                       {CROP_NAMES[type]}
                     </Text>
                   </View>
@@ -562,31 +582,33 @@ export default function TimeLapseUploadScreen() {
 
         {/* Upload Tabs */}
         <View style={styles.section}>
-          <View style={styles.card}>
-            <View style={styles.tabContainer}>
+          <View style={[styles.card, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+            <View style={[styles.tabContainer, { backgroundColor: tc.screenSecondary }]}>
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'camera' && styles.tabActive]}
+                style={[styles.tab, activeTab === 'camera' && [styles.tabActive, { backgroundColor: tc.card }]]}
                 onPress={() => setActiveTab('camera')}
               >
-                <Camera size={20} color={activeTab === 'camera' ? colors.primary : colors.text.secondary} />
+                <Camera size={20} color={activeTab === 'camera' ? colors.primary : tc.textMuted} />
                 <Text
                   style={[
                     styles.tabText,
-                    activeTab === 'camera' && styles.tabTextActive,
+                    { color: tc.textMuted },
+                    activeTab === 'camera' && { color: colors.primary },
                   ]}
                 >
                   Camera
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'gallery' && styles.tabActive]}
+                style={[styles.tab, activeTab === 'gallery' && [styles.tabActive, { backgroundColor: tc.card }]]}
                 onPress={() => setActiveTab('gallery')}
               >
-                <ImageIcon size={20} color={activeTab === 'gallery' ? colors.primary : colors.text.secondary} />
+                <ImageIcon size={20} color={activeTab === 'gallery' ? colors.primary : tc.textMuted} />
                 <Text
                   style={[
                     styles.tabText,
-                    activeTab === 'gallery' && styles.tabTextActive,
+                    { color: tc.textMuted },
+                    activeTab === 'gallery' && { color: colors.primary },
                   ]}
                 >
                   Gallery
@@ -630,13 +652,13 @@ export default function TimeLapseUploadScreen() {
             {/* Selected Images with date (month/year) per image */}
             {selectedImages.length > 0 && (
               <View style={styles.imagesContainer}>
-                <Text style={styles.imagesTitle}>
+                <Text style={[styles.imagesTitle, { color: tc.text }]}>
                   Selected ({selectedImages.length}/3)
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {selectedImages.map((item, index) => (
                     <View key={`${item.uri}-${index}`} style={styles.imageWrapper}>
-                      <Image source={{ uri: item.uri }} style={styles.selectedImage} />
+                      <Image source={{ uri: item.uri }} style={[styles.selectedImage, { backgroundColor: tc.screenSecondary }]} />
                       <TouchableOpacity
                         style={styles.removeImageButton}
                         onPress={() => removeImage(index)}
@@ -648,10 +670,16 @@ export default function TimeLapseUploadScreen() {
                         onPress={() => openDatePickerFor(index)}
                         activeOpacity={0.7}
                       >
-                        <Text style={styles.imageOrdinal}>
+                        <Text style={[styles.imageOrdinal, { color: tc.text }]}>
                           {ORDINALS[index]} image
                         </Text>
-                        <Text style={item.monthYear ? styles.imageDateSet : styles.imageDatePlaceholder}>
+                        <Text
+                          style={
+                            item.monthYear
+                              ? styles.imageDateSet
+                              : [styles.imageDatePlaceholder, { color: tc.textMuted }]
+                          }
+                        >
                           {item.monthYear ?? 'Tap to set date'}
                         </Text>
                       </TouchableOpacity>
@@ -665,14 +693,24 @@ export default function TimeLapseUploadScreen() {
 
         {/* Notes */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notes (Optional)</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>Notes (Optional)</Text>
+          <View style={[styles.card, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <TextInput
-              style={styles.notesInput}
+              style={[
+                styles.notesInput,
+                {
+                  backgroundColor: tc.inputBg,
+                  color: tc.text,
+                  borderWidth: 1,
+                  borderColor: tc.border,
+                  borderRadius: borderRadius.md,
+                  padding: spacing.md,
+                },
+              ]}
               multiline
               numberOfLines={4}
               placeholder="e.g., Sprayed today, noticed yellowing..."
-              placeholderTextColor={colors.text.tertiary}
+              placeholderTextColor={tc.textMuted}
               value={notes}
               onChangeText={setNotes}
             />
@@ -682,7 +720,7 @@ export default function TimeLapseUploadScreen() {
         {/* Detection Result Popup */}
         {detectionResult && (
           <View style={styles.section}>
-            <View style={[styles.card, styles.detectionCard]}>
+            <View style={[styles.card, styles.detectionCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <LinearGradient
                 colors={[colors.primary, colors.primaryDark]}
                 style={styles.detectionGradient}
@@ -741,7 +779,9 @@ export default function TimeLapseUploadScreen() {
             <LinearGradient
               colors={
                 uploading || !selectedCrop || selectedImages.length === 0
-                  ? [colors.text.tertiary, colors.text.secondary]
+                  ? isDark
+                    ? [tc.border, tc.textMuted]
+                    : [colors.text.tertiary, colors.text.secondary]
                   : [colors.primary, colors.primaryDark]
               }
               style={styles.uploadButtonGradient}
@@ -763,7 +803,7 @@ export default function TimeLapseUploadScreen() {
           {/* Progress Bar */}
           {uploading && (
             <View style={styles.progressBarContainer}>
-              <View style={styles.progressBarBackground}>
+              <View style={[styles.progressBarBackground, { backgroundColor: tc.border }]}>
                 <View style={[styles.progressBar, { width: `${uploadProgress.value * 100}%` }]} />
               </View>
             </View>
@@ -778,20 +818,20 @@ export default function TimeLapseUploadScreen() {
         animationType="slide"
         onRequestClose={() => setDatePickerIndex(null)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.datePickerModalContent}>
-            <Text style={styles.datePickerModalTitle}>
+        <View style={[styles.modalOverlay, { backgroundColor: tc.overlay }]}>
+          <View style={[styles.datePickerModalContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+            <Text style={[styles.datePickerModalTitle, { color: tc.text }]}>
               {datePickerIndex !== null ? `${ORDINALS[datePickerIndex]} image – set date` : 'Set date'}
             </Text>
-            <Text style={styles.datePickerModalSubtitle}>Month & year when this photo was taken</Text>
+            <Text style={[styles.datePickerModalSubtitle, { color: tc.textMuted }]}>Month & year when this photo was taken</Text>
             <View style={styles.datePickerRow}>
               <View style={styles.datePickerHalf}>
-                <Text style={styles.datePickerLabel}>Month</Text>
+                <Text style={[styles.datePickerLabel, { color: tc.textSecondary }]}>Month</Text>
                 <Picker
                   selectedValue={tempMonth}
                   onValueChange={(v) => setTempMonth(v)}
-                  style={styles.picker}
-                  itemStyle={Platform.OS === 'ios' ? { fontSize: 18 } : undefined}
+                  style={[styles.picker, { backgroundColor: tc.inputBg, color: tc.text }]}
+                  itemStyle={Platform.OS === 'ios' ? { fontSize: 18, color: isDark ? '#F9FAFB' : '#111' } : undefined}
                 >
                   {MONTHS.map((m, i) => (
                     <Picker.Item key={m} label={m} value={i} />
@@ -799,12 +839,12 @@ export default function TimeLapseUploadScreen() {
                 </Picker>
               </View>
               <View style={styles.datePickerHalf}>
-                <Text style={styles.datePickerLabel}>Year</Text>
+                <Text style={[styles.datePickerLabel, { color: tc.textSecondary }]}>Year</Text>
                 <Picker
                   selectedValue={tempYear}
                   onValueChange={(v) => setTempYear(v)}
-                  style={styles.picker}
-                  itemStyle={Platform.OS === 'ios' ? { fontSize: 18 } : undefined}
+                  style={[styles.picker, { backgroundColor: tc.inputBg, color: tc.text }]}
+                  itemStyle={Platform.OS === 'ios' ? { fontSize: 18, color: isDark ? '#F9FAFB' : '#111' } : undefined}
                 >
                   {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map((y) => (
                     <Picker.Item key={y} label={String(y)} value={y} />
@@ -814,10 +854,10 @@ export default function TimeLapseUploadScreen() {
             </View>
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
+                style={[styles.modalButton, styles.modalButtonCancel, { borderColor: tc.border, backgroundColor: tc.screenSecondary }]}
                 onPress={() => setDatePickerIndex(null)}
               >
-                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                <Text style={[styles.modalButtonTextCancel, { color: tc.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCreate]}

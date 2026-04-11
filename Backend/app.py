@@ -10,6 +10,7 @@ try:
     from .routes.farmer import farmer_bp
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp
+    from .routes.support import support_bp
     from .routes.guidance import guidance_bp
     from .routes.schedule import schedule_bp
     from .routes.timelapse import timelapse_bp
@@ -24,6 +25,7 @@ except ImportError:
     from routes.farmer import farmer_bp
     from routes.admin import admin_bp
     from routes.auth import auth_bp
+    from routes.support import support_bp
     from routes.guidance import guidance_bp
     from routes.schedule import schedule_bp
     from routes.timelapse import timelapse_bp
@@ -89,6 +91,7 @@ with app.app_context():
 app.register_blueprint(farmer_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(support_bp)
 app.register_blueprint(guidance_bp)
 app.register_blueprint(schedule_bp)
 app.register_blueprint(timelapse_bp)  # Smart TimeLapse Module

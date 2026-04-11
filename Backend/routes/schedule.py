@@ -65,13 +65,45 @@ def generate_farming_schedule():
                 from schemas.detection import Detection
             
             try:
-                recent_detection = db.query(Detection).filter(
-                    Detection.farmer_id == farmer_id,
-                    Detection.crop_type == crop_type
-                ).order_by(Detection.timestamp.desc()).first()
-                
+                from sqlalchemy import or_, func
+
+                ct = (crop_type or "").strip().lower()
+                # Prefer same crop type first
+                recent_detection = (
+                    db.query(Detection)
+                    .filter(Detection.farmer_id == farmer_id)
+                    .filter(func.lower(Detection.crop_type) == ct)
+                    .order_by(Detection.timestamp.desc())
+                    .first()
+                )
+                if not recent_detection:
+                    # Legacy rows with missing crop_type
+                    recent_detection = (
+                        db.query(Detection)
+                        .filter(Detection.farmer_id == farmer_id)
+                        .filter(
+                            or_(
+                                Detection.crop_type.is_(None),
+                                Detection.crop_type == "",
+                            )
+                        )
+                        .order_by(Detection.timestamp.desc())
+                        .first()
+                    )
                 if recent_detection and recent_detection.disease_name:
                     disease_name = recent_detection.disease_name
+                # Still nothing: any latest detection with a stored name
+                if not disease_name:
+                    any_named = (
+                        db.query(Detection)
+                        .filter(Detection.farmer_id == farmer_id)
+                        .filter(Detection.disease_name.isnot(None))
+                        .filter(Detection.disease_name != "")
+                        .order_by(Detection.timestamp.desc())
+                        .first()
+                    )
+                    if any_named:
+                        disease_name = any_named.disease_name
             finally:
                 db.close()
         

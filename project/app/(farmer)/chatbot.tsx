@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Send, Mic, MicOff, Bot, User } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { translate } from '@/utils/translations';
 
 interface Message {
@@ -33,6 +34,7 @@ export default function ChatbotScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const { language } = useApp();
+  const { colors: tc } = useTheme();
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -119,16 +121,16 @@ export default function ChatbotScreen() {
 
   return (
     <KeyboardAvoidingView 
-      style={styles.container} 
+      style={[styles.container, { backgroundColor: tc.screen }]} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <View style={[styles.headerIcon, { backgroundColor: tc.screenSecondary }]}>
           <Bot color="#22C55E" size={24} />
         </View>
         <View>
-          <Text style={styles.headerTitle}>AI Farming Assistant</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerTitle, { color: tc.text }]}>AI Farming Assistant</Text>
+          <Text style={[styles.headerSubtitle, { color: tc.textMuted }]}>
             {language === 'ur' ? 'اردو اور انگریزی میں دستیاب' : 'Available in English & Urdu'}
           </Text>
         </View>
@@ -136,7 +138,7 @@ export default function ChatbotScreen() {
 
       <ScrollView 
         ref={scrollViewRef}
-        style={styles.messagesContainer}
+        style={[styles.messagesContainer, { backgroundColor: tc.screen }]}
         contentContainerStyle={styles.messagesContent}
       >
         {messages.map((message) => (
@@ -161,15 +163,15 @@ export default function ChatbotScreen() {
             </View>
             <View style={[
               styles.messageBubble,
-              message.isUser ? styles.userMessage : styles.botMessage
+              message.isUser ? styles.userMessage : [styles.botMessage, { backgroundColor: tc.card, borderColor: tc.border }],
             ]}>
               <Text style={[
                 styles.messageText,
-                message.isUser ? styles.userMessageText : styles.botMessageText
+                message.isUser ? styles.userMessageText : [styles.botMessageText, { color: tc.text }],
               ]}>
                 {message.text}
               </Text>
-              <Text style={styles.messageTime}>
+              <Text style={[styles.messageTime, { color: message.isUser ? 'rgba(255,255,255,0.8)' : tc.textMuted }]}>
                 {message.timestamp.toLocaleTimeString([], { 
                   hour: '2-digit', 
                   minute: '2-digit' 
@@ -184,8 +186,8 @@ export default function ChatbotScreen() {
             <View style={styles.botIcon}>
               <Bot color="white" size={16} />
             </View>
-            <View style={styles.typingBubble}>
-              <Text style={styles.typingText}>AI is typing...</Text>
+            <View style={[styles.typingBubble, { backgroundColor: tc.card, borderColor: tc.border }]}>
+              <Text style={[styles.typingText, { color: tc.textMuted }]}>AI is typing...</Text>
               <View style={styles.typingDots}>
                 <View style={[styles.dot, styles.dot1]} />
                 <View style={[styles.dot, styles.dot2]} />
@@ -198,11 +200,11 @@ export default function ChatbotScreen() {
         {/* Quick Questions */}
         {messages.length === 1 && (
           <View style={styles.quickQuestionsContainer}>
-            <Text style={styles.quickQuestionsTitle}>Quick Questions:</Text>
+            <Text style={[styles.quickQuestionsTitle, { color: tc.textSecondary }]}>Quick Questions:</Text>
             {quickQuestions.map((question, index) => (
               <TouchableOpacity
                 key={index}
-                style={styles.quickQuestionButton}
+                style={[styles.quickQuestionButton, { backgroundColor: tc.card, borderColor: tc.border }]}
                 onPress={() => sendMessage(question)}
               >
                 <Text style={styles.quickQuestionText}>{question}</Text>
@@ -212,12 +214,12 @@ export default function ChatbotScreen() {
         )}
       </ScrollView>
 
-      <View style={styles.inputContainer}>
+      <View style={[styles.inputContainer, { backgroundColor: tc.headerBg, borderTopColor: tc.border }]}>
         <View style={styles.inputWrapper}>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text }]}
             placeholder="Ask about farming, diseases, weather..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={tc.textMuted}
             value={inputText}
             onChangeText={setInputText}
             multiline
@@ -225,13 +227,13 @@ export default function ChatbotScreen() {
           />
           
           <TouchableOpacity
-            style={[styles.voiceButton, isRecording && styles.recordingButton]}
+            style={[styles.voiceButton, { backgroundColor: tc.screenSecondary }, isRecording && styles.recordingButton]}
             onPress={handleVoiceInput}
           >
             {isRecording ? (
               <MicOff color="white" size={20} />
             ) : (
-              <Mic color="#6B7280" size={20} />
+              <Mic color={tc.textMuted} size={20} />
             )}
           </TouchableOpacity>
           

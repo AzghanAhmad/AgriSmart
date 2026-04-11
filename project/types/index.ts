@@ -7,6 +7,14 @@ export interface User {
   location?: string;
   latitude?: number;
   longitude?: number;
+  profileImageUrl?: string | null;
+  privacyShareLocation?: boolean;
+  privacyShareCropData?: boolean;
+  privacyAnalytics?: boolean;
+  farmAcres?: number | null;
+  farmCropTypes?: number | null;
+  farmHealthScore?: number | null;
+  farmMonthlyRevenue?: number | null;
 }
 
 export interface AuthContextType {
@@ -16,6 +24,25 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (userData: SignupData) => Promise<void>;
   logout: () => Promise<void>;
+  /** Persist name, phone, location to backend and local session */
+  updateProfile: (data: {
+    name: string;
+    phone?: string;
+    location?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    farmAcres?: number | null;
+    farmCropTypes?: number | null;
+    farmHealthScore?: number | null;
+    farmMonthlyRevenue?: number | null;
+  }) => Promise<void>;
+  /** Upload avatar from camera/gallery; updates user in session */
+  uploadProfileImage: (localUri: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  logoutAllDevices: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  /** Reload user from GET /api/auth/me (e.g. after privacy changes) */
+  refreshUser: () => Promise<void>;
 }
 
 export interface SignupData {

@@ -4,7 +4,14 @@ import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { AppProvider } from '@/contexts/AppContext';
+import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { ToastProvider } from '@/components/Toast';
 import { testBackendConnection } from '@/utils/env';
+
+function ThemedStatusBar() {
+  const { isDark } = useTheme();
+  return <StatusBar style={isDark ? 'light' : 'dark'} />;
+}
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
@@ -59,8 +66,12 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <AppProvider>
-        <RootLayoutNav />
-        <StatusBar style="auto" />
+        <ThemeProvider>
+          <ToastProvider>
+            <RootLayoutNav />
+            <ThemedStatusBar />
+          </ToastProvider>
+        </ThemeProvider>
       </AppProvider>
     </AuthProvider>
   );

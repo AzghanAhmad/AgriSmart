@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,78 +8,308 @@ import {
   TextInput,
   Switch,
   Alert,
+  ActivityIndicator,
+  Image,
+  ImageBackground,
 } from 'react-native';
-import { User, Mail, Phone, MapPin, Globe, Moon, Bell, Shield, LogOut, CreditCard as Edit3, Save, X, Camera } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import { User, Mail, Phone, MapPin, Globe, Moon, Bell, Shield, LogOut, Camera, HelpCircle } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
-import { translate } from '@/utils/translations';
-import { colors, spacing, borderRadius, shadows } from '@/utils/designSystem';
+import { useTheme } from '@/contexts/ThemeContext';
+import { spacing, shadows } from '@/utils/designSystem';
+import { apiGet } from '@/utils/api';
+import { geocodeLocationInPakistan, isInPakistan } from '@/utils/pakistanGeocode';
+import { LocationPickerModal } from '@/components/LocationPickerModal';
+import { useFocusEffect, useRouter } from 'expo-router';
+
+const HEADER_FIELD_BG = require('@/assets/crops/background.jpg');
+
+type ProfileStatsResponse = {
+  acresFarmed: number | null;
+  cropTypesCount: number | null;
+  healthScorePercent: number | null;
+  monthlyRevenue: number | null;
+  totalScans: number;
+};
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile, uploadProfileImage } = useAuth();
   const { language, setLanguage } = useApp();
+  const { colors: tc, isDark, setDarkMode } = useTheme();
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [notifications, setNotifications] = useState(true);
-  
+  const [profileStats, setProfileStats] = useState<ProfileStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
+  /** When user picks a point on the Pakistan map, used on next Save (overrides geocode). */
+  const [manualCoords, setManualCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  const loadProfileStats = useCallback(async () => {
+    if (!user?.id) {
+      setProfileStats(null);
+      setStatsLoading(false);
+      return;
+    }
+    setStatsLoading(true);
+    try {
+      const data = await apiGet<ProfileStatsResponse>(
+        `/api/farmer/stats/profile?farmerId=${encodeURIComponent(user.id)}`
+      );
+      setProfileStats(data);
+    } catch {
+      setProfileStats(null);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadProfileStats();
+  }, [loadProfileStats]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadProfileStats();
+    }, [loadProfileStats]),
+  );
+
   const [editData, setEditData] = useState({
     name: user?.name || '',
     phone: user?.phone || '',
     location: user?.location || '',
+    farmAcres: user?.farmAcres != null ? String(user.farmAcres) : '',
+    farmCropTypes: user?.farmCropTypes != null ? String(user.farmCropTypes) : '',
+    farmHealthScore: user?.farmHealthScore != null ? String(user.farmHealthScore) : '',
+    farmMonthlyRevenue: user?.farmMonthlyRevenue != null ? String(user.farmMonthlyRevenue) : '',
   });
 
-  const handleSave = () => {
-    // In a real app, this would call an API to update user profile
-    Alert.alert('Success', 'Profile updated successfully');
+  useEffect(() => {
+    setEditData({
+      name: user?.name || '',
+      phone: user?.phone || '',
+      location: user?.location || '',
+      farmAcres: user?.farmAcres != null ? String(user.farmAcres) : '',
+      farmCropTypes: user?.farmCropTypes != null ? String(user.farmCropTypes) : '',
+      farmHealthScore: user?.farmHealthScore != null ? String(user.farmHealthScore) : '',
+      farmMonthlyRevenue: user?.farmMonthlyRevenue != null ? String(user.farmMonthlyRevenue) : '',
+    });
+  }, [user?.name, user?.phone, user?.location, user?.farmAcres, user?.farmCropTypes, user?.farmHealthScore, user?.farmMonthlyRevenue]);
+
+  const handleSave = async () => {
+    if (!editData.name.trim()) {
+      Alert.alert('Error', 'Name is required');
+      return;
+    }
+    const locTrim = (editData.location || '').trim();
+    const parseOptionalNumber = (value: string): number | null => {
+      const v = (value || '').trim();
+      if (!v) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    };
+    const farmAcres = parseOptionalNumber(editData.farmAcres);
+    const farmCropTypes = parseOptionalNumber(editData.farmCropTypes);
+    const farmHealthScore = parseOptionalNumber(editData.farmHealthScore);
+    const farmMonthlyRevenue = parseOptionalNumber(editData.farmMonthlyRevenue);
+    if (
+      Number.isNaN(farmAcres) ||
+      Number.isNaN(farmCropTypes) ||
+      Number.isNaN(farmHealthScore) ||
+      Number.isNaN(farmMonthlyRevenue)
+    ) {
+      Alert.alert('Error', 'Farm overview fields must be valid numbers.');
+      return;
+    }
+    setSaving(true);
+    try {
+      let latitude: number | null | undefined = undefined;
+      let longitude: number | null | undefined = undefined;
+      let geocoded = false;
+
+      if (locTrim) {
+        if (manualCoords && isInPakistan(manualCoords.lat, manualCoords.lng)) {
+          latitude = manualCoords.lat;
+          longitude = manualCoords.lng;
+          geocoded = true;
+        } else {
+          const g = await geocodeLocationInPakistan(locTrim);
+          if (g) {
+            latitude = g.lat;
+            longitude = g.lng;
+            geocoded = true;
+          }
+        }
+      } else {
+        latitude = null;
+        longitude = null;
+      }
+
+      await updateProfile({
+        name: editData.name,
+        phone: editData.phone,
+        location: locTrim || undefined,
+        latitude,
+        longitude,
+        farmAcres,
+        farmMonthlyRevenue,
+      });
+      await loadProfileStats();
+      if (geocoded) {
+        setManualCoords(null);
+      }
+
+      if (locTrim && !geocoded) {
+        Alert.alert(
+          'Location not pinned automatically',
+          'Online lookup did not find coordinates. Tap “Set on map” to choose your position on the Pakistan map, then tap Save again. Or check internet and retry.',
+          [
+            { text: 'Set on map', onPress: () => setMapPickerOpen(true) },
+            { text: 'OK', style: 'cancel', onPress: () => setIsEditing(false) },
+          ],
+        );
+      } else {
+        Alert.alert('Success', 'Profile updated successfully');
+        setIsEditing(false);
+      }
+    } catch (e: any) {
+      Alert.alert('Update failed', e?.message || 'Could not save profile. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancelEdit = useCallback(() => {
+    setEditData({
+      name: user?.name || '',
+      phone: user?.phone || '',
+      location: user?.location || '',
+      farmAcres: user?.farmAcres != null ? String(user.farmAcres) : '',
+      farmCropTypes: user?.farmCropTypes != null ? String(user.farmCropTypes) : '',
+      farmHealthScore: user?.farmHealthScore != null ? String(user.farmHealthScore) : '',
+      farmMonthlyRevenue: user?.farmMonthlyRevenue != null ? String(user.farmMonthlyRevenue) : '',
+    });
+    setManualCoords(null);
     setIsEditing(false);
+  }, [user?.name, user?.phone, user?.location, user?.farmAcres, user?.farmCropTypes, user?.farmHealthScore, user?.farmMonthlyRevenue]);
+
+  const startEdit = useCallback(() => {
+    setEditData({
+      name: user?.name || '',
+      phone: user?.phone || '',
+      location: user?.location || '',
+      farmAcres: user?.farmAcres != null ? String(user.farmAcres) : '',
+      farmCropTypes: user?.farmCropTypes != null ? String(user.farmCropTypes) : '',
+      farmHealthScore: user?.farmHealthScore != null ? String(user.farmHealthScore) : '',
+      farmMonthlyRevenue: user?.farmMonthlyRevenue != null ? String(user.farmMonthlyRevenue) : '',
+    });
+    setManualCoords(null);
+    setIsEditing(true);
+  }, [user?.name, user?.phone, user?.location, user?.farmAcres, user?.farmCropTypes, user?.farmHealthScore, user?.farmMonthlyRevenue]);
+
+  const handlePickedAvatar = async (uri: string | undefined) => {
+    if (!uri) return;
+    setPhotoUploading(true);
+    try {
+      await uploadProfileImage(uri);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not upload photo';
+      Alert.alert('Upload failed', msg);
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const openAvatarCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera access is required to take a profile photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      await handlePickedAvatar(result.assets[0].uri);
+    }
+  };
+
+  const openAvatarLibrary = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Photo library access is required.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      await handlePickedAvatar(result.assets[0].uri);
+    }
+  };
+
+  const pickAvatar = () => {
+    Alert.alert('Profile photo', 'Choose a source', [
+      { text: 'Take photo', onPress: () => void openAvatarCamera() },
+      { text: 'Choose from library', onPress: () => void openAvatarLibrary() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: logout },
-      ]
-    );
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: logout },
+    ]);
   };
 
   const profileSections = [
     {
       title: 'Account Information',
       items: [
-        {
-          icon: User,
-          label: 'Full Name',
-          value: isEditing ? editData.name : user?.name,
-          editable: true,
-          key: 'name'
-        },
-        {
-          icon: Mail,
-          label: 'Email',
-          value: user?.email,
-          editable: false
-        },
-        {
-          icon: Phone,
-          label: 'Phone',
-          value: isEditing ? editData.phone : user?.phone || 'Not provided',
-          editable: true,
-          key: 'phone'
-        },
-        {
-          icon: MapPin,
-          label: 'Location',
-          value: isEditing ? editData.location : user?.location || 'Not provided',
-          editable: true,
-          key: 'location'
-        }
-      ]
-    }
+        { icon: User, label: 'Full Name', value: isEditing ? editData.name : user?.name, editable: true, key: 'name' },
+        { icon: Mail, label: 'Email', value: user?.email, editable: false },
+        { icon: Phone, label: 'Phone', value: isEditing ? editData.phone : user?.phone || 'Not provided', editable: true, key: 'phone' },
+        { icon: MapPin, label: 'Location', value: isEditing ? editData.location : user?.location || 'Not provided', editable: true, key: 'location' },
+      ],
+    },
   ];
+
+  const statCards = useMemo(() => {
+    const dash = '—';
+    const loading = statsLoading;
+    const acres =
+      loading ? '…' : profileStats?.acresFarmed != null ? String(profileStats.acresFarmed) : dash;
+    const crops =
+      loading ? '…' : profileStats?.cropTypesCount != null ? String(profileStats.cropTypesCount) : dash;
+    const health =
+      loading
+        ? '…'
+        : profileStats?.healthScorePercent != null
+          ? `${Math.round(profileStats.healthScorePercent)}%`
+          : dash;
+    const revenue =
+      loading
+        ? '…'
+        : profileStats?.monthlyRevenue != null
+          ? `Rs ${Math.round(profileStats.monthlyRevenue).toLocaleString()}`
+          : dash;
+    return [
+      { v: acres, l: 'Acres Farmed' },
+      { v: crops, l: 'Crop Types' },
+      { v: health, l: 'Health Score' },
+      { v: revenue, l: 'Monthly Revenue' },
+    ];
+  }, [profileStats, statsLoading]);
 
   const settingsSections = [
     {
@@ -89,24 +319,24 @@ export default function ProfileScreen() {
           icon: Globe,
           label: 'Language',
           value: language === 'en' ? 'English' : 'اردو',
-          type: 'toggle',
-          onPress: () => setLanguage(language === 'en' ? 'ur' : 'en')
+          type: 'toggle' as const,
+          onPress: () => setLanguage(language === 'en' ? 'ur' : 'en'),
         },
         {
           icon: Moon,
           label: 'Dark Mode',
-          value: darkMode,
-          type: 'switch',
-          onPress: (value: boolean) => setDarkMode(value)
+          value: isDark,
+          type: 'switch' as const,
+          onPress: (value: boolean) => setDarkMode(value),
         },
         {
           icon: Bell,
           label: 'Notifications',
           value: notifications,
-          type: 'switch',
-          onPress: (value: boolean) => setNotifications(value)
-        }
-      ]
+          type: 'switch' as const,
+          onPress: (value: boolean) => setNotifications(value),
+        },
+      ],
     },
     {
       title: 'Security & Support',
@@ -114,107 +344,172 @@ export default function ProfileScreen() {
         {
           icon: Shield,
           label: 'Privacy Settings',
-          onPress: () => Alert.alert('Privacy Settings', 'Privacy settings would open here')
+          onPress: () => router.push('/(farmer)/privacy-settings' as any),
         },
         {
-          icon: LogOut,
-          label: 'Logout',
-          onPress: handleLogout,
-          danger: true
-        }
-      ]
-    }
+          icon: HelpCircle,
+          label: 'Help & Support',
+          onPress: () => router.push('/(farmer)/help-support' as any),
+        },
+        { icon: LogOut, label: 'Logout', onPress: handleLogout, danger: true },
+      ],
+    },
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Enhanced Gradient Header */}
-      <LinearGradient
-        colors={['#22C55E', '#16A34A']}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
+      <ImageBackground source={HEADER_FIELD_BG} style={styles.header} resizeMode="cover" imageStyle={styles.headerImage}>
+        <View style={styles.headerOverlay} pointerEvents="none" />
         <View style={styles.headerContent}>
           <View style={styles.avatarSection}>
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
-                <User color="white" size={40} />
+                {user?.profileImageUrl ? (
+                  <Image source={{ uri: user.profileImageUrl }} style={styles.avatarImage} />
+                ) : (
+                  <User color="white" size={40} />
+                )}
+                {photoUploading && (
+                  <View style={styles.avatarLoading}>
+                    <ActivityIndicator color="white" />
+                  </View>
+                )}
               </View>
-              <TouchableOpacity style={styles.cameraButton}>
+              <TouchableOpacity
+                style={[styles.cameraButton, photoUploading && { opacity: 0.6 }]}
+                onPress={pickAvatar}
+                disabled={photoUploading}
+                accessibilityLabel="Change profile photo"
+              >
                 <Camera color="white" size={16} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user?.name}</Text>
-              <Text style={styles.userRole}>
-                {user?.role === 'farmer' ? '🌾 Farmer' : '👨‍💼 Administrator'}
-              </Text>
-              <Text style={styles.userLocation}>📍 {user?.location}</Text>
+              <Text style={styles.userRole}>{user?.role === 'farmer' ? '🌾 Farmer' : '👨‍💼 Administrator'}</Text>
+              <Text style={styles.userLocation}>📍 {user?.location || '—'}</Text>
             </View>
           </View>
 
           <View style={styles.headerActions}>
             {isEditing ? (
               <View style={styles.editActions}>
-                <TouchableOpacity style={styles.cancelButton} onPress={() => setIsEditing(false)}>
-                  <X color="#6B7280" size={20} />
+                <TouchableOpacity style={styles.headerTextBtn} onPress={cancelEdit} disabled={saving}>
+                  <Text style={styles.headerTextBtnLabelMuted}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                  <Save color="white" size={20} />
+                <TouchableOpacity
+                  style={[styles.headerTextBtnPrimary, saving && { opacity: 0.75 }]}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator color="#15803d" size="small" />
+                  ) : (
+                    <Text style={styles.headerTextBtnLabelPrimary}>Save</Text>
+                  )}
                 </TouchableOpacity>
               </View>
-          ) : (
-            <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(true)}>
-              <Edit3 color="#22C55E" size={20} />
-            </TouchableOpacity>
-          )}
+            ) : (
+              <TouchableOpacity
+                style={[styles.editButton, { backgroundColor: 'rgba(255,255,255,0.95)', borderWidth: 1, borderColor: tc.primary }]}
+                onPress={startEdit}
+              >
+                <Text style={{ color: tc.primaryDark, fontWeight: '700', fontSize: 15 }}>Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
-        </View>
-      </LinearGradient>
+      </ImageBackground>
 
-      {/* Farm Statistics */}
       <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>12.5</Text>
-          <Text style={styles.statLabel}>Acres Farmed</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>4</Text>
-          <Text style={styles.statLabel}>Crop Types</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>95%</Text>
-          <Text style={styles.statLabel}>Health Score</Text>
-        </View>
+        {isEditing
+          ? [
+              { key: 'farmAcres', label: 'Acres Farmed', editable: true },
+              { key: 'farmCropTypes', label: 'Crop Types', editable: false },
+              { key: 'farmHealthScore', label: 'Health Score %', editable: false },
+              { key: 'farmMonthlyRevenue', label: 'Monthly Revenue', editable: true },
+            ].map((s, i) => (
+              <View key={i} style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+                {s.editable ? (
+                  <TextInput
+                    style={[styles.statInput, { color: tc.primary, borderBottomColor: tc.border }]}
+                    value={editData[s.key as keyof typeof editData]}
+                    onChangeText={(text) => setEditData((prev) => ({ ...prev, [s.key]: text }))}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={tc.textMuted}
+                  />
+                ) : (
+                  <Text style={[styles.statValue, { color: tc.primary }]}>
+                    {s.key === 'farmCropTypes'
+                      ? (user?.farmCropTypes != null ? String(user.farmCropTypes) : '—')
+                      : (user?.farmHealthScore != null ? `${Math.round(user.farmHealthScore)}%` : '—')}
+                  </Text>
+                )}
+                <Text style={[styles.statLabel, { color: tc.textMuted }]}>{s.label}</Text>
+              </View>
+            ))
+          : statCards.map((s, i) => (
+              <View key={i} style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+                <Text style={[styles.statValue, { color: tc.primary }]}>{s.v}</Text>
+                <Text style={[styles.statLabel, { color: tc.textMuted }]}>{s.l}</Text>
+              </View>
+            ))}
       </View>
 
-      {/* Profile Information */}
       {profileSections.map((section, sectionIndex) => (
         <View key={sectionIndex} style={styles.section}>
-          <Text style={styles.sectionTitle}>{section.title}</Text>
-          <View style={styles.sectionContent}>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{section.title}</Text>
+          <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             {section.items.map((item, itemIndex) => {
               const IconComponent = item.icon;
               return (
-                <View key={itemIndex} style={styles.infoItem}>
+                <View key={itemIndex} style={[styles.infoItem, { borderBottomColor: tc.border }]}>
                   <View style={styles.infoItemHeader}>
-                    <IconComponent color="#6B7280" size={20} />
-                    <Text style={styles.infoLabel}>{item.label}</Text>
+                    <IconComponent color={tc.textMuted} size={20} />
+                    <Text style={[styles.infoLabel, { color: tc.textSecondary }]}>{item.label}</Text>
                   </View>
-                  
+
                   {isEditing && item.editable ? (
-                    <TextInput
-                      style={styles.editInput}
-                      value={editData[item.key as keyof typeof editData]}
-                      onChangeText={(text) => 
-                        setEditData(prev => ({ ...prev, [item.key!]: text }))
-                      }
-                      placeholder={`Enter ${item.label.toLowerCase()}`}
-                    />
+                    <View style={{ marginLeft: 28 }}>
+                      <TextInput
+                        style={[styles.editInput, { color: tc.text, borderBottomColor: tc.border, marginLeft: 0 }]}
+                        value={editData[item.key as keyof typeof editData]}
+                        keyboardType={
+                          item.key === 'farmAcres' ||
+                          item.key === 'farmCropTypes' ||
+                          item.key === 'farmHealthScore' ||
+                          item.key === 'farmMonthlyRevenue'
+                            ? 'numeric'
+                            : 'default'
+                        }
+                        onChangeText={(text) => {
+                          setEditData((prev) => ({ ...prev, [item.key!]: text }));
+                          if (item.key === 'location') setManualCoords(null);
+                        }}
+                        placeholder={
+                          item.key === 'location'
+                            ? 'City or area in Pakistan (e.g. Lahore)'
+                            : `Enter ${item.label.toLowerCase()}`
+                        }
+                        placeholderTextColor={tc.textMuted}
+                      />
+                      {item.key === 'location' && (
+                        <TouchableOpacity
+                          style={[styles.mapPickerLink, { borderColor: tc.border }]}
+                          onPress={() => setMapPickerOpen(true)}
+                          activeOpacity={0.7}
+                        >
+                          <MapPin color={tc.primary} size={18} />
+                          <Text style={[styles.mapPickerLinkText, { color: tc.primary }]}>
+                            Set pin on map of Pakistan (manual)
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   ) : (
-                    <Text style={styles.infoValue}>{item.value}</Text>
+                    <Text style={[styles.infoValue, { color: tc.text }]}>{item.value}</Text>
                   )}
                 </View>
               );
@@ -223,45 +518,37 @@ export default function ProfileScreen() {
         </View>
       ))}
 
-      {/* Settings */}
       {settingsSections.map((section, sectionIndex) => (
         <View key={sectionIndex} style={styles.section}>
-          <Text style={styles.sectionTitle}>{section.title}</Text>
-          <View style={styles.sectionContent}>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{section.title}</Text>
+          <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             {section.items.map((item, itemIndex) => {
               const IconComponent = item.icon;
               const hasDanger = 'danger' in item && item.danger;
               const isSwitch = 'type' in item && item.type === 'switch';
               const isToggle = 'type' in item && item.type === 'toggle';
               const hasValue = 'value' in item;
-              
+
               return (
                 <TouchableOpacity
                   key={itemIndex}
-                  style={[styles.settingsItem, hasDanger && styles.dangerItem]}
+                  style={[
+                    styles.settingsItem,
+                    { borderBottomColor: tc.border },
+                    hasDanger && { backgroundColor: isDark ? 'rgba(239,68,68,0.12)' : '#FEF2F2' },
+                  ]}
                   onPress={() => {
-                    // Switches are handled by Switch component's onValueChange
                     if (isSwitch) return;
-                    // For other items, call onPress if it exists and doesn't require arguments
                     if ('onPress' in item && typeof item.onPress === 'function' && !isSwitch) {
-                      // Type guard: if it's not a switch, onPress should be () => void
                       (item.onPress as () => void)();
                     }
                   }}
                 >
                   <View style={styles.settingsItemLeft}>
-                    <IconComponent 
-                      color={hasDanger ? '#EF4444' : '#6B7280'} 
-                      size={20} 
-                    />
-                    <Text style={[
-                      styles.settingsLabel,
-                      hasDanger && styles.dangerLabel
-                    ]}>
-                      {item.label}
-                    </Text>
+                    <IconComponent color={hasDanger ? '#EF4444' : tc.textMuted} size={20} />
+                    <Text style={[styles.settingsLabel, { color: hasDanger ? '#EF4444' : tc.textSecondary }]}>{item.label}</Text>
                   </View>
-                  
+
                   <View style={styles.settingsItemRight}>
                     {isSwitch && hasValue ? (
                       <Switch
@@ -271,19 +558,22 @@ export default function ProfileScreen() {
                             (item.onPress as (value: boolean) => void)(value);
                           }
                         }}
-                        trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
-                        thumbColor="white"
+                        trackColor={{ false: tc.border, true: tc.primary }}
+                        thumbColor="#fff"
                       />
                     ) : isToggle && hasValue ? (
-                      <TouchableOpacity style={styles.toggleButton} onPress={() => {
-                        if ('onPress' in item && typeof item.onPress === 'function') {
-                          (item.onPress as () => void)();
-                        }
-                      }}>
-                        <Text style={styles.toggleText}>{item.value as string}</Text>
+                      <TouchableOpacity
+                        style={[styles.toggleButton, { backgroundColor: tc.screenSecondary }]}
+                        onPress={() => {
+                          if ('onPress' in item && typeof item.onPress === 'function') {
+                            (item.onPress as () => void)();
+                          }
+                        }}
+                      >
+                        <Text style={[styles.toggleText, { color: tc.textSecondary }]}>{item.value as string}</Text>
                       </TouchableOpacity>
                     ) : (
-                      <Text style={styles.settingsValue}>›</Text>
+                      <Text style={[styles.settingsValue, { color: tc.textMuted }]}>›</Text>
                     )}
                   </View>
                 </TouchableOpacity>
@@ -293,39 +583,54 @@ export default function ProfileScreen() {
         </View>
       ))}
 
-      {/* App Version */}
       <View style={styles.versionContainer}>
-        <Text style={styles.versionText}>AgriSmart v1.0.0</Text>
-        <Text style={styles.buildText}>Build 2024.01.15</Text>
+        <Text style={[styles.versionText, { color: tc.textMuted }]}>AgriSmart v1.0.0</Text>
+        <Text style={[styles.buildText, { color: tc.textMuted }]}>Build 2024.01.15</Text>
       </View>
+
+      <LocationPickerModal
+        visible={mapPickerOpen}
+        onClose={() => setMapPickerOpen(false)}
+        constrainToPakistan
+        title="Pakistan — set your location"
+        initialLocation={
+          manualCoords
+            ? { latitude: manualCoords.lat, longitude: manualCoords.lng }
+            : user?.latitude != null && user?.longitude != null
+              ? { latitude: user.latitude, longitude: user.longitude }
+              : undefined
+        }
+        onSelect={({ latitude, longitude, address }) => {
+          setManualCoords({ lat: latitude, lng: longitude });
+          if (address && address.trim() && address !== 'Selected Location') {
+            setEditData((prev) => ({ ...prev, location: address }));
+          }
+          setMapPickerOpen(false);
+        }}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg.secondary,
-  },
-  content: {
-    paddingBottom: spacing['2xl'],
-  },
+  container: { flex: 1 },
+  content: { paddingBottom: spacing['2xl'] },
   header: {
     paddingTop: 60,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
+    overflow: 'hidden',
   },
-  headerContent: {
-    alignItems: 'center',
+  headerImage: {
+    borderRadius: 0,
   },
-  avatarSection: {
-    alignItems: 'center',
-    marginBottom: spacing.base,
+  headerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(22, 101, 52, 0.45)',
   },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: spacing.base,
-  },
+  headerContent: { alignItems: 'center' },
+  avatarSection: { alignItems: 'center', marginBottom: spacing.base },
+  avatarContainer: { position: 'relative', marginBottom: spacing.base },
   avatar: {
     width: 100,
     height: 100,
@@ -335,6 +640,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 4,
     borderColor: 'rgba(255, 255, 255, 0.5)',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 46,
+  },
+  avatarLoading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cameraButton: {
     position: 'absolute',
@@ -343,186 +660,86 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.primary,
+    backgroundColor: '#22C55E',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: 'white',
     ...shadows.md,
   },
-  userInfo: {
+  userInfo: { alignItems: 'center' },
+  userName: { fontSize: 24, fontWeight: 'bold', color: 'white', marginBottom: 4 },
+  userRole: { fontSize: 16, color: 'rgba(255, 255, 255, 0.95)', fontWeight: '600', marginBottom: 4 },
+  userLocation: { fontSize: 15, color: 'rgba(255, 255, 255, 0.85)' },
+  headerActions: { position: 'absolute', top: 20, right: 0 },
+  editActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  editButton: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
+  headerTextBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  headerTextBtnPrimary: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    minWidth: 72,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 4,
-  },
-  userRole: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.95)',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  userLocation: {
+  headerTextBtnLabelMuted: {
+    color: 'rgba(255,255,255,0.95)',
+    fontWeight: '700',
     fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.85)',
   },
-  headerActions: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
+  headerTextBtnLabelPrimary: {
+    color: '#15803d',
+    fontWeight: '700',
+    fontSize: 15,
   },
-  editActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  editButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F0FDF4',
-  },
-  cancelButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-  },
-  saveButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#22C55E',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  statValue: {
+  statsContainer: { flexDirection: 'row', flexWrap: 'wrap', padding: 16, gap: 12 },
+  statCard: { width: '48%', borderRadius: 12, padding: 16, alignItems: 'center', ...shadows.sm },
+  statValue: { fontSize: 20, fontWeight: 'bold', marginBottom: 4 },
+  statInput: {
+    width: '100%',
+    textAlign: 'center',
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#22C55E',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  section: {
-    margin: 16,
-    marginBottom: 0,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  sectionContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  infoItem: {
-    padding: 16,
+    marginBottom: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    paddingVertical: 2,
   },
-  infoItemHeader: {
+  statLabel: { fontSize: 12, textAlign: 'center' },
+  section: { margin: 16, marginBottom: 0 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
+  sectionContent: { borderRadius: 12, ...shadows.md },
+  infoItem: { padding: 16, borderBottomWidth: 1 },
+  infoItemHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  infoLabel: { fontSize: 14, fontWeight: '500' },
+  infoValue: { fontSize: 16, marginLeft: 28 },
+  editInput: { fontSize: 16, borderBottomWidth: 1, paddingVertical: 4 },
+  mapPickerLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
     gap: 8,
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  infoValue: {
-    fontSize: 16,
-    color: '#111827',
-    marginLeft: 28,
-  },
-  editInput: {
-    fontSize: 16,
-    color: '#111827',
-    marginLeft: 28,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingVertical: 4,
-  },
-  settingsItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  dangerItem: {
-    backgroundColor: '#FEF2F2',
-  },
-  settingsItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  settingsLabel: {
-    fontSize: 16,
-    color: '#374151',
-  },
-  dangerLabel: {
-    color: '#EF4444',
-  },
-  settingsItemRight: {
-    alignItems: 'center',
-  },
-  settingsValue: {
-    fontSize: 16,
-    color: '#9CA3AF',
-  },
-  toggleButton: {
+    marginTop: 10,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: 'rgba(34, 197, 94, 0.08)',
   },
-  toggleText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  versionContainer: {
-    alignItems: 'center',
-    padding: 24,
-    marginTop: 16,
-  },
-  versionText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  buildText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
+  mapPickerLinkText: { fontSize: 14, fontWeight: '600', flex: 1 },
+  settingsItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
+  settingsItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingsLabel: { fontSize: 16 },
+  settingsItemRight: { alignItems: 'center' },
+  settingsValue: { fontSize: 16 },
+  toggleButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  toggleText: { fontSize: 14, fontWeight: '500' },
+  versionContainer: { alignItems: 'center', padding: 24, marginTop: 16 },
+  versionText: { fontSize: 14, fontWeight: '500' },
+  buildText: { fontSize: 12, marginTop: 2 },
 });

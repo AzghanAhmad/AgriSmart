@@ -21,6 +21,11 @@ export const translations = {
     goodEvening: 'Good Evening',
     cropHealthSummary: 'Crop Health Summary',
     weeklyYieldTrend: 'Weekly Yield Trend',
+    yieldTrend: 'Yield Trend',
+    healthProgress: 'Health progress',
+    needsAttention: 'Needs attention',
+    allScans: 'All scans',
+    overallHealthy: 'Overall healthy',
     diseaseIncidence: 'Disease Incidence',
     
     // Actions
@@ -70,6 +75,11 @@ export const translations = {
     goodEvening: 'شام بخیر',
     cropHealthSummary: 'فصل کی صحت کا خلاصہ',
     weeklyYieldTrend: 'ہفتہ وار پیداوار کا رجحان',
+    yieldTrend: 'پیداوار کا رجحان',
+    healthProgress: 'صحت کی پیش قدمی',
+    needsAttention: 'توجہ درکار',
+    allScans: 'تمام اسکین',
+    overallHealthy: 'مجموعی صحت مند',
     diseaseIncidence: 'بیماری کی موجودگی',
     
     // Actions

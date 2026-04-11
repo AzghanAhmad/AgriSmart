@@ -84,6 +84,60 @@ def run_migrations(engine):
                     conn.execute(text('ALTER TABLE "Users" ADD COLUMN location VARCHAR(255)'))
                     conn.commit()
                     print("    ✅ Added 'location' column to Users")
+
+                if not column_exists(inspector, 'Users', 'profile_image_url'):
+                    print("    ➕ Adding 'profile_image_url' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN profile_image_url VARCHAR(500)'))
+                    conn.commit()
+                    print("    ✅ Added 'profile_image_url' column to Users")
+
+                if not column_exists(inspector, 'Users', 'token_version'):
+                    print("    ➕ Adding 'token_version' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN token_version INTEGER DEFAULT 0'))
+                    conn.commit()
+                    print("    ✅ Added 'token_version' column to Users")
+
+                if not column_exists(inspector, 'Users', 'privacy_share_location'):
+                    print("    ➕ Adding 'privacy_share_location' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN privacy_share_location INTEGER DEFAULT 1'))
+                    conn.commit()
+                    print("    ✅ Added 'privacy_share_location' column to Users")
+
+                if not column_exists(inspector, 'Users', 'privacy_share_crop'):
+                    print("    ➕ Adding 'privacy_share_crop' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN privacy_share_crop INTEGER DEFAULT 0'))
+                    conn.commit()
+                    print("    ✅ Added 'privacy_share_crop' column to Users")
+
+                if not column_exists(inspector, 'Users', 'privacy_analytics'):
+                    print("    ➕ Adding 'privacy_analytics' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN privacy_analytics INTEGER DEFAULT 1'))
+                    conn.commit()
+                    print("    ✅ Added 'privacy_analytics' column to Users")
+
+                if not column_exists(inspector, 'Users', 'farm_acres'):
+                    print("    ➕ Adding 'farm_acres' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN farm_acres REAL'))
+                    conn.commit()
+                    print("    ✅ Added 'farm_acres' column to Users")
+
+                if not column_exists(inspector, 'Users', 'farm_crop_types'):
+                    print("    ➕ Adding 'farm_crop_types' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN farm_crop_types INTEGER'))
+                    conn.commit()
+                    print("    ✅ Added 'farm_crop_types' column to Users")
+
+                if not column_exists(inspector, 'Users', 'farm_health_score'):
+                    print("    ➕ Adding 'farm_health_score' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN farm_health_score REAL'))
+                    conn.commit()
+                    print("    ✅ Added 'farm_health_score' column to Users")
+
+                if not column_exists(inspector, 'Users', 'farm_monthly_revenue'):
+                    print("    ➕ Adding 'farm_monthly_revenue' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN farm_monthly_revenue REAL'))
+                    conn.commit()
+                    print("    ✅ Added 'farm_monthly_revenue' column to Users")
             
             # Check if OutbreakAlerts table exists
             if not table_exists(inspector, 'OutbreakAlerts'):

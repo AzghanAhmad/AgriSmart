@@ -3,26 +3,41 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image
 import { Users, FileText, MapPin, TrendingUp, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, DollarSign } from 'lucide-react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useAdminDetections, useOutbreakAlerts } from '@/hooks/useAdmin';
 import { useRouter } from 'expo-router';
 
 const screenWidth = Dimensions.get('window').width;
 
-const chartConfig = {
-  backgroundColor: '#22C55E',
-  backgroundGradientFrom: '#22C55E',
-  backgroundGradientTo: '#16A34A',
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-  style: {
-    borderRadius: 16,
-  },
-};
-
 export default function AdminDashboardScreen() {
   const { user } = useAuth();
+  const { colors: tc, isDark } = useTheme();
   const router = useRouter();
+
+  const chartConfig = useMemo(
+    () =>
+      isDark
+        ? {
+            backgroundColor: tc.chartBg,
+            backgroundGradientFrom: tc.chartBg,
+            backgroundGradientTo: tc.screen,
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(249, 250, 251, ${opacity})`,
+            style: { borderRadius: 16 },
+            propsForBackgroundLines: { stroke: tc.chartGrid, strokeWidth: 1 },
+          }
+        : {
+            backgroundColor: '#22C55E',
+            backgroundGradientFrom: '#22C55E',
+            backgroundGradientTo: '#16A34A',
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+            style: { borderRadius: 16 },
+          },
+    [isDark, tc]
+  );
   const { total, items, error: detectionsError } = useAdminDetections(1, 10);
   const { items: pendingAlerts, approveAlert, error: alertsError } = useOutbreakAlerts('pending');
 
@@ -61,22 +76,30 @@ export default function AdminDashboardScreen() {
     }
   ]), [total]);
 
-  // Mock data for charts
-  const farmerRegistrationData = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    datasets: [{
-      data: [120, 145, 167, 198, 225, 284],
-      color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-      strokeWidth: 2,
-    }],
-  };
+  const farmerRegistrationData = useMemo(
+    () => ({
+      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+      datasets: [
+        {
+          data: [120, 145, 167, 198, 225, 284],
+          color: (opacity = 1) =>
+            isDark ? `rgba(34, 197, 94, ${opacity})` : `rgba(255, 255, 255, ${opacity})`,
+          strokeWidth: 2,
+        },
+      ],
+    }),
+    [isDark]
+  );
 
-  const cropDistributionData = [
-    { name: 'Wheat', population: 40, color: '#22C55E', legendFontColor: '#374151', legendFontSize: 12 },
-    { name: 'Rice', population: 25, color: '#3B82F6', legendFontColor: '#374151', legendFontSize: 12 },
-    { name: 'Cotton', population: 20, color: '#F59E0B', legendFontColor: '#374151', legendFontSize: 12 },
-    { name: 'Corn', population: 15, color: '#EF4444', legendFontColor: '#374151', legendFontSize: 12 },
-  ];
+  const cropDistributionData = useMemo(
+    () => [
+      { name: 'Wheat', population: 40, color: '#22C55E', legendFontColor: tc.text, legendFontSize: 12 },
+      { name: 'Rice', population: 25, color: '#3B82F6', legendFontColor: tc.text, legendFontSize: 12 },
+      { name: 'Cotton', population: 20, color: '#F59E0B', legendFontColor: tc.text, legendFontSize: 12 },
+      { name: 'Corn', population: 15, color: '#EF4444', legendFontColor: tc.text, legendFontSize: 12 },
+    ],
+    [tc.text]
+  );
 
   const diseaseReportsData = {
     labels: ['Rust', 'Blast', 'Blight', 'Rot'],
@@ -121,15 +144,15 @@ export default function AdminDashboardScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         <View>
-          <Text style={styles.greeting}>Good morning,</Text>
-          <Text style={styles.adminName}>{user?.name || 'Administrator'}</Text>
+          <Text style={[styles.greeting, { color: tc.textMuted }]}>Good morning,</Text>
+          <Text style={[styles.adminName, { color: tc.text }]}>{user?.name || 'Administrator'}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.notificationButton}>
+          <TouchableOpacity style={[styles.notificationButton, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <AlertTriangle color="#EF4444" size={20} />
             <View style={styles.notificationBadge}>
               <Text style={styles.badgeText}>3</Text>
@@ -143,7 +166,7 @@ export default function AdminDashboardScreen() {
         {statsCards.map((stat, index) => {
           const IconComponent = stat.icon;
           return (
-            <View key={index} style={styles.statCard}>
+            <View key={index} style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <View style={styles.statHeader}>
                 <View style={[styles.statIcon, { backgroundColor: stat.bgColor }]}>
                   <IconComponent color={stat.color} size={24} />
@@ -154,8 +177,8 @@ export default function AdminDashboardScreen() {
                   {stat.change}
                 </Text>
               </View>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statTitle}>{stat.title}</Text>
+              <Text style={[styles.statValue, { color: tc.text }]}>{stat.value}</Text>
+              <Text style={[styles.statTitle, { color: tc.textMuted }]}>{stat.title}</Text>
             </View>
           );
         })}
@@ -164,8 +187,8 @@ export default function AdminDashboardScreen() {
       {/* Charts Section */}
       <View style={styles.chartsSection}>
         {/* Farmer Registration Trend */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Farmer Registration Trend</Text>
+        <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.chartTitle, { color: tc.text }]}>Farmer Registration Trend</Text>
           <LineChart
             data={farmerRegistrationData}
             width={screenWidth - 48}
@@ -180,8 +203,8 @@ export default function AdminDashboardScreen() {
         </View>
 
         {/* Crop Distribution */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Crop Distribution</Text>
+        <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.chartTitle, { color: tc.text }]}>Crop Distribution</Text>
           <PieChart
             data={cropDistributionData}
             width={screenWidth - 48}
@@ -195,8 +218,8 @@ export default function AdminDashboardScreen() {
         </View>
 
         {/* Disease Reports */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Disease Reports by Type</Text>
+        <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Reports by Type</Text>
           <BarChart
             data={diseaseReportsData}
             width={screenWidth - 48}
@@ -214,18 +237,18 @@ export default function AdminDashboardScreen() {
 
       {/* Recent Activities */}
       <View style={styles.activitiesSection}>
-        <Text style={styles.sectionTitle}>Recent Activities</Text>
-        <View style={styles.activitiesCard}>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>Recent Activities</Text>
+        <View style={[styles.activitiesCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
           {recentActivities.map((activity) => {
             const IconComponent = activity.icon;
             return (
-              <View key={activity.id} style={styles.activityItem}>
+              <View key={activity.id} style={[styles.activityItem, { borderBottomColor: tc.border }]}>
                 <View style={[styles.activityIcon, { backgroundColor: activity.color + '20' }]}>
                   <IconComponent color={activity.color} size={16} />
                 </View>
                 <View style={styles.activityContent}>
-                  <Text style={styles.activityMessage}>{activity.message}</Text>
-                  <Text style={styles.activityTime}>{activity.time}</Text>
+                  <Text style={[styles.activityMessage, { color: tc.textSecondary }]}>{activity.message}</Text>
+                  <Text style={[styles.activityTime, { color: tc.textMuted }]}>{activity.time}</Text>
                 </View>
               </View>
             );
@@ -235,23 +258,23 @@ export default function AdminDashboardScreen() {
 
       {/* Recent Detections from Backend */}
       <View style={styles.activitiesSection}>
-        <Text style={styles.sectionTitle}>Recent Detections</Text>
-        <View style={styles.activitiesCard}>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>Recent Detections</Text>
+        <View style={[styles.activitiesCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
           {items.map((d) => (
             <View key={d.detectionId} style={styles.detectionItem}>
-              <Image source={{ uri: d.imageUrl || '' }} style={styles.detectionImage} />
+              <Image source={{ uri: d.imageUrl || '' }} style={[styles.detectionImage, { backgroundColor: tc.border }]} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.detectionTitle}>Detection #{d.detectionId.slice(0, 8)}</Text>
-                <Text style={styles.detectionMeta}>
+                <Text style={[styles.detectionTitle, { color: tc.text }]}>Detection #{d.detectionId.slice(0, 8)}</Text>
+                <Text style={[styles.detectionMeta, { color: tc.textMuted }]}>
                   Farmer: {d.farmerId || 'N/A'}  •  Confidence: {d.confidence ?? '-'}%
                 </Text>
-                <Text style={styles.detectionMeta}>Status: {d.status || 'pending'}</Text>
-                <Text style={styles.detectionMeta}>{d.timestamp || ''}</Text>
+                <Text style={[styles.detectionMeta, { color: tc.textMuted }]}>Status: {d.status || 'pending'}</Text>
+                <Text style={[styles.detectionMeta, { color: tc.textMuted }]}>{d.timestamp || ''}</Text>
               </View>
             </View>
           ))}
           {items.length === 0 && !detectionsError && (
-            <Text style={styles.detectionEmpty}>No detections yet.</Text>
+            <Text style={[styles.detectionEmpty, { color: tc.textMuted }]}>No detections yet.</Text>
           )}
           {detectionsError && (
             <Text style={styles.errorText}>Error loading detections: {detectionsError}</Text>
@@ -261,20 +284,20 @@ export default function AdminDashboardScreen() {
 
       {/* Outbreak Alerts */}
       <View style={styles.activitiesSection}>
-        <Text style={styles.sectionTitle}>Outbreak Alerts</Text>
-        <View style={styles.activitiesCard}>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>Outbreak Alerts</Text>
+        <View style={[styles.activitiesCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
           {pendingAlerts.map((a) => (
             <View key={a.alertId} style={styles.alertItem}>
               <View style={styles.alertHeader}>
-                <View style={styles.alertIcon}>
+                <View style={[styles.alertIcon, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2' }]}>
                   <AlertTriangle color="#EF4444" size={18} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.alertTitle}>{a.diseaseName || 'Disease'} Outbreak</Text>
-                  <Text style={styles.alertMeta}>
+                  <Text style={[styles.alertTitle, { color: tc.text }]}>{a.diseaseName || 'Disease'} Outbreak</Text>
+                  <Text style={[styles.alertMeta, { color: tc.textMuted }]}>
                     Radius: {a.radiusKm} km • {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''}
                   </Text>
-                  <Text style={styles.alertMeta}>
+                  <Text style={[styles.alertMeta, { color: tc.textMuted }]}>
                     Location: {a.centerLat.toFixed(4)}, {a.centerLng.toFixed(4)}
                   </Text>
                 </View>
@@ -288,7 +311,7 @@ export default function AdminDashboardScreen() {
             </View>
           ))}
           {pendingAlerts.length === 0 && !alertsError && (
-            <Text style={styles.detectionEmpty}>No pending outbreak alerts.</Text>
+            <Text style={[styles.detectionEmpty, { color: tc.textMuted }]}>No pending outbreak alerts.</Text>
           )}
           {alertsError && (
             <Text style={styles.errorText}>Error loading alerts: {alertsError}</Text>
@@ -298,26 +321,26 @@ export default function AdminDashboardScreen() {
 
       {/* Quick Actions */}
       <View style={styles.quickActionsSection}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <Users color="#22C55E" size={32} />
-            <Text style={styles.actionText}>Manage Farmers</Text>
+            <Text style={[styles.actionText, { color: tc.textSecondary }]}>Manage Farmers</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={styles.actionCard}
+            style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}
             onPress={() => router.push('/(admin)/heatmap')}
           >
             <MapPin color="#3B82F6" size={32} />
-            <Text style={styles.actionText}>View Heatmap</Text>
+            <Text style={[styles.actionText, { color: tc.textSecondary }]}>View Heatmap</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <FileText color="#F59E0B" size={32} />
-            <Text style={styles.actionText}>Review Reports</Text>
+            <Text style={[styles.actionText, { color: tc.textSecondary }]}>Review Reports</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <DollarSign color="#EF4444" size={32} />
-            <Text style={styles.actionText}>Manage Subsidies</Text>
+            <Text style={[styles.actionText, { color: tc.textSecondary }]}>Manage Subsidies</Text>
           </TouchableOpacity>
         </View>
       </View>
