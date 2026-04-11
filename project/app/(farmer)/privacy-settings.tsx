@@ -31,12 +31,15 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApp } from '@/contexts/AppContext';
+import { translate } from '@/utils/translations';
 import { spacing, shadows } from '@/utils/designSystem';
 import { downloadAndShareFarmerPdf } from '@/utils/exportData';
 import { useRouter } from 'expo-router';
 
 export default function PrivacySettingsScreen() {
   const { colors: tc } = useTheme();
+  const { language } = useApp();
   const { changePassword, logoutAllDevices, deleteAccount } = useAuth();
   const router = useRouter();
 
@@ -63,27 +66,27 @@ export default function PrivacySettingsScreen() {
   const handleChangePassword = async () => {
     setPasswordError('');
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordError('All fields are required');
+      setPasswordError(translate('allFieldsRequired', language));
       return;
     }
     if (newPassword.length < 8) {
-      setPasswordError('Password too short (minimum 8 characters)');
+      setPasswordError(translate('passwordTooShort', language));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match');
+      setPasswordError(translate('passwordsNoMatch', language));
       return;
     }
     setChangePwLoading(true);
     try {
       await changePassword(currentPassword, newPassword);
-      Alert.alert('Success', 'Password changed successfully');
+      Alert.alert(translate('success', language), translate('passwordChangedSuccess', language));
       setChangePasswordModal(false);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (e) {
-      setPasswordError((e as Error).message || 'Could not change password');
+      setPasswordError((e as Error).message || translate('couldNotChangePassword', language));
     } finally {
       setChangePwLoading(false);
     }
@@ -91,7 +94,7 @@ export default function PrivacySettingsScreen() {
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== 'DELETE') {
-      Alert.alert('Error', 'Please type DELETE to confirm');
+      Alert.alert(translate('error', language), translate('typeDeleteToConfirm', language));
       return;
     }
     setDeleteLoading(true);
@@ -99,36 +102,32 @@ export default function PrivacySettingsScreen() {
       await deleteAccount();
       setDeleteAccountModal(false);
       setDeleteConfirmText('');
-      Alert.alert('Account deleted', 'Your account has been permanently removed.');
+      Alert.alert(translate('accountDeletedTitle', language), translate('accountDeletedBody', language));
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not delete account');
+      Alert.alert(translate('error', language), (e as Error).message || translate('couldNotDeleteAccount', language));
     } finally {
       setDeleteLoading(false);
     }
   };
 
   const handleLogoutAll = () => {
-    Alert.alert(
-      'Logout From All Devices',
-      'This will sign you out everywhere, including this device. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout All',
-          style: 'destructive',
-          onPress: async () => {
-            setLogoutAllLoading(true);
-            try {
-              await logoutAllDevices();
-            } catch (e) {
-              Alert.alert('Error', (e as Error).message || 'Request failed');
-            } finally {
-              setLogoutAllLoading(false);
-            }
-          },
+    Alert.alert(translate('logoutAllTitle', language), translate('logoutAllMessage', language), [
+      { text: translate('cancel', language), style: 'cancel' },
+      {
+        text: translate('logoutAllAction', language),
+        style: 'destructive',
+        onPress: async () => {
+          setLogoutAllLoading(true);
+          try {
+            await logoutAllDevices();
+          } catch (e) {
+            Alert.alert(translate('error', language), (e as Error).message || translate('requestFailed', language));
+          } finally {
+            setLogoutAllLoading(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleDownloadData = async () => {
@@ -136,7 +135,7 @@ export default function PrivacySettingsScreen() {
     try {
       await downloadAndShareFarmerPdf();
     } catch (e) {
-      Alert.alert('Download failed', (e as Error).message);
+      Alert.alert(translate('downloadFailedTitle', language), (e as Error).message);
     } finally {
       setDownloadLoading(false);
     }
@@ -160,10 +159,8 @@ export default function PrivacySettingsScreen() {
           </TouchableOpacity>
           <View style={styles.headerInfo}>
             <Shield color="white" size={32} />
-            <Text style={styles.headerTitle}>Privacy & Security</Text>
-            <Text style={styles.headerSubtitle}>
-              Manage your account security and personal data
-            </Text>
+            <Text style={styles.headerTitle}>{translate('privacyHeaderTitle', language)}</Text>
+            <Text style={styles.headerSubtitle}>{translate('privacyHeaderSubtitle', language)}</Text>
           </View>
         </LinearGradient>
 
@@ -171,7 +168,7 @@ export default function PrivacySettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <Shield color={tc.primary} size={20} />
-            <Text style={[styles.sectionTitle, { color: tc.text }]}>Account Security</Text>
+            <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('privacyAccountSecurity', language)}</Text>
           </View>
           <View style={[styles.card, { backgroundColor: tc.card, borderColor: tc.border }]}>
             <TouchableOpacity
@@ -183,7 +180,7 @@ export default function PrivacySettingsScreen() {
                 <View style={[styles.toggleIconBg, { backgroundColor: '#F59E0B20' }]}>
                   <Lock color="#F59E0B" size={18} />
                 </View>
-                <Text style={[styles.actionLabel, { color: tc.text }]}>Change Password</Text>
+                <Text style={[styles.actionLabel, { color: tc.text }]}>{translate('privacyChangePassword', language)}</Text>
               </View>
               <ChevronRight color={tc.textMuted} size={20} />
             </TouchableOpacity>
@@ -197,7 +194,7 @@ export default function PrivacySettingsScreen() {
                 <View style={[styles.toggleIconBg, { backgroundColor: '#EF444420' }]}>
                   <LogOut color="#EF4444" size={18} />
                 </View>
-                <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Logout from All Devices</Text>
+                <Text style={[styles.actionLabel, { color: '#EF4444' }]}>{translate('privacyLogoutAllDevices', language)}</Text>
               </View>
               <ChevronRight color={tc.textMuted} size={20} />
             </TouchableOpacity>
@@ -208,7 +205,7 @@ export default function PrivacySettingsScreen() {
         <View style={[styles.section, { marginBottom: 40 }]}>
           <View style={styles.sectionTitleRow}>
             <BarChart3 color={tc.primary} size={20} />
-            <Text style={[styles.sectionTitle, { color: tc.text }]}>Data Management</Text>
+            <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('privacyDataManagement', language)}</Text>
           </View>
           <View style={[styles.card, { backgroundColor: tc.card, borderColor: tc.border }]}>
             <TouchableOpacity
@@ -227,11 +224,9 @@ export default function PrivacySettingsScreen() {
                 </View>
                 <View>
                   <Text style={[styles.actionLabel, { color: tc.text }]}>
-                    {downloadLoading ? 'Preparing PDF…' : 'Download My Data'}
+                    {downloadLoading ? translate('privacyPreparingPdf', language) : translate('privacyDownloadData', language)}
                   </Text>
-                  <Text style={[styles.actionDesc, { color: tc.textMuted }]}>
-                    PDF of your scans and timelapse progress
-                  </Text>
+                  <Text style={[styles.actionDesc, { color: tc.textMuted }]}>{translate('privacyDownloadDesc', language)}</Text>
                 </View>
               </View>
               <ChevronRight color={tc.textMuted} size={20} />
@@ -246,10 +241,8 @@ export default function PrivacySettingsScreen() {
                   <Trash2 color="#EF4444" size={18} />
                 </View>
                 <View>
-                  <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Delete My Account</Text>
-                  <Text style={[styles.actionDesc, { color: tc.textMuted }]}>
-                    Permanently delete your account
-                  </Text>
+                  <Text style={[styles.actionLabel, { color: '#EF4444' }]}>{translate('privacyDeleteMyAccount', language)}</Text>
+                  <Text style={[styles.actionDesc, { color: tc.textMuted }]}>{translate('privacyDeleteDesc', language)}</Text>
                 </View>
               </View>
               <ChevronRight color={tc.textMuted} size={20} />
@@ -264,7 +257,7 @@ export default function PrivacySettingsScreen() {
           <View style={[styles.modal, { backgroundColor: tc.card }]}>
             <View style={styles.modalHeader}>
               <Lock color={tc.primary} size={24} />
-              <Text style={[styles.modalTitle, { color: tc.text }]}>Change Password</Text>
+              <Text style={[styles.modalTitle, { color: tc.text }]}>{translate('privacyModalChangePassword', language)}</Text>
               <TouchableOpacity onPress={() => { setChangePasswordModal(false); setPasswordError(''); }} style={styles.modalClose}>
                 <X color={tc.textMuted} size={22} />
               </TouchableOpacity>
@@ -278,14 +271,14 @@ export default function PrivacySettingsScreen() {
             )}
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Current Password</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('currentPassword', language)}</Text>
               <View style={[styles.inputRow, { backgroundColor: tc.inputBg, borderColor: tc.border }]}>
                 <TextInput
                   style={[styles.input, { color: tc.text }]}
                   value={currentPassword}
                   onChangeText={setCurrentPassword}
                   secureTextEntry={!showCurrentPw}
-                  placeholder="Enter current password"
+                  placeholder={translate('enterCurrentPassword', language)}
                   placeholderTextColor={tc.textMuted}
                 />
                 <TouchableOpacity onPress={() => setShowCurrentPw(!showCurrentPw)}>
@@ -295,14 +288,14 @@ export default function PrivacySettingsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>New Password</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('newPassword', language)}</Text>
               <View style={[styles.inputRow, { backgroundColor: tc.inputBg, borderColor: tc.border }]}>
                 <TextInput
                   style={[styles.input, { color: tc.text }]}
                   value={newPassword}
                   onChangeText={setNewPassword}
                   secureTextEntry={!showNewPw}
-                  placeholder="Minimum 8 characters"
+                  placeholder={translate('min8Chars', language)}
                   placeholderTextColor={tc.textMuted}
                 />
                 <TouchableOpacity onPress={() => setShowNewPw(!showNewPw)}>
@@ -312,14 +305,14 @@ export default function PrivacySettingsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Confirm Password</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('confirmPassword', language)}</Text>
               <View style={[styles.inputRow, { backgroundColor: tc.inputBg, borderColor: tc.border }]}>
                 <TextInput
                   style={[styles.input, { color: tc.text }]}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPw}
-                  placeholder="Re-enter new password"
+                  placeholder={translate('reEnterNewPassword', language)}
                   placeholderTextColor={tc.textMuted}
                 />
                 <TouchableOpacity onPress={() => setShowConfirmPw(!showConfirmPw)}>
@@ -333,7 +326,7 @@ export default function PrivacySettingsScreen() {
                 style={[styles.modalBtnCancel, { borderColor: tc.border }]}
                 onPress={() => { setChangePasswordModal(false); setPasswordError(''); }}
               >
-                <Text style={[styles.modalBtnCancelText, { color: tc.textSecondary }]}>Cancel</Text>
+                <Text style={[styles.modalBtnCancelText, { color: tc.textSecondary }]}>{translate('cancel', language)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalBtnPrimary, changePwLoading && { opacity: 0.75 }]}
@@ -345,7 +338,7 @@ export default function PrivacySettingsScreen() {
                   {changePwLoading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.modalBtnPrimaryText}>Update Password</Text>
+                    <Text style={styles.modalBtnPrimaryText}>{translate('privacyUpdatePassword', language)}</Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
@@ -360,7 +353,7 @@ export default function PrivacySettingsScreen() {
           <View style={[styles.modal, { backgroundColor: tc.card }]}>
             <View style={styles.modalHeader}>
               <AlertTriangle color="#EF4444" size={24} />
-              <Text style={[styles.modalTitle, { color: '#EF4444' }]}>Delete Account</Text>
+              <Text style={[styles.modalTitle, { color: '#EF4444' }]}>{translate('privacyModalDeleteTitle', language)}</Text>
               <TouchableOpacity onPress={() => setDeleteAccountModal(false)} style={styles.modalClose}>
                 <X color={tc.textMuted} size={22} />
               </TouchableOpacity>
@@ -368,21 +361,17 @@ export default function PrivacySettingsScreen() {
 
             <View style={styles.warningBox}>
               <AlertTriangle color="#EF4444" size={20} />
-              <Text style={styles.warningText}>
-                This action is irreversible. All your data, crop scans, schedules, and account information will be permanently deleted.
-              </Text>
+              <Text style={styles.warningText}>{translate('privacyDeleteWarning', language)}</Text>
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>
-                Type <Text style={{ fontWeight: '800', color: '#EF4444' }}>DELETE</Text> to confirm
-              </Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('privacyTypeDeleteLabel', language)}</Text>
               <View style={[styles.inputRow, { backgroundColor: tc.inputBg, borderColor: deleteConfirmText === 'DELETE' ? '#22C55E' : tc.border }]}>
                 <TextInput
                   style={[styles.input, { color: tc.text }]}
                   value={deleteConfirmText}
                   onChangeText={setDeleteConfirmText}
-                  placeholder="Type DELETE here"
+                  placeholder={translate('privacyTypeDeletePlaceholder', language)}
                   placeholderTextColor={tc.textMuted}
                   autoCapitalize="characters"
                 />
@@ -394,7 +383,7 @@ export default function PrivacySettingsScreen() {
                 style={[styles.modalBtnCancel, { borderColor: tc.border }]}
                 onPress={() => { setDeleteAccountModal(false); setDeleteConfirmText(''); }}
               >
-                <Text style={[styles.modalBtnCancelText, { color: tc.textSecondary }]}>Cancel</Text>
+                <Text style={[styles.modalBtnCancelText, { color: tc.textSecondary }]}>{translate('cancel', language)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -408,7 +397,7 @@ export default function PrivacySettingsScreen() {
                 {deleteLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.deleteBtnText}>Delete Account</Text>
+                  <Text style={styles.deleteBtnText}>{translate('privacyDeleteAccountBtn', language)}</Text>
                 )}
               </TouchableOpacity>
             </View>

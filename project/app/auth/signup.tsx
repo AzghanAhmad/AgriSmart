@@ -89,9 +89,7 @@ export default function SignupScreen() {
             <Leaf color="#22C55E" size={48} />
             <Text style={styles.logoText}>AgriSmart</Text>
           </View>
-          <Text style={styles.subtitle}>
-            Join the smart farming revolution
-          </Text>
+          <Text style={styles.subtitle}>{translate('signupTagline', language)}</Text>
         </View>
 
         <View style={styles.form}>
@@ -252,7 +250,7 @@ export default function SignupScreen() {
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
+            <Text style={styles.loginText}>{translate('loginPrompt', language)}</Text>
             <TouchableOpacity onPress={navigateToLogin}>
               <Text style={styles.loginLink}>
                 {translate('login', language)}
@@ -273,7 +271,7 @@ export default function SignupScreen() {
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
         constrainToPakistan
-        title="Pakistan — set your location"
+        title={translate('mapPickerTitlePK', language)}
         onSelect={handleLocationSelect}
         initialLocation={
           formData.latitude && formData.longitude

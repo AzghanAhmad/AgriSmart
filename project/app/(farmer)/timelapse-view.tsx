@@ -1,8 +1,5 @@
 /**
- * Smart TimeLapse View Screen - Complete Feature
- * 
- * Comprehensive timeline dashboard with multiple chart types, weather trends,
- * disease distribution, severity analysis, and predictive insights.
+ * Smart TimeLapse View Screen — stats, comparison, playback, and scans grouped by month (collapsible).
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -24,7 +21,6 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
-  Minus,
   Sun,
   Droplets,
   AlertCircle,
@@ -32,18 +28,16 @@ import {
   ArrowLeft,
   Camera,
   BarChart3,
-  PieChart as PieChartIcon,
   LineChart as LineChartIcon,
   Activity,
   Thermometer,
-  Cloud,
   ArrowRight,
+  ChevronDown,
   GitCompare,
   Award,
   AlertTriangle,
 } from 'lucide-react-native';
-import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { getApiBaseUrl } from '@/utils/env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -51,9 +45,7 @@ import { colors, spacing, borderRadius, shadows, typography } from '@/utils/desi
 
 const { width, height } = Dimensions.get('window');
 const isSmallScreen = width < 375;
-const cardWidth = width - spacing.base * 2;
 const statCardWidth = (width - spacing.base * 2 - spacing.md * 2) / 3;
-const additionalStatCardWidth = (width - spacing.base * 2 - spacing.sm * 3) / 4;
 
 interface TimelapseEntry {
   id: number;
@@ -92,8 +84,6 @@ interface Prediction {
   message: string;
 }
 
-type ChartType = 'severity' | 'weather' | 'disease';
-
 /** Build full image URL for timelapse photos (avoids double slash, handles full URLs) */
 function getTimelapseImageUrl(photoUrl: string | null | undefined): string | null {
   if (!photoUrl) return null;
@@ -103,10 +93,18 @@ function getTimelapseImageUrl(photoUrl: string | null | undefined): string | nul
   return `${base}${path}`;
 }
 
+function normalizeCropIdParam(raw: string | string[] | undefined): string | undefined {
+  if (raw == null) return undefined;
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  const s = v != null ? String(v).trim() : '';
+  return s.length > 0 ? s : undefined;
+}
+
 export default function TimeLapseViewScreen() {
   const router = useRouter();
-  const { cropId } = useLocalSearchParams<{ cropId: string }>();
-  const { colors: tc, isDark } = useTheme();
+  const params = useLocalSearchParams<{ cropId?: string | string[] }>();
+  const cropId = normalizeCropIdParam(params.cropId);
+  const { colors: tc } = useTheme();
 
   const [data, setData] = useState<TimelapseData | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
@@ -115,19 +113,15 @@ export default function TimeLapseViewScreen() {
   const [selectedEntry, setSelectedEntry] = useState<TimelapseEntry | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
-  const [activeChart, setActiveChart] = useState<ChartType>('severity');
   const [failedImageIds, setFailedImageIds] = useState<Set<number>>(new Set());
+  /** Which year-month groups in Timeline are expanded (default: most recent month only). */
+  const [expandedMonthKeys, setExpandedMonthKeys] = useState<Set<string>>(new Set());
   
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const markImageFailed = useCallback((entryId: number) => {
     setFailedImageIds((prev) => (prev.has(entryId) ? prev : new Set(prev).add(entryId)));
   }, []);
-
-  useEffect(() => {
-    loadData();
-    loadPrediction();
-  }, [cropId]);
 
   useEffect(() => {
     if (isPlaying && data?.entries?.length) {
@@ -145,16 +139,21 @@ export default function TimeLapseViewScreen() {
     }
   }, [data?.entries?.length, currentPlayIndex]);
 
-  const loadData = async () => {
-    if (!cropId) return;
-    
+  const loadData = useCallback(async () => {
+    if (!cropId) {
+      setData(null);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('authToken');
       const response = await fetch(`${getApiBaseUrl()}/api/timelapse/${cropId}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
         },
       });
 
@@ -162,24 +161,28 @@ export default function TimeLapseViewScreen() {
         const result = await response.json();
         setData(result);
         setFailedImageIds(new Set());
+      } else {
+        setData(null);
+        console.warn('Timelapse GET failed:', response.status, await response.text().catch(() => ''));
       }
     } catch (error) {
       console.error('Failed to load timelapse:', error);
+      setData(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [cropId]);
 
-  const loadPrediction = async () => {
+  const loadPrediction = useCallback(async () => {
     if (!cropId) return;
-    
+
     try {
       const token = await AsyncStorage.getItem('authToken');
       const response = await fetch(`${getApiBaseUrl()}/api/timelapse/predict/${cropId}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
         },
       });
 
@@ -190,7 +193,15 @@ export default function TimeLapseViewScreen() {
     } catch (error) {
       console.error('Failed to load prediction:', error);
     }
-  };
+  }, [cropId]);
+
+  /** Refetch whenever this screen is shown — same cropId after upload would not refetch with only useEffect([cropId]). */
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      loadPrediction();
+    }, [loadData, loadPrediction]),
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -247,9 +258,6 @@ export default function TimeLapseViewScreen() {
     return severity;
   };
 
-  // Aggregate entries by month (year-month): one point per month, value = average of all scans in that month
-  const chartWidth = cardWidth - spacing.lg * 2;
-
   type MonthKey = string;
   const getYearMonth = (dateStr: string): MonthKey => {
     const d = new Date(dateStr);
@@ -258,7 +266,8 @@ export default function TimeLapseViewScreen() {
     return `${y}-${m}`;
   };
 
-  const monthGroups = React.useMemo(() => {
+  /** Timeline scans grouped by calendar month (newest month first); collapsible sections. */
+  const timelineGroups = React.useMemo(() => {
     const entriesList = data?.entries ?? [];
     const map = new Map<MonthKey, TimelapseEntry[]>();
     for (const e of entriesList) {
@@ -266,61 +275,26 @@ export default function TimeLapseViewScreen() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
-    const keys = Array.from(map.keys()).sort();
+    const keys = Array.from(map.keys()).sort().reverse();
     return keys.map((key) => {
       const group = map.get(key)!;
-      const count = group.length;
-      const avgSeverity =
-        count > 0
-          ? group.reduce((sum, x) => sum + (x.severity_score ?? 0), 0) / count
-          : 0;
-      const avgTemp =
-        count > 0
-          ? group.reduce((sum, x) => sum + (x.weather_temp ?? 0), 0) / count
-          : 0;
-      const avgHumidity =
-        count > 0
-          ? group.reduce((sum, x) => sum + (x.weather_humidity ?? 0), 0) / count
-          : 0;
-      const avgConfidence =
-        count > 0
-          ? group.reduce((sum, x) => sum + (x.ai_confidence ?? 0), 0) / count
-          : 0;
       const [year, month] = key.split('-').map(Number);
-      const monthLabel =
-        keys.length <= 12
-          ? new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short' })
-          : new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-      return { key, monthLabel, avgSeverity, avgTemp, avgHumidity, avgConfidence };
+      const label = new Date(year, month - 1).toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      });
+      return { key, label, count: group.length, entries: group };
     });
   }, [data?.entries]);
 
-  const severityChartData = monthGroups.length > 0 ? {
-    labels: monthGroups.map((g) => g.monthLabel),
-    datasets: [{
-      data: monthGroups.map((g) => Math.round(g.avgSeverity * 100) / 100),
-      color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-      strokeWidth: 3,
-    }],
-  } : null;
+  React.useEffect(() => {
+    if (timelineGroups.length > 0) {
+      setExpandedMonthKeys(new Set([timelineGroups[0].key]));
+    } else {
+      setExpandedMonthKeys(new Set());
+    }
+  }, [timelineGroups]);
 
-  const weatherChartData = monthGroups.length > 0 ? {
-    labels: monthGroups.map((g) => g.monthLabel),
-    datasets: [
-      {
-        data: monthGroups.map((g) => Math.round(g.avgTemp * 100) / 100),
-        color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
-        strokeWidth: 2,
-      },
-      {
-        data: monthGroups.map((g) => Math.round(g.avgHumidity * 100) / 100),
-        color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-        strokeWidth: 2,
-      },
-    ],
-  } : null;
-
-  // Disease distribution
   const diseaseDistribution = React.useMemo(() => {
     return (
       data?.entries.reduce((acc, entry) => {
@@ -330,43 +304,6 @@ export default function TimeLapseViewScreen() {
       }, {} as Record<string, number>) || {}
     );
   }, [data?.entries]);
-
-  const diseasePieData = React.useMemo(() => {
-    return Object.entries(diseaseDistribution).map(([name, count], index) => {
-      const colors_list = ['#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6', '#EC4899'];
-      return {
-        name: name.length > 15 ? name.substring(0, 15) + '...' : name,
-        population: count,
-        color: colors_list[index % colors_list.length],
-        legendFontColor: tc.chartLabel,
-        legendFontSize: 12,
-      };
-    });
-  }, [diseaseDistribution, tc.chartLabel]);
-
-  // Severity distribution
-  const severityDistribution = data?.entries.reduce((acc, entry) => {
-    const severity = entry.severity || 'None';
-    acc[severity] = (acc[severity] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>) || {};
-
-  const severityBarData = {
-    labels: Object.keys(severityDistribution),
-    datasets: [{
-      data: Object.values(severityDistribution),
-    }],
-  };
-
-  // Confidence chart (aggregated by month)
-  const confidenceChartData = monthGroups.length > 0 ? {
-    labels: monthGroups.map((g) => g.monthLabel),
-    datasets: [{
-      data: monthGroups.map((g) => Math.round((g.avgConfidence ?? 0) * 100)),
-      color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
-      strokeWidth: 3,
-    }],
-  } : null;
 
   // Statistics from backend (from scanned images)
   const stats = data ? {
@@ -405,36 +342,14 @@ export default function TimeLapseViewScreen() {
     ? (playbackEntries[currentPlayIndex] ?? playbackEntries[0])
     : null;
 
-  const chartConfigBase = React.useMemo(
-    () => ({
-      backgroundColor: tc.chartBg,
-      backgroundGradientFrom: tc.chartBg,
-      backgroundGradientTo: tc.chartBg,
-      decimalPlaces: 1,
-      color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-      labelColor: () => tc.chartLabel,
-      style: { borderRadius: borderRadius.lg, padding: 8 },
-      propsForDots: { r: 5, strokeWidth: 2, stroke: '#22C55E' },
-      propsForBackgroundLines: { strokeDasharray: '', stroke: tc.chartGrid, strokeWidth: 1 },
-    }),
-    [tc.chartBg, tc.chartLabel, tc.chartGrid]
-  );
-  const chartConfigSeverity = React.useMemo(
-    () => ({ ...chartConfigBase, color: (o = 1) => `rgba(34, 197, 94, ${o})` }),
-    [chartConfigBase]
-  );
-  const chartConfigWeatherTemp = React.useMemo(
-    () => ({ ...chartConfigBase, color: (o = 1) => `rgba(245, 158, 11, ${o})` }),
-    [chartConfigBase]
-  );
-  const chartConfigWeatherHumid = React.useMemo(
-    () => ({ ...chartConfigBase, color: (o = 1) => `rgba(59, 130, 246, ${o})` }),
-    [chartConfigBase]
-  );
-  const chartConfigPie = React.useMemo(
-    () => ({ ...chartConfigBase, color: () => '#22C55E' }),
-    [chartConfigBase]
-  );
+  const toggleTimelineMonth = (key: string) => {
+    setExpandedMonthKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   if (loading) {
     return (
@@ -765,279 +680,6 @@ export default function TimeLapseViewScreen() {
           </View>
         )}
 
-        {/* Chart Tabs: Severity, Weather, Disease – selected tab highlighted */}
-        <View style={styles.chartTabsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartTabs}>
-            <TouchableOpacity
-              style={[
-                styles.chartTab,
-                { backgroundColor: tc.card, borderColor: tc.border },
-                activeChart === 'severity' && [
-                  styles.chartTabActive,
-                  { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg, borderColor: colors.primary },
-                ],
-              ]}
-              onPress={() => setActiveChart('severity')}
-              activeOpacity={0.8}
-            >
-              <LineChartIcon size={20} color={activeChart === 'severity' ? colors.primary : tc.textMuted} />
-              <Text
-                style={[
-                  styles.chartTabText,
-                  { color: tc.textMuted },
-                  activeChart === 'severity' && [styles.chartTabTextActive, { color: colors.primary }],
-                ]}
-              >
-                Severity
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.chartTab,
-                { backgroundColor: tc.card, borderColor: tc.border },
-                activeChart === 'weather' && [
-                  styles.chartTabActive,
-                  { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg, borderColor: colors.primary },
-                ],
-              ]}
-              onPress={() => setActiveChart('weather')}
-              activeOpacity={0.8}
-            >
-              <Cloud size={20} color={activeChart === 'weather' ? colors.primary : tc.textMuted} />
-              <Text
-                style={[
-                  styles.chartTabText,
-                  { color: tc.textMuted },
-                  activeChart === 'weather' && [styles.chartTabTextActive, { color: colors.primary }],
-                ]}
-              >
-                Weather
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.chartTab,
-                { backgroundColor: tc.card, borderColor: tc.border },
-                activeChart === 'disease' && [
-                  styles.chartTabActive,
-                  { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg, borderColor: colors.primary },
-                ],
-              ]}
-              onPress={() => setActiveChart('disease')}
-              activeOpacity={0.8}
-            >
-              <PieChartIcon size={20} color={activeChart === 'disease' ? colors.primary : tc.textMuted} />
-              <Text
-                style={[
-                  styles.chartTabText,
-                  { color: tc.textMuted },
-                  activeChart === 'disease' && [styles.chartTabTextActive, { color: colors.primary }],
-                ]}
-              >
-                Disease
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-
-        {/* Charts Section – white background, one chart per tab */}
-        <View style={styles.chartsSection}>
-          {activeChart === 'severity' && severityChartData && (
-            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-              <View style={styles.chartHeader}>
-                <LineChartIcon size={24} color={colors.primary} />
-                <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Severity Trend</Text>
-              </View>
-              <LineChart
-                data={severityChartData}
-                width={chartWidth}
-                height={isSmallScreen ? 200 : 240}
-                chartConfig={chartConfigSeverity}
-                bezier
-                style={styles.chart}
-                verticalLabelRotation={-45}
-              />
-            </View>
-          )}
-
-          {activeChart === 'weather' && weatherChartData && (
-            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-              <View style={styles.chartHeader}>
-                <Cloud size={24} color={colors.info} />
-                <Text style={[styles.chartTitle, { color: tc.text }]}>Weather Trends</Text>
-              </View>
-              <LineChart
-                data={weatherChartData}
-                width={chartWidth}
-                height={isSmallScreen ? 200 : 240}
-                chartConfig={chartConfigWeatherTemp}
-                bezier
-                style={styles.chart}
-                verticalLabelRotation={-45}
-              />
-              <View style={styles.weatherLegend}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Temperature (°C)</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Humidity (%)</Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {activeChart === 'disease' && diseasePieData.length > 0 && (
-            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-              <View style={styles.chartHeader}>
-                <PieChartIcon size={24} color={colors.primary} />
-                <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Distribution</Text>
-              </View>
-              <PieChart
-                data={diseasePieData}
-                width={cardWidth - spacing.lg * 2}
-                height={isSmallScreen ? 200 : 240}
-                chartConfig={chartConfigPie}
-                accessor="population"
-                backgroundColor={tc.chartBg}
-                paddingLeft="15"
-                absolute
-              />
-              <View style={[styles.severityBreakdownList, { borderTopColor: tc.border }]}>
-                <Text style={[styles.chartSubtitle, { color: tc.textMuted }]}>Severity by scan</Text>
-                {Object.entries(severityDistribution).length > 0 ? (
-                  Object.entries(severityDistribution).map(([severityLabel, count]) => (
-                    <View key={severityLabel} style={styles.severityBreakdownRow}>
-                      <View
-                        style={[
-                          styles.severityBreakdownDot,
-                          {
-                            backgroundColor: getSeverityColor(
-                              severityLabel === 'None' ? 0
-                                : severityLabel === 'Mild' ? 1
-                                : severityLabel === 'Moderate' ? 2
-                                : 3
-                            ),
-                          },
-                        ]}
-                      />
-                      <Text style={[styles.severityBreakdownLabel, { color: tc.text }]}>{severityLabel || 'Healthy'}</Text>
-                      <Text style={[styles.severityBreakdownCount, { color: tc.textMuted }]}>
-                        {count} scan{count !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={[styles.severityBreakdownEmpty, { color: tc.textMuted }]}>No severity data</Text>
-                )}
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* Growth Progress Graph - Line Chart */}
-        {monthGroups.length > 0 && (
-          <View style={styles.chartsSection}>
-            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-              <View style={styles.chartHeader}>
-                <TrendingUp size={24} color={colors.primary} />
-                <Text style={[styles.chartTitle, { color: tc.text }]}>Growth Progress</Text>
-              </View>
-              <Text style={[styles.chartDesc, { color: tc.textMuted }]}>
-                Plant growth trend over time based on health scores
-              </Text>
-              <LineChart
-                data={{
-                  labels: monthGroups.map((g) => g.monthLabel),
-                  datasets: [{
-                    data: monthGroups.map((g) => {
-                      // Growth % = inverse of severity (higher health = more growth)
-                      const healthPct = Math.max(0, Math.min(100, 100 - (g.avgSeverity * 33.3)));
-                      return Math.round(healthPct * 10) / 10;
-                    }),
-                    color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-                    strokeWidth: 3,
-                  }],
-                }}
-                width={chartWidth}
-                height={isSmallScreen ? 200 : 240}
-                chartConfig={{
-                  ...chartConfigBase,
-                  color: (o = 1) => `rgba(34, 197, 94, ${o})`,
-                  propsForDots: { r: 6, strokeWidth: 2, stroke: '#22C55E', fill: tc.card },
-                }}
-                bezier
-                withShadow
-                withDots
-                withInnerLines
-                withOuterLines={false}
-                style={styles.chart}
-                verticalLabelRotation={-45}
-                yAxisSuffix="%"
-              />
-              <View style={styles.chartLegendRow}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
-                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Growth %</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Disease Occurrence Timeline - Bar Chart */}
-        {monthGroups.length > 0 && (
-          <View style={styles.chartsSection}>
-            <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-              <View style={styles.chartHeader}>
-                <BarChart3 size={24} color={colors.warning} />
-                <Text style={[styles.chartTitle, { color: tc.text }]}>Disease Occurrence Timeline</Text>
-              </View>
-              <Text style={[styles.chartDesc, { color: tc.textMuted }]}>
-                Disease count distribution over time periods
-              </Text>
-              <BarChart
-                data={{
-                  labels: monthGroups.map((g) => g.monthLabel),
-                  datasets: [{
-                    data: monthGroups.map((g) => {
-                      // Count entries with disease in each month
-                      const entries = data?.entries ?? [];
-                      return entries.filter((e) => {
-                        const key = `${new Date(e.date).getFullYear()}-${String(new Date(e.date).getMonth() + 1).padStart(2, '0')}`;
-                        return key === g.key && e.detected_disease && e.detected_disease !== 'Healthy';
-                      }).length;
-                    }),
-                  }],
-                }}
-                width={chartWidth}
-                height={isSmallScreen ? 200 : 240}
-                yAxisLabel=""
-                yAxisSuffix=""
-                chartConfig={{
-                  ...chartConfigBase,
-                  color: (o = 1) => `rgba(34, 197, 94, ${o})`,
-                  barPercentage: 0.7,
-                  fillShadowGradient: '#22C55E',
-                  fillShadowGradientOpacity: 0.8,
-                }}
-                style={styles.chart}
-                verticalLabelRotation={-45}
-                showBarTops
-                showValuesOnTopOfBars
-                fromZero
-              />
-              <View style={styles.chartLegendRow}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
-                  <Text style={[styles.legendText, { color: tc.textMuted }]}>Disease Cases</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
         {/* Playback Section */}
         {data.entries.length > 0 && (
           <View style={styles.playbackSection}>
@@ -1096,78 +738,105 @@ export default function TimeLapseViewScreen() {
           </View>
         )}
 
-        {/* Timeline */}
+        {/* Timeline — grouped by month, collapsible to save vertical space */}
         <View style={styles.timelineContainer}>
           <Text style={[styles.timelineTitle, { color: tc.text }]}>Timeline</Text>
-          {data.entries.map((entry, index) => (
-            <TouchableOpacity
-              key={entry.id}
-              style={styles.timelineItem}
-              onPress={() => setSelectedEntry(entry)}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.timelineCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-                {getTimelapseImageUrl(entry.photo_url) && !failedImageIds.has(entry.id) ? (
-                  <Image
-                    source={{ uri: getTimelapseImageUrl(entry.photo_url)!, cache: 'reload' }}
-                    style={styles.timelineImage}
-                    onError={() => markImageFailed(entry.id)}
-                  />
-                ) : (
-                  <View style={[styles.timelineImage, styles.imagePlaceholder, { backgroundColor: tc.screenSecondary }]}>
-                    <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
-                  </View>
-                )}
-                <View style={styles.timelineContent}>
-                  <View style={styles.timelineHeader}>
-                    <Calendar size={16} color={tc.textMuted} />
-                    <Text style={[styles.timelineDate, { color: tc.textMuted }]}>
-                      {new Date(entry.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                  </View>
-                  {entry.detected_disease && (
-                    <Text style={[styles.timelineDisease, { color: tc.text }]}>
-                      {entry.detected_disease}
-                    </Text>
-                  )}
-                  <View style={styles.timelineBadges}>
-                    <View
-                      style={[
-                        styles.severityChip,
-                        {
-                          backgroundColor: getSeverityColor(entry.severity_score),
-                        },
-                      ]}
-                    >
-                      <Text style={styles.severityChipText}>
-                        {getSeverityLabel(entry.severity)}
+          <Text style={[styles.timelineHint, { color: tc.textMuted }]}>
+            Tap a month bar to show or hide its scans.
+          </Text>
+          {timelineGroups.map((group) => {
+            const open = expandedMonthKeys.has(group.key);
+            return (
+              <View key={group.key} style={styles.timelineMonthBlock}>
+                <TouchableOpacity
+                  style={[styles.timelineMonthHeader, { backgroundColor: tc.card, borderColor: tc.border }]}
+                  onPress={() => toggleTimelineMonth(group.key)}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.timelineMonthHeaderLeft}>
+                    <Calendar size={20} color={colors.primary} />
+                    <View>
+                      <Text style={[styles.timelineMonthTitle, { color: tc.text }]}>{group.label}</Text>
+                      <Text style={[styles.timelineMonthSubtitle, { color: tc.textMuted }]}>
+                        {group.count} scan{group.count !== 1 ? 's' : ''}
                       </Text>
                     </View>
-                    {entry.weather_humidity && (
-                      <View style={[styles.weatherBadge, { backgroundColor: tc.screenSecondary }]}>
-                        <Droplets size={14} color={colors.info} />
-                        <Text style={[styles.weatherText, { color: tc.text }]}>
-                          {entry.weather_humidity}%
-                        </Text>
-                      </View>
-                    )}
-                    {entry.weather_temp && (
-                      <View style={[styles.weatherBadge, { backgroundColor: tc.screenSecondary }]}>
-                        <Sun size={14} color={colors.warning} />
-                        <Text style={[styles.weatherText, { color: tc.text }]}>
-                          {entry.weather_temp}°C
-                        </Text>
-                      </View>
-                    )}
                   </View>
-                </View>
+                  <View style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
+                    <ChevronDown size={22} color={tc.textMuted} />
+                  </View>
+                </TouchableOpacity>
+                {open &&
+                  group.entries.map((entry) => (
+                    <TouchableOpacity
+                      key={entry.id}
+                      style={styles.timelineItem}
+                      onPress={() => setSelectedEntry(entry)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.timelineCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                        {getTimelapseImageUrl(entry.photo_url) && !failedImageIds.has(entry.id) ? (
+                          <Image
+                            source={{ uri: getTimelapseImageUrl(entry.photo_url)!, cache: 'reload' }}
+                            style={styles.timelineImage}
+                            onError={() => markImageFailed(entry.id)}
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.timelineImage,
+                              styles.imagePlaceholder,
+                              { backgroundColor: tc.screenSecondary },
+                            ]}
+                          >
+                            <Text style={[styles.imagePlaceholderText, { color: tc.textMuted }]}>No image</Text>
+                          </View>
+                        )}
+                        <View style={styles.timelineContent}>
+                          <View style={styles.timelineHeader}>
+                            <Calendar size={16} color={tc.textMuted} />
+                            <Text style={[styles.timelineDate, { color: tc.textMuted }]}>
+                              {new Date(entry.date).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </Text>
+                          </View>
+                          {entry.detected_disease && (
+                            <Text style={[styles.timelineDisease, { color: tc.text }]}>{entry.detected_disease}</Text>
+                          )}
+                          <View style={styles.timelineBadges}>
+                            <View
+                              style={[
+                                styles.severityChip,
+                                { backgroundColor: getSeverityColor(entry.severity_score) },
+                              ]}
+                            >
+                              <Text style={styles.severityChipText}>{getSeverityLabel(entry.severity)}</Text>
+                            </View>
+                            {entry.weather_humidity != null && (
+                              <View style={[styles.weatherBadge, { backgroundColor: tc.screenSecondary }]}>
+                                <Droplets size={14} color={colors.info} />
+                                <Text style={[styles.weatherText, { color: tc.text }]}>
+                                  {entry.weather_humidity}%
+                                </Text>
+                              </View>
+                            )}
+                            {entry.weather_temp != null && (
+                              <View style={[styles.weatherBadge, { backgroundColor: tc.screenSecondary }]}>
+                                <Sun size={14} color={colors.warning} />
+                                <Text style={[styles.weatherText, { color: tc.text }]}>{entry.weather_temp}°C</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
               </View>
-            </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
 
@@ -1397,130 +1066,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: typography.fontWeight.medium as any,
   },
-  chartTabsContainer: {
-    paddingHorizontal: spacing.base,
-    marginBottom: spacing.lg,
-  },
-  chartTabs: {
-    flexDirection: 'row',
-  },
-  chartTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bg.primary,
-    marginRight: spacing.md,
-    ...shadows.md,
-    borderWidth: 1,
-    borderColor: colors.border.light,
-  },
-  chartTabActive: {
-    backgroundColor: colors.primaryBg,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  chartTabText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.text.secondary,
-  },
-  chartTabTextActive: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  chartsSection: {
-    paddingHorizontal: spacing.base,
-    marginBottom: spacing.xl,
-  },
-  chartCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    ...shadows.lg,
-    borderWidth: 1,
-    borderColor: colors.border.light,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.base,
-  },
-  chartTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.text.primary,
-  },
-  chartSubtitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium as any,
-    color: colors.text.secondary,
-    marginTop: spacing.base,
-    marginBottom: spacing.sm,
-  },
-  chart: {
-    marginVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-  },
-  weatherLegend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.lg,
-    marginTop: spacing.sm,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
-  },
-  severityBarContainer: {
-    marginTop: spacing.base,
-  },
-  severityBreakdownList: {
-    marginTop: spacing.base,
-    paddingTop: spacing.base,
-    borderTopWidth: 1,
-    borderTopColor: colors.border.light,
-  },
-  severityBreakdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-  },
-  severityBreakdownDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  severityBreakdownLabel: {
-    flex: 1,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium as any,
-    color: colors.text.primary,
-  },
-  severityBreakdownCount: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
-  },
-  severityBreakdownEmpty: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text.tertiary,
-    fontStyle: 'italic',
-    paddingVertical: spacing.sm,
-  },
   predictionCard: {
     marginTop: spacing.base,
     padding: spacing.md,
@@ -1622,10 +1167,47 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold as any,
     color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  timelineHint: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.secondary,
     marginBottom: spacing.lg,
+    lineHeight: 20,
+  },
+  timelineMonthBlock: {
+    marginBottom: spacing.md,
+  },
+  timelineMonthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    ...shadows.md,
+    marginBottom: spacing.xs,
+  },
+  timelineMonthHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  timelineMonthTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.semibold as any,
+    color: colors.text.primary,
+  },
+  timelineMonthSubtitle: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.secondary,
+    marginTop: 2,
   },
   timelineItem: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+    marginLeft: spacing.xs,
   },
   timelineCard: {
     flexDirection: 'row',
@@ -1980,17 +1562,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
     fontStyle: 'italic',
-  },
-  chartDesc: {
-    fontSize: typography.fontSize.sm,
-    marginBottom: spacing.md,
-    marginLeft: spacing.xs,
-  },
-  chartLegendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.lg,
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
   },
 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator, ImageBackground } from 'react-native';
-import { Camera, Shield, Calendar, MapPin, MessageCircle, Sun, Droplets, Wind, BarChart3, Sparkles } from 'lucide-react-native';
+import { Camera, Shield, Calendar, MapPin, MessageCircle, Sun, Droplets, Wind, Sparkles } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -142,11 +142,10 @@ export default function FarmerHomeScreen() {
 
   const quickActions = [
     { title: translate('scanCrop', language), icon: Camera, color: '#22C55E', route: '/disease-detection' },
-    { title: 'Smart TimeLapse', icon: Sparkles, color: '#FFD700', route: '/timelapse-upload' },
-    { title: 'Cure Guidance', icon: Shield, color: '#3B82F6', route: '/cure-guidance-history' },
+    { title: translate('smartTimelapse', language), icon: Sparkles, color: '#FFD700', route: '/timelapse-upload' },
+    { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6', route: '/cure-guidance-history' },
     { title: translate('farmingSchedule', language), icon: Calendar, color: '#F59E0B', route: '/schedule' },
     { title: translate('diseaseHeatmap', language), icon: MapPin, color: '#EF4444', route: '/heatmap' },
-    { title: translate('yieldEstimate', language), icon: BarChart3, color: '#10B981', route: '/yield-estimation' },
     { title: translate('chatbot', language), icon: MessageCircle, color: '#8B5CF6', route: '/chatbot' },
   ];
 
@@ -161,8 +160,8 @@ export default function FarmerHomeScreen() {
         <View style={styles.headerContent}>
           <View style={styles.greetingSection}>
             <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.userName}>{user?.name || 'Farmer'}</Text>
-            <Text style={styles.headerSubtext}>Welcome back to your farm</Text>
+            <Text style={styles.userName}>{user?.name || translate('defaultFarmerName', language)}</Text>
+            <Text style={styles.headerSubtext}>{translate('welcomeBackFarm', language)}</Text>
           </View>
           <View
             style={[
@@ -179,7 +178,7 @@ export default function FarmerHomeScreen() {
               {todayWeather ? `${todayWeather.temp}°C` : '--°C'}
             </Text>
             <Text style={[styles.weatherDesc, { color: tc.textMuted }]}>
-              {todayWeather ? todayWeather.description : 'Loading...'}
+              {todayWeather ? todayWeather.description : translate('loading', language)}
             </Text>
             <View style={styles.weatherDetails}>
               <View style={styles.weatherItem}>
@@ -201,7 +200,7 @@ export default function FarmerHomeScreen() {
 
       {/* Quick Actions */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: tc.text }]}>Quick Actions</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('quickActions', language)}</Text>
         <View style={styles.actionsGrid}>
           {quickActions.map((action, index) => {
             const IconComponent = action.icon;
@@ -231,7 +230,9 @@ export default function FarmerHomeScreen() {
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#22C55E" />
-              <Text style={[styles.loadingText, { color: tc.textMuted }]}>Loading statistics...</Text>
+              <Text style={[styles.loadingText, { color: tc.textMuted }]}>
+                {translate('loadingStatistics', language)}
+              </Text>
             </View>
           ) : (
             <CropHealthPieSummary
@@ -259,9 +260,9 @@ export default function FarmerHomeScreen() {
         <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('diseaseIncidence', language)}</Text>
         <View style={styles.diseaseGrid}>
           {[
-            { crop: 'Wheat', count: diseaseData.wheat, color: '#F59E0B', icon: '🌾' },
-            { crop: 'Rice', count: diseaseData.rice, color: '#10B981', icon: '🍚' },
-            { crop: 'Cotton', count: diseaseData.cotton, color: '#8B5CF6', icon: '☁️' },
+            { crop: translate('cropWheat', language), count: diseaseData.wheat, color: '#F59E0B', icon: '🌾' },
+            { crop: translate('cropRice', language), count: diseaseData.rice, color: '#10B981', icon: '🍚' },
+            { crop: translate('cropCotton', language), count: diseaseData.cotton, color: '#8B5CF6', icon: '☁️' },
           ].map((item, index) => (
             <View key={index} style={[styles.diseaseCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={[styles.diseaseIconBg, { backgroundColor: item.color + '20' }]}>
@@ -269,7 +270,7 @@ export default function FarmerHomeScreen() {
               </View>
               <Text style={[styles.diseaseCrop, { color: tc.text }]}>{item.crop}</Text>
               <Text style={[styles.diseaseCount, { color: item.color }]}>{item.count}</Text>
-              <Text style={[styles.diseaseLabel, { color: tc.textMuted }]}>Cases</Text>
+              <Text style={[styles.diseaseLabel, { color: tc.textMuted }]}>{translate('casesLabel', language)}</Text>
               {item.count > 0 && (
                 <View style={[styles.diseaseBar, { backgroundColor: item.color }]}>
                   <View style={[styles.diseaseBarFill, { width: `${Math.min((item.count / 20) * 100, 100)}%` }]} />
@@ -282,7 +283,7 @@ export default function FarmerHomeScreen() {
 
       {/* Farm Statistics */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: tc.text }]}>Farm Overview</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('farmOverview', language)}</Text>
         <View style={styles.statsGrid}>
           {[
             {
@@ -290,28 +291,28 @@ export default function FarmerHomeScreen() {
                 farmOverview?.acresFarmed != null
                   ? String(farmOverview.acresFarmed)
                   : '—',
-              l: 'Acres',
+              l: translate('statAcres', language),
             },
             {
               v:
                 farmOverview?.cropTypesCount != null
                   ? String(farmOverview.cropTypesCount)
                   : '—',
-              l: 'Crops',
+              l: translate('statCrops', language),
             },
             {
               v:
                 farmOverview?.healthScorePercent != null
                   ? `${Math.round(farmOverview.healthScorePercent)}%`
                   : '—',
-              l: 'Health Score',
+              l: translate('statHealthScore', language),
             },
             {
               v:
                 farmOverview?.monthlyRevenue != null
                   ? `Rs ${Math.round(farmOverview.monthlyRevenue).toLocaleString()}`
                   : '—',
-              l: 'Monthly Revenue',
+              l: translate('statMonthlyRevenue', language),
             },
           ].map((s, i) => (
             <View key={i} style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border }]}>

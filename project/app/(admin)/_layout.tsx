@@ -1,9 +1,12 @@
 import { Tabs } from 'expo-router';
 import { ChartBar as BarChart3, Users, MapPin, Settings, Briefcase, Database } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useApp } from '@/contexts/AppContext';
+import { translate } from '@/utils/translations';
 
 export default function AdminTabLayout() {
   const { colors: tc } = useTheme();
+  const { language } = useApp();
 
   return (
     <Tabs
@@ -20,42 +23,42 @@ export default function AdminTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: translate('tabAdminDashboard', language),
           tabBarIcon: ({ size, color }) => <BarChart3 size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="farmers"
         options={{
-          title: 'Farmers',
+          title: translate('tabAdminFarmers', language),
           tabBarIcon: ({ size, color }) => <Users size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="reports"
         options={{
-          title: 'Reports',
+          title: translate('tabAdminReports', language),
           tabBarIcon: ({ size, color }) => <MapPin size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="subsidies"
         options={{
-          title: 'Subsidies',
+          title: translate('tabAdminSubsidies', language),
           tabBarIcon: ({ size, color }) => <Briefcase size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="data"
         options={{
-          title: 'Data',
+          title: translate('tabAdminData', language),
           tabBarIcon: ({ size, color }) => <Database size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: translate('tabAdminSettings', language),
           tabBarIcon: ({ size, color }) => <Settings size={size} color={color} />,
         }}
       />

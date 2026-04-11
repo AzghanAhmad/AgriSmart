@@ -1,7 +1,10 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CropDisease, FarmingTask, SubsidyProgram } from '@/types';
 import { useAuth } from './AuthContext';
 import { apiGet } from '@/utils/api';
+
+const LANGUAGE_STORAGE_KEY = '@agrismart_language';
 
 interface AppContextType {
   language: 'en' | 'ur';
@@ -30,8 +33,30 @@ interface AppProviderProps {
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
-  const [language, setLanguage] = useState<'en' | 'ur'>('en');
+  const [language, setLanguageState] = useState<'en' | 'ur'>('en');
   const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (!cancelled && (stored === 'en' || stored === 'ur')) {
+          setLanguageState(stored);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setLanguage = useCallback((lang: 'en' | 'ur') => {
+    setLanguageState(lang);
+    void AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, lang).catch(() => {});
+  }, []);
   const [recentDetections, setRecentDetections] = useState<CropDisease[]>([]);
   const { user } = useAuth();
 

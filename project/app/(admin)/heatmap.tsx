@@ -21,6 +21,7 @@ interface OutbreakAlertItem {
 interface HotspotData extends OutbreakAlertItem {
   cityName: string;
   cases: number;
+  sensitivityPercent: number;
   severity: 'high' | 'medium' | 'low';
 }
 
@@ -118,21 +119,35 @@ export default function AdminHeatmapScreen() {
                 console.log('Reverse geocoding failed:', e);
               }
               
-              // Get case count
               let cases = 0;
+              let sensitivityPercent = 0;
+              let severity: 'high' | 'medium' | 'low' = 'low';
               try {
                 const casesResp = await fetch(`${baseUrl}/api/admin/heatmap/alert-details/${alert.alertId}`);
                 const casesData = await casesResp.json();
-                cases = casesData.cases || 0;
+                cases = casesData.cases ?? 0;
+                sensitivityPercent =
+                  typeof casesData.sensitivityPercent === 'number'
+                    ? casesData.sensitivityPercent
+                    : Math.min(100, (cases / 10) * 100);
+                const sev = casesData.severity;
+                if (sev === 'high' || sev === 'medium' || sev === 'low') {
+                  severity = sev;
+                } else if (sensitivityPercent >= 70) {
+                  severity = 'high';
+                } else if (sensitivityPercent >= 40) {
+                  severity = 'medium';
+                }
               } catch (e) {
                 console.log('Failed to fetch case count:', e);
               }
-              
+
               return {
                 ...alert,
                 cityName,
                 cases,
-                severity: cases >= 10 ? 'high' : cases >= 5 ? 'medium' : 'low' as const,
+                sensitivityPercent,
+                severity,
               };
             })
           );
@@ -374,7 +389,7 @@ export default function AdminHeatmapScreen() {
                             longitude: hotspot.centerLng || 0,
                           }}
                           title={hotspot.diseaseName || hotspot.diseaseId || 'Disease Outbreak'}
-                          description={`${hotspot.cityName || 'Unknown'} • ${hotspot.cases || 0} cases`}
+                          description={`${hotspot.cityName || 'Unknown'} • ${Math.round(hotspot.sensitivityPercent)}%`}
                         >
                           <View style={styles.redDotMarker}>
                             <View style={[styles.redDot, { backgroundColor: '#EF4444' }]} />
@@ -454,7 +469,9 @@ export default function AdminHeatmapScreen() {
                       {hotspot.severity.toUpperCase()}
                     </Text>
                   </View>
-                  <Text style={[styles.casesText, { color: tc.textSecondary }]}>{hotspot.cases} cases</Text>
+                  <Text style={[styles.casesText, { color: tc.textSecondary }]}>
+                    {Math.round(hotspot.sensitivityPercent)}% sensitivity
+                  </Text>
                 </View>
               </View>
               
@@ -464,14 +481,14 @@ export default function AdminHeatmapScreen() {
                     style={[
                       styles.progressFill,
                       { 
-                        width: `${Math.min((hotspot.cases / Math.max(stats.totalCases, 1)) * 100, 100)}%`,
+                        width: `${Math.min(Math.max(hotspot.sensitivityPercent, 0), 100)}%`,
                         backgroundColor: getSeverityColor(hotspot.severity)
                       }
                     ]} 
                   />
                 </View>
                 <Text style={[styles.progressText, { color: tc.textMuted }]}>
-                  Cases: {hotspot.cases} • Spread: {hotspot.radiusKm}km radius
+                  Sensitivity: {Math.round(hotspot.sensitivityPercent)}% • Spread: {hotspot.radiusKm} km radius
                 </Text>
               </View>
             </TouchableOpacity>

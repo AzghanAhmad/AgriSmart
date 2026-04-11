@@ -58,9 +58,7 @@ export default function LoginScreen() {
             <Leaf color="#22C55E" size={48} />
             <Text style={styles.logoText}>AgriSmart</Text>
           </View>
-          <Text style={styles.subtitle}>
-            Smart farming for better yields
-          </Text>
+          <Text style={styles.subtitle}>{translate('loginTagline', language)}</Text>
         </View>
 
         <View style={styles.form}>
@@ -120,7 +118,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           <View style={styles.signupContainer}>
-            <Text style={styles.signupText}>Don't have an account? </Text>
+            <Text style={styles.signupText}>{translate('signupPrompt', language)}</Text>
             <TouchableOpacity onPress={navigateToSignup}>
               <Text style={styles.signupLink}>
                 {translate('signup', language)}

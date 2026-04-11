@@ -2,7 +2,7 @@
  * Help & Support Page
  * FAQ accordion, contact support form, and report a problem.
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApp } from '@/contexts/AppContext';
+import { translate } from '@/utils/translations';
 import { spacing, borderRadius, shadows } from '@/utils/designSystem';
 import { apiPost, apiPostMultipart } from '@/utils/api';
 import { useRouter } from 'expo-router';
@@ -53,43 +55,23 @@ interface FAQItem {
   answer: string;
 }
 
-const FAQ_DATA: FAQItem[] = [
-  {
-    question: 'How do I scan crops?',
-    answer:
-      'Navigate to the "Scan Crop" tab in the bottom navigation. You can either take a photo with your camera or select one from your gallery. The AI will analyze the leaf image and detect any diseases within seconds.',
-  },
-  {
-    question: 'How do I read disease results?',
-    answer:
-      'After scanning, you\'ll see the detected disease name, severity level (Low, Medium, High), confidence score, and recommended treatments. Green indicates healthy, yellow indicates caution, and red indicates high severity.',
-  },
-  {
-    question: 'How do I view my schedule?',
-    answer:
-      'Go to the "Schedule" tab in the bottom navigation. You\'ll see your personalized farming tasks organized by date. You can add new tasks, set reminders, and mark tasks as complete.',
-  },
-  {
-    question: 'How to contact support?',
-    answer:
-      'You can reach our support team through the "Contact Support" form below. Messages are delivered to our support inbox (i222667@nu.edu.pk). We typically respond within 24 hours.',
-  },
-  {
-    question: 'How does the disease heatmap work?',
-    answer:
-      'The disease heatmap shows geotagged disease reports from farmers in your area. Red zones indicate high disease concentration. This helps you take preventive measures for your crops.',
-  },
-  {
-    question: 'Can I use the app offline?',
-    answer:
-      'Some features like viewing previously scanned results and schedules work offline. However, scanning new crops and the AI assistant require an internet connection.',
-  },
-];
-
 export default function HelpSupportScreen() {
   const { colors: tc, isDark } = useTheme();
+  const { language } = useApp();
   const { user } = useAuth();
   const router = useRouter();
+
+  const FAQ_DATA = useMemo<FAQItem[]>(
+    () => [
+      { question: translate('helpFaq1Q', language), answer: translate('helpFaq1A', language) },
+      { question: translate('helpFaq2Q', language), answer: translate('helpFaq2A', language) },
+      { question: translate('helpFaq3Q', language), answer: translate('helpFaq3A', language) },
+      { question: translate('helpFaq4Q', language), answer: translate('helpFaq4A', language) },
+      { question: translate('helpFaq5Q', language), answer: translate('helpFaq5A', language) },
+      { question: translate('helpFaq6Q', language), answer: translate('helpFaq6A', language) },
+    ],
+    [language],
+  );
 
   // FAQ state
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -123,11 +105,11 @@ export default function HelpSupportScreen() {
     setContactSuccess(false);
 
     if (!contactName.trim() || !contactEmail.trim() || !contactSubject.trim() || !contactMessage.trim()) {
-      setContactError('All fields are required');
+      setContactError(translate('allFieldsRequired', language));
       return;
     }
     if (!validateEmail(contactEmail)) {
-      setContactError('Invalid email format');
+      setContactError(translate('invalidEmailFormat', language));
       return;
     }
 
@@ -145,7 +127,7 @@ export default function HelpSupportScreen() {
       setContactSubject('');
       setContactMessage('');
     } catch (e) {
-      setContactError((e as Error).message || 'Failed to send message');
+      setContactError((e as Error).message || translate('failedToSendMessage', language));
     } finally {
       setContactLoading(false);
     }
@@ -155,7 +137,7 @@ export default function HelpSupportScreen() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Photo library access is required to upload screenshots.');
+        Alert.alert(translate('permissionNeeded', language), translate('photoLibraryScreenshot', language));
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -166,7 +148,7 @@ export default function HelpSupportScreen() {
         setBugScreenshot(result.assets[0].uri);
       }
     } catch {
-      Alert.alert('Error', 'Failed to pick image');
+      Alert.alert(translate('error', language), translate('failedPickImage', language));
     }
   };
 
@@ -175,7 +157,7 @@ export default function HelpSupportScreen() {
     setBugSuccess(false);
 
     if (!bugDescription.trim()) {
-      setBugError('Please describe the problem');
+      setBugError(translate('pleaseDescribeProblem', language));
       return;
     }
 
@@ -201,7 +183,7 @@ export default function HelpSupportScreen() {
         setBugSuccess(false);
       }, 2000);
     } catch (e) {
-      setBugError((e as Error).message || 'Failed to submit report');
+      setBugError((e as Error).message || translate('failedSubmitReport', language));
     } finally {
       setBugLoading(false);
     }
@@ -225,10 +207,8 @@ export default function HelpSupportScreen() {
           </TouchableOpacity>
           <View style={styles.headerInfo}>
             <HelpCircle color="white" size={32} />
-            <Text style={styles.headerTitle}>Help & Support</Text>
-            <Text style={styles.headerSubtitle}>
-              Find answers, get help, and report issues
-            </Text>
+            <Text style={styles.headerTitle}>{translate('helpHeaderTitle', language)}</Text>
+            <Text style={styles.headerSubtitle}>{translate('helpHeaderSubtitle', language)}</Text>
           </View>
         </LinearGradient>
 
@@ -236,9 +216,7 @@ export default function HelpSupportScreen() {
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <BookOpen color={tc.primary} size={20} />
-            <Text style={[styles.sectionTitle, { color: tc.text }]}>
-              Frequently Asked Questions
-            </Text>
+            <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('helpFaqTitle', language)}</Text>
           </View>
           <View style={[styles.faqCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
             {FAQ_DATA.map((faq, index) => {
@@ -285,13 +263,13 @@ export default function HelpSupportScreen() {
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <MessageCircle color={tc.primary} size={20} />
-            <Text style={[styles.sectionTitle, { color: tc.text }]}>Contact Support</Text>
+            <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('helpContactTitle', language)}</Text>
           </View>
           <View style={[styles.formCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
             {contactSuccess && (
               <View style={styles.successBox}>
                 <CheckCircle color="#22C55E" size={18} />
-                <Text style={styles.successText}>Your message has been sent successfully.</Text>
+                <Text style={styles.successText}>{translate('helpMessageSent', language)}</Text>
               </View>
             )}
 
@@ -303,23 +281,23 @@ export default function HelpSupportScreen() {
             )}
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Name *</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('helpNameStar', language)}</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text }]}
                 value={contactName}
                 onChangeText={setContactName}
-                placeholder="Your full name"
+                placeholder={translate('helpNamePlaceholder', language)}
                 placeholderTextColor={tc.textMuted}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Email *</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('helpEmailStar', language)}</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text }]}
                 value={contactEmail}
                 onChangeText={setContactEmail}
-                placeholder="your.email@example.com"
+                placeholder={translate('helpEmailPlaceholder', language)}
                 placeholderTextColor={tc.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -327,23 +305,23 @@ export default function HelpSupportScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Subject *</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('helpSubjectStar', language)}</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text }]}
                 value={contactSubject}
                 onChangeText={setContactSubject}
-                placeholder="Brief description of your issue"
+                placeholder={translate('helpSubjectPlaceholder', language)}
                 placeholderTextColor={tc.textMuted}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Message *</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('helpMessageStar', language)}</Text>
               <TextInput
                 style={[styles.textArea, { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text }]}
                 value={contactMessage}
                 onChangeText={setContactMessage}
-                placeholder="Describe your issue in detail..."
+                placeholder={translate('helpMessagePlaceholder', language)}
                 placeholderTextColor={tc.textMuted}
                 multiline
                 numberOfLines={4}
@@ -365,7 +343,7 @@ export default function HelpSupportScreen() {
               >
                 <Send color="white" size={18} />
                 <Text style={styles.submitBtnText}>
-                  {contactLoading ? 'Sending...' : 'Send Support Request'}
+                  {contactLoading ? translate('helpSending', language) : translate('helpSendSupportRequest', language)}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -376,12 +354,10 @@ export default function HelpSupportScreen() {
         <View style={[styles.section, { marginBottom: 40 }]}>
           <View style={styles.sectionTitleRow}>
             <Bug color={tc.primary} size={20} />
-            <Text style={[styles.sectionTitle, { color: tc.text }]}>Report a Problem</Text>
+            <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('helpReportProblem', language)}</Text>
           </View>
           <View style={[styles.reportCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
-            <Text style={[styles.reportDesc, { color: tc.textSecondary }]}>
-              Found a bug or something not working correctly? Let us know and we'll fix it as soon as possible.
-            </Text>
+            <Text style={[styles.reportDesc, { color: tc.textSecondary }]}>{translate('helpReportDesc', language)}</Text>
             <TouchableOpacity
               style={styles.reportBtn}
               onPress={() => setBugModalVisible(true)}
@@ -392,7 +368,7 @@ export default function HelpSupportScreen() {
                 style={styles.reportBtnGradient}
               >
                 <Bug color="white" size={18} />
-                <Text style={styles.reportBtnText}>Report Bug</Text>
+                <Text style={styles.reportBtnText}>{translate('helpReportBugBtn', language)}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -405,7 +381,7 @@ export default function HelpSupportScreen() {
           <View style={[styles.modal, { backgroundColor: tc.card }]}>
             <View style={styles.modalHeader}>
               <Bug color="#F59E0B" size={24} />
-              <Text style={[styles.modalTitle, { color: tc.text }]}>Report a Bug</Text>
+              <Text style={[styles.modalTitle, { color: tc.text }]}>{translate('helpBugModalTitle', language)}</Text>
               <TouchableOpacity onPress={() => { setBugModalVisible(false); setBugError(''); setBugSuccess(false); }} style={styles.modalClose}>
                 <X color={tc.textMuted} size={22} />
               </TouchableOpacity>
@@ -414,7 +390,7 @@ export default function HelpSupportScreen() {
             {bugSuccess && (
               <View style={styles.successBox}>
                 <CheckCircle color="#22C55E" size={18} />
-                <Text style={styles.successText}>Bug report submitted successfully!</Text>
+                <Text style={styles.successText}>{translate('helpBugSubmitted', language)}</Text>
               </View>
             )}
 
@@ -426,12 +402,12 @@ export default function HelpSupportScreen() {
             )}
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>Description *</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('helpDescStar', language)}</Text>
               <TextInput
                 style={[styles.textArea, { backgroundColor: tc.inputBg, borderColor: tc.border, color: tc.text }]}
                 value={bugDescription}
                 onChangeText={setBugDescription}
-                placeholder="Describe the bug you encountered..."
+                placeholder={translate('helpBugPlaceholder', language)}
                 placeholderTextColor={tc.textMuted}
                 multiline
                 numberOfLines={4}
@@ -447,12 +423,14 @@ export default function HelpSupportScreen() {
               {bugScreenshot ? (
                 <View style={styles.screenshotDone}>
                   <CheckCircle color="#22C55E" size={18} />
-                  <Text style={[styles.screenshotText, { color: '#22C55E' }]}>Screenshot attached</Text>
+                  <Text style={[styles.screenshotText, { color: '#22C55E' }]}>{translate('helpScreenshotAttached', language)}</Text>
                 </View>
               ) : (
                 <View style={styles.screenshotContent}>
                   <Upload color={tc.textMuted} size={20} />
-                  <Text style={[styles.screenshotText, { color: tc.textMuted }]}>Upload Screenshot (optional)</Text>
+                  <Text style={[styles.screenshotText, { color: tc.textMuted }]}>
+                    {translate('helpUploadScreenshotOptional', language)}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -462,7 +440,7 @@ export default function HelpSupportScreen() {
                 style={[styles.modalBtnCancel, { borderColor: tc.border }]}
                 onPress={() => { setBugModalVisible(false); setBugError(''); setBugSuccess(false); }}
               >
-                <Text style={[styles.modalBtnCancelText, { color: tc.textSecondary }]}>Cancel</Text>
+                <Text style={[styles.modalBtnCancelText, { color: tc.textSecondary }]}>{translate('cancel', language)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalBtnSubmit, bugLoading && { opacity: 0.7 }]}
@@ -472,7 +450,7 @@ export default function HelpSupportScreen() {
               >
                 <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.modalBtnGradient}>
                   <Text style={styles.modalBtnSubmitText}>
-                    {bugLoading ? 'Submitting…' : 'Submit Report'}
+                    {bugLoading ? translate('helpSubmitting', language) : translate('helpSubmitReport', language)}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>

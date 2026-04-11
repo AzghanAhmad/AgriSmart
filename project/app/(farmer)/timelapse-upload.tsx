@@ -21,6 +21,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Camera, Image as ImageIcon, Upload, X, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 // Use React Native's built-in Animated for Expo Go compatibility
 import { Animated as RNAnimated } from 'react-native';
@@ -66,10 +67,58 @@ interface Crop {
 /** One selected image; date is set by the user 1 by 1 after picking */
 export interface SelectedImageItem {
   uri: string;
+  /** From picker/camera; used for multipart `type` */
+  mimeType?: string | null;
   /** Unix timestamp (ms); null until user sets date for this image */
   createdAt: number | null;
   /** Display string e.g. "Jan 2025"; null until user sets date */
   monthYear: string | null;
+}
+
+const STAGING_PREFIX = 'timelapse_staging_';
+
+/**
+ * RN `fetch`/`FormData` on Android often fails with "Network request failed" for
+ * `content://` URIs, scoped storage paths, or paths outside the app sandbox.
+ * Stage every local image into `cacheDirectory` before multipart upload.
+ */
+async function prepareLocalUriForMultipartUpload(
+  uri: string,
+  index: number,
+): Promise<{ localUri: string; tempPath?: string }> {
+  if (Platform.OS === 'web') return { localUri: uri };
+
+  const baseCache = FileSystem.cacheDirectory;
+  if (!baseCache) return { localUri: uri };
+
+  if (/^https?:\/\//i.test(uri)) return { localUri: uri };
+
+  const alreadyStaged = uri.includes(STAGING_PREFIX);
+  if (alreadyStaged) {
+    return { localUri: uri };
+  }
+
+  const extGuess =
+    uri.toLowerCase().includes('.png') || uri.includes('image%2Fpng') ? 'png' : 'jpg';
+  const dest = `${baseCache}${STAGING_PREFIX}${index}_${Date.now()}.${extGuess}`;
+
+  await FileSystem.copyAsync({ from: uri, to: dest });
+  return { localUri: dest, tempPath: dest };
+}
+
+/** Read local (or web blob) image as raw base64 for JSON upload — avoids RN multipart bugs. */
+async function readImageAsBase64(localUri: string): Promise<string> {
+  if (Platform.OS === 'web') {
+    const res = await fetch(localUri);
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+    return btoa(binary);
+  }
+  return FileSystem.readAsStringAsync(localUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 }
 
 const ORDINALS = ['1st', '2nd', '3rd'];
@@ -244,6 +293,7 @@ export default function TimeLapseUploadScreen() {
       if (photo?.uri) {
         const newItem: SelectedImageItem = {
           uri: photo.uri,
+          mimeType: 'image/jpeg',
           createdAt: null,
           monthYear: null,
         };
@@ -263,7 +313,7 @@ export default function TimeLapseUploadScreen() {
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsMultipleSelection: true,
         quality: 0.8,
         selectionLimit: 3 - selectedImages.length,
@@ -272,6 +322,7 @@ export default function TimeLapseUploadScreen() {
       if (!result.canceled && result.assets) {
         const newItems: SelectedImageItem[] = result.assets.map((asset) => ({
           uri: asset.uri,
+          mimeType: asset.mimeType ?? null,
           createdAt: null,
           monthYear: null,
         }));
@@ -339,37 +390,42 @@ export default function TimeLapseUploadScreen() {
     setUploading(true);
     uploadProgress.value = 0;
 
+    const copiedTempFiles: string[] = [];
+
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (!token) {
         throw new Error('Please login again');
       }
 
-      const formData = new FormData();
+      // JSON + base64: RN multipart (fetch/axios/XHR) often fails with "Network Error" while GET works.
+      const imagesPayload: { data: string; date: string }[] = [];
+      for (let index = 0; index < selectedImages.length; index++) {
+        const item = selectedImages[index];
+        let localUri = item.uri;
+        try {
+          const prepared = await prepareLocalUriForMultipartUpload(item.uri, index);
+          localUri = prepared.localUri;
+          if (prepared.tempPath) copiedTempFiles.push(prepared.tempPath);
+        } catch (e: any) {
+          throw new Error(
+            `Could not read image ${index + 1} for upload (${e?.message || 'copy failed'}). Try Take Photo or re-pick from gallery.`,
+          );
+        }
 
-      // Add photos and per-image capture dates (user-set 1 by 1)
-      selectedImages.forEach((item, index) => {
-        const uri = item.uri;
-        const filename = uri.split('/').pop() || `photo_${index}.jpg`;
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : 'image/jpeg';
-
-        formData.append('files[]', {
-          uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
-          name: filename,
-          type: type,
-        } as any);
+        const dataB64 = await readImageAsBase64(localUri);
         const d = new Date(item.createdAt!);
         const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        formData.append('dates[]', dateStr);
-      });
-
-      formData.append('crop_id', selectedCrop.id.toString());
-      if (notes.trim()) {
-        formData.append('notes', notes.trim());
+        imagesPayload.push({ data: dataB64, date: dateStr });
       }
 
-      console.log('📤 Uploading:', {
+      const body = {
+        crop_id: selectedCrop.id,
+        notes: notes.trim() || undefined,
+        images: imagesPayload,
+      };
+
+      console.log('📤 Uploading (JSON/base64):', {
         crop_id: selectedCrop.id,
         imageCount: selectedImages.length,
         hasNotes: !!notes.trim(),
@@ -377,34 +433,48 @@ export default function TimeLapseUploadScreen() {
 
       uploadProgress.value = withTiming(0.3, { duration: 500 });
 
-      const response = await fetch(`${getApiBaseUrl()}/api/timelapse/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
-          // DO NOT set Content-Type - FormData sets it automatically with boundary
-        },
-        body: formData,
-      });
+      const uploadUrl = `${getApiBaseUrl()}/api/timelapse/upload`;
+      const controller = new AbortController();
+      const uploadTimeoutMs = 240_000;
+      const timeoutId = setTimeout(() => controller.abort(), uploadTimeoutMs);
 
-      uploadProgress.value = withTiming(0.7, { duration: 500 });
+      let data: any;
+      try {
+        const response = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        uploadProgress.value = withTiming(0.7, { duration: 500 });
 
-      const responseText = await response.text();
-      console.log('📥 Response status:', response.status);
-      console.log('📥 Response:', responseText.substring(0, 200));
+        const responseText = await response.text();
+        console.log('📥 Response status:', response.status);
 
-      if (!response.ok) {
-        let errorMessage = 'Upload failed';
-        try {
-          const errorData = JSON.parse(responseText);
-          errorMessage = errorData.error || errorMessage;
-        } catch {
-          errorMessage = responseText || errorMessage;
+        if (!response.ok) {
+          let errorMessage = 'Upload failed';
+          try {
+            const errJson = JSON.parse(responseText);
+            errorMessage = errJson.error || errorMessage;
+          } catch {
+            errorMessage = responseText || errorMessage;
+          }
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
-      }
 
-      const data = JSON.parse(responseText);
+        data = JSON.parse(responseText);
+      } catch (e: any) {
+        clearTimeout(timeoutId);
+        if (e?.name === 'AbortError') {
+          throw new Error(`Upload timed out after ${uploadTimeoutMs / 1000}s`);
+        }
+        throw e;
+      }
       uploadProgress.value = withTiming(1, { duration: 300 });
 
       console.log('✅ Upload success:', data);
@@ -428,17 +498,24 @@ export default function TimeLapseUploadScreen() {
       setNotes('');
       setDetectionResult(null);
       successScale.value = 0;
-      router.push(`/(farmer)/timelapse-view?cropId=${selectedCrop.id}`);
+      router.replace(`/(farmer)/timelapse-view?cropId=${selectedCrop.id}`);
 
     } catch (error: any) {
-      console.error('❌ Upload error:', error);
-      console.error('Error details:', error.message, error.stack);
+      const msg = error?.message || String(error);
+      console.warn('❌ Upload error:', msg);
+      const networkish =
+        /network|failed to fetch|abort/i.test(msg) || msg.includes('Network request failed');
       Alert.alert(
         'Upload Failed',
-        error.message || 'Please check your connection and try again',
+        networkish
+          ? 'Could not reach the server for this upload. Confirm the backend is running and EXPO_PUBLIC_API_BASE_URL is a reachable IP (same Wi‑Fi as the PC for a physical phone).'
+          : msg || 'Please check your connection and try again',
         [{ text: 'OK' }]
       );
     } finally {
+      for (const p of copiedTempFiles) {
+        FileSystem.deleteAsync(p, { idempotent: true }).catch(() => {});
+      }
       setUploading(false);
       uploadProgress.value = 0;
     }
@@ -639,7 +716,7 @@ export default function TimeLapseUploadScreen() {
                   disabled={selectedImages.length >= 3}
                 >
                   <LinearGradient
-                    colors={[colors.info, '#1976D2']}
+                    colors={[colors.primary, colors.primaryDark]}
                     style={styles.actionButtonGradient}
                   >
                     <ImageIcon size={24} color="white" />
