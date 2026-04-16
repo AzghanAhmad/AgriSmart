@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, send_file
+from flask import Flask, request, jsonify, Response, send_file, make_response
 from flask_cors import CORS
 from werkzeug.utils import safe_join
 from PIL import Image
@@ -301,22 +301,32 @@ def serve_static(filename):
         # Get file size for logging
         file_size = os.path.getsize(file_path)
         
-        # Use Flask's send_file which handles everything properly for React Native
-        # This is more reliable than chunked responses for mobile apps
-        response = send_file(
-            file_path,
-            mimetype=None,  # Flask will auto-detect MIME type
-            as_attachment=False,
-            download_name=os.path.basename(filename)
-        )
+        # Determine MIME type
+        mime_type = 'application/octet-stream'
+        if filename.lower().endswith(('.jpg', '.jpeg')):
+            mime_type = 'image/jpeg'
+        elif filename.lower().endswith('.png'):
+            mime_type = 'image/png'
+        elif filename.lower().endswith('.gif'):
+            mime_type = 'image/gif'
+        elif filename.lower().endswith('.webp'):
+            mime_type = 'image/webp'
         
-        # Add CORS headers explicitly
+        # Read file into memory for React Native compatibility (prevents "unexpected end of stream")
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+        
+        # Create response with file data
+        response = make_response(file_data)
+        response.headers['Content-Type'] = mime_type
+        response.headers['Content-Length'] = str(file_size)
         response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        response.headers['Accept-Ranges'] = 'bytes'
         
-        print(f"📤 Serving static file: {filename} ({file_size} bytes)")
+        print(f"📤 Serving static file: {filename} ({file_size} bytes, {mime_type})")
         return response
         
     except Exception as e:
