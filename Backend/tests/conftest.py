@@ -50,3 +50,23 @@ def client():
     return app.test_client()
 
 
+@pytest.fixture()
+def auth_token(client) -> str:
+    """
+    Returns a valid Bearer token for routes that require authentication.
+    Creates the user if needed, then logs in.
+    """
+    # signup (allow 201 created or 409 conflict if already exists)
+    r = client.post(
+        "/api/auth/signup",
+        json={"name": "Py Tester", "email": "py@test.com", "password": "pass123"},
+    )
+    assert r.status_code in (201, 409)
+
+    r = client.post("/api/auth/login", json={"email": "py@test.com", "password": "pass123"})
+    assert r.status_code == 200
+    token = r.get_json()["token"]
+    assert isinstance(token, str) and token
+    return token
+
+

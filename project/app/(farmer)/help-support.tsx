@@ -19,7 +19,7 @@ import {
   UIManager,
 } from 'react-native';
 import {
-  HelpCircle,
+  CircleHelp as HelpCircle,
   ChevronDown,
   ChevronUp,
   Send,
@@ -31,8 +31,8 @@ import {
   BookOpen,
   Camera,
   Leaf,
-  CheckCircle,
-  AlertCircle,
+  CircleCheck as CheckCircle,
+  CircleAlert as AlertCircle,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';

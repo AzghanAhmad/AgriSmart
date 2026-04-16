@@ -19,7 +19,7 @@ import {
   Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Camera, Image as ImageIcon, Upload, X, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Upload, X, Sparkles, CircleCheckBig, CircleAlert as AlertCircle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -514,7 +514,7 @@ export default function TimeLapseUploadScreen() {
       Alert.alert(
         'Upload Failed',
         networkish
-          ? 'Could not reach the server for this upload. Confirm the backend is running and EXPO_PUBLIC_API_BASE_URL is a reachable IP (same Wi‑Fi as the PC for a physical phone).'
+          ? 'Could not reach the server for this upload. Confirm the backend is running and DEV_BACKEND_BASE_URL in project/utils/env.ts matches your PC IP (same Wi‑Fi as the phone).'
           : msg || 'Please check your connection and try again',
         [{ text: 'OK' }]
       );
@@ -808,7 +808,7 @@ export default function TimeLapseUploadScreen() {
                 colors={[colors.primary, colors.primaryDark]}
                 style={styles.detectionGradient}
               >
-                <CheckCircle2 size={32} color="white" />
+                <CircleCheckBig size={32} color="white" />
                 <Text style={styles.detectionTitle}>AI Detection Complete!</Text>
                 <Text style={styles.detectionDisease}>
                   {detectionResult.disease}

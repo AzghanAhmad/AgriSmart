@@ -7,36 +7,24 @@
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
-<<<<<<< HEAD
-      <change beforePath="$PROJECT_DIR$/Backend/routes/farmer.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/farmer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/timelapse.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/timelapse.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/heatmap.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/heatmap.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/settings.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/settings.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/agrismart.db" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/agrismart.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/chatbot/.env.example" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/chatbot/chatbot.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/chatbot/chatbot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/tests/test_routes.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/disease-detection.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/disease-detection.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/heatmap.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/heatmap.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/help-support.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/help-support.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/privacy-settings.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/privacy-settings.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/app/(farmer)/profile.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/profile.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-view.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-view.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/auth/signup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/auth/signup.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/contexts/AppContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AppContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
-=======
-      <change beforePath="$PROJECT_DIR$/Backend/chatbot/chroma_db/chroma.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/chatbot/chroma_db/chroma.sqlite3" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/chatbot.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/chatbot.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/_layout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/components/Toast.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/components/Toast.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package-lock.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package.json" afterDir="false" />
->>>>>>> f36a323 (Urdu voice issue resolved.)
+      <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/translations.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/translations.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -71,7 +59,7 @@
     &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;azghan&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
   }
 }</component>

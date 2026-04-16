@@ -12,9 +12,9 @@ import {
   Dimensions,
 } from 'react-native';
 import {
-  CheckCircle,
-  AlertCircle,
-  AlertTriangle,
+  CircleCheck as CheckCircle,
+  CircleAlert as AlertCircle,
+  TriangleAlert as AlertTriangle,
   Info,
   X,
   RefreshCw,

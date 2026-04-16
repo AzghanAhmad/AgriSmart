@@ -1,12 +1,12 @@
 import { Tabs } from 'expo-router';
 import { View, StyleSheet, Platform } from 'react-native';
 import {
-  Home,
+  House as Home,
   ScanLine,
   CalendarCheck,
   MapPin,
   MessageSquare,
-  UserCircle,
+  CircleUser,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
@@ -109,7 +109,7 @@ export default function FarmerTabLayout() {
           title: translate('tabProfile', language),
           tabBarIcon: ({ size, color, focused }) => (
             <View style={focused ? styles.activeIconBg : undefined}>
-              <UserCircle size={22} color={color} />
+              <CircleUser size={22} color={color} />
             </View>
           ),
         }}

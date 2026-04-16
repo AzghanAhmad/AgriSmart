@@ -23,19 +23,19 @@ import {
   TrendingDown,
   Sun,
   Droplets,
-  AlertCircle,
+  CircleAlert as AlertCircle,
   Sparkles,
   ArrowLeft,
   Camera,
-  BarChart3,
-  LineChart as LineChartIcon,
+  ChartBar as BarChart3,
+  ChartLine as LineChartIcon,
   Activity,
   Thermometer,
   ArrowRight,
   ChevronDown,
   GitCompare,
   Award,
-  AlertTriangle,
+  TriangleAlert as AlertTriangle,
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { getApiBaseUrl } from '@/utils/env';

@@ -13,7 +13,7 @@ import {
   ImageBackground,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { User, Mail, Phone, MapPin, Globe, Moon, Bell, Shield, LogOut, Camera, HelpCircle } from 'lucide-react-native';
+import { User, Mail, Phone, MapPin, Globe, Moon, Bell, Shield, LogOut, Camera, CircleHelp } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -367,7 +367,7 @@ export default function ProfileScreen() {
             onPress: () => router.push('/(farmer)/privacy-settings' as any),
           },
           {
-            icon: HelpCircle,
+            icon: CircleHelp,
             label: translate('helpSupportNav', language),
             onPress: () => router.push('/(farmer)/help-support' as any),
           },

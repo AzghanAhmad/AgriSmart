@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import {
   Shield,
-  BarChart3,
+  ChartBar as BarChart3,
   Lock,
   LogOut,
   Download,
@@ -25,7 +25,7 @@ import {
   Eye,
   EyeOff,
   ArrowLeft,
-  AlertTriangle,
+  TriangleAlert as AlertTriangle,
   ChevronRight,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
