@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContextType, User, SignupData } from '@/types';
-import { apiGet } from '@/utils/api';
-import { apiPost } from '@/utils/api';
+import { apiGet, apiPost, apiPut, apiDelete, apiUploadProfilePhoto } from '@/utils/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -36,9 +35,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const me = await apiGet<User>('/api/auth/me');
           setUser(me);
           await AsyncStorage.setItem('user', JSON.stringify(me));
-        } catch (e: any) {
-          // Token is invalid or expired - clear it and require re-login
-          console.log('🔐 Token invalid or expired, clearing auth data');
+        } catch {
+          // Token is invalid or expired — expected after idle time; clear and show login (no noisy logs)
           await AsyncStorage.removeItem('user');
           await AsyncStorage.removeItem('authToken');
           setUser(null);
@@ -149,6 +147,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async (): Promise<void> => {
     try {
+      const uid = user?.id;
+      if (uid) {
+        await AsyncStorage.removeItem(`agri_chatbot_conversation_${uid}`);
+      }
       await AsyncStorage.removeItem('user');
       await AsyncStorage.removeItem('authToken');
       setUser(null);
@@ -157,13 +159,72 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const updateProfile = async (data: {
+    name: string;
+    phone?: string;
+    location?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    farmAcres?: number | null;
+    farmCropTypes?: number | null;
+    farmHealthScore?: number | null;
+    farmMonthlyRevenue?: number | null;
+  }): Promise<void> => {
+    const body: Record<string, unknown> = {
+      name: data.name.trim(),
+      phone: (data.phone || '').trim() || undefined,
+      location: (data.location || '').trim() || undefined,
+    };
+    if (data.latitude !== undefined) body.latitude = data.latitude;
+    if (data.longitude !== undefined) body.longitude = data.longitude;
+    if (data.farmAcres !== undefined) body.farmAcres = data.farmAcres;
+    if (data.farmCropTypes !== undefined) body.farmCropTypes = data.farmCropTypes;
+    if (data.farmHealthScore !== undefined) body.farmHealthScore = data.farmHealthScore;
+    if (data.farmMonthlyRevenue !== undefined) body.farmMonthlyRevenue = data.farmMonthlyRevenue;
+    const updated = await apiPut<User>('/api/auth/profile', body);
+    setUser(updated);
+    await AsyncStorage.setItem('user', JSON.stringify(updated));
+  };
+
+  const uploadProfileImage = async (localUri: string): Promise<void> => {
+    const updated = await apiUploadProfilePhoto(localUri);
+    setUser(updated as User);
+    await AsyncStorage.setItem('user', JSON.stringify(updated));
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+    await apiPost('/api/auth/change-password', { currentPassword, newPassword });
+  };
+
+  const logoutAllDevices = async (): Promise<void> => {
+    await apiPost('/api/auth/logout-all');
+    await logout();
+  };
+
+  const deleteAccount = async (): Promise<void> => {
+    await apiDelete('/api/auth/account');
+    await logout();
+  };
+
+  const refreshUser = async (): Promise<void> => {
+    const me = await apiGet<User>('/api/auth/me');
+    setUser(me);
+    await AsyncStorage.setItem('user', JSON.stringify(me));
+  };
+
   const value: AuthContextType = {
     user,
     isLoading,
     isAuthenticated: !!user,
     login,
     signup,
-    logout
+    logout,
+    updateProfile,
+    uploadProfileImage,
+    changePassword,
+    logoutAllDevices,
+    deleteAccount,
+    refreshUser,
   };
 
   return (

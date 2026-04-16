@@ -7,6 +7,7 @@ import os
 import uuid
 import datetime
 import io
+import base64
 import numpy as np
 from flask import Blueprint, request, jsonify, current_app
 from PIL import Image
@@ -44,19 +45,16 @@ TREATMENT_SUGGESTIONS = {
 def get_user_from_token():
     """
     Extract user_id from JWT token in Authorization header.
-    Returns user_id or None if invalid/missing.
+    Returns user_id or None if invalid/missing or session revoked (logout-all).
     """
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Bearer '):
-        return None
-    
-    token = auth_header.replace('Bearer ', '')
     try:
-        from routes.auth import _decode_token
-        payload = _decode_token(token)
-        return payload.get('uid')
-    except Exception:
+        from ..routes.auth import get_auth_user
+    except ImportError:
+        from routes.auth import get_auth_user
+    user, err = get_auth_user()
+    if err or not user:
         return None
+    return user.user_id
 
 def fetch_weather_data(latitude: float, longitude: float) -> dict:
     """
@@ -224,7 +222,10 @@ def highlight_disease_spots(image_bytes: bytes, detection_results: dict) -> byte
 def upload_timelapse():
     """
     Upload timelapse photo(s) with AI disease detection and weather integration.
-    Accepts: multipart/form-data with 'file' (or 'files[]' for multiple), 'crop_id', 'notes'
+    Accepts:
+      - application/json: { crop_id, notes?, images: [{ data: base64, date: YYYY-MM-DD }, ...] }
+        (used by React Native — avoids multipart bugs that cause "Network Error".)
+      - multipart/form-data: files[] / file, dates[], crop_id, notes
     Returns: JSON with detection results and created entries
     """
     try:
@@ -235,12 +236,71 @@ def upload_timelapse():
         if not user_id:
             return jsonify({'error': 'Authentication required'}), 401
         
-        # Get form data
-        crop_id = request.form.get('crop_id')
-        notes = request.form.get('notes', '').strip()
-        
-        if not crop_id:
-            return jsonify({'error': 'Missing crop_id'}), 400
+        items = []  # { 'bytes': bytes, 'filename': str, 'date': str | None }
+        ct = (request.content_type or '').lower()
+
+        if 'application/json' in ct:
+            payload = request.get_json(silent=True) or {}
+            crop_id = str(payload.get('crop_id') or '').strip()
+            notes = (payload.get('notes') or '').strip()
+            if not crop_id:
+                return jsonify({'error': 'Missing crop_id'}), 400
+            for i, im in enumerate((payload.get('images') or [])[:3]):
+                if not isinstance(im, dict):
+                    continue
+                data_b64 = im.get('data') or im.get('base64') or ''
+                if not isinstance(data_b64, str) or not data_b64.strip():
+                    return jsonify({'error': f'Missing image data for image {i + 1}'}), 400
+                if 'base64,' in data_b64:
+                    data_b64 = data_b64.split('base64,', 1)[1]
+                data_b64 = data_b64.strip().replace('\n', '').replace('\r', '')
+                try:
+                    raw = base64.b64decode(data_b64, validate=False)
+                except Exception:
+                    return jsonify({'error': f'Invalid base64 for image {i + 1}'}), 400
+                if len(raw) > 5 * 1024 * 1024:
+                    return jsonify({'error': f'Image {i + 1} exceeds 5 MB decoded size'}), 400
+                date_part = (im.get('date') or '').strip() or None
+                items.append({
+                    'bytes': raw,
+                    'filename': (im.get('filename') or f'upload_{i}.jpg'),
+                    'date': date_part,
+                })
+            if not items:
+                return jsonify({'error': 'No images provided'}), 400
+            print(f"📥 JSON upload: {len(items)} image(s), crop_id={crop_id}")
+        else:
+            crop_id = request.form.get('crop_id')
+            notes = request.form.get('notes', '').strip()
+            if not crop_id:
+                return jsonify({'error': 'Missing crop_id'}), 400
+            files = []
+            if 'file' in request.files:
+                files.append(request.files['file'])
+            elif 'files[]' in request.files:
+                files = request.files.getlist('files[]')
+            else:
+                return jsonify({'error': 'No file provided'}), 400
+            dates_raw = request.form.getlist('dates[]')
+            files = files[:3]
+            for i, file in enumerate(files):
+                if not file or file.filename == '':
+                    continue
+                file.seek(0, os.SEEK_END)
+                file_size = file.tell()
+                file.seek(0)
+                if file_size > 5 * 1024 * 1024:
+                    return jsonify({'error': f'File {file.filename} exceeds 5MB limit'}), 400
+                date_part = None
+                if i < len(dates_raw) and dates_raw[i]:
+                    date_part = (dates_raw[i] or '').strip()
+                items.append({
+                    'bytes': file.read(),
+                    'filename': file.filename,
+                    'date': date_part,
+                })
+            if not items:
+                return jsonify({'error': 'No file provided'}), 400
         
         db = SessionLocal()
         try:
@@ -264,34 +324,14 @@ def upload_timelapse():
                 latitude = 33.6844  # Islamabad, Pakistan
                 longitude = 73.0479
             
-            # Handle single or multiple files
-            files = []
-            if 'file' in request.files:
-                files.append(request.files['file'])
-            elif 'files[]' in request.files:
-                files = request.files.getlist('files[]')
-            else:
-                return jsonify({'error': 'No file provided'}), 400
-            
-            # Limit to 3 files max
-            files = files[:3]
-            
             created_entries = []
             detection_summary = None
             
-            for file in files:
-                if not file or file.filename == '':
-                    continue
-                
-                # Validate file size (5MB max)
-                file.seek(0, os.SEEK_END)
-                file_size = file.tell()
-                file.seek(0)
-                if file_size > 5 * 1024 * 1024:
-                    return jsonify({'error': f'File {file.filename} exceeds 5MB limit'}), 400
-                
-                # Read image bytes
-                image_bytes = file.read()
+            for file_index, item in enumerate(items):
+                image_bytes = item['bytes']
+                fname = item['filename']
+                if len(image_bytes) > 5 * 1024 * 1024:
+                    return jsonify({'error': f'File {fname} exceeds 5MB limit'}), 400
                 
                 # Validate image format
                 try:
@@ -376,10 +416,29 @@ def upload_timelapse():
                             treatment_note = f"\n💊 Suggested: {suggestion}"
                             break
                 
+                # Use per-image capture date if provided (user input from upload screen)
+                entry_date = datetime.datetime.now()
+                raw_date_src = item.get('date')
+                if raw_date_src:
+                    raw = (raw_date_src or '').strip()
+                    try:
+                        if len(raw) >= 10:
+                            # Prefer date-only YYYY-MM-DD to avoid timezone shifts
+                            date_part = raw[:10]
+                            entry_date = datetime.datetime.strptime(date_part, '%Y-%m-%d')
+                        else:
+                            entry_date = datetime.datetime.fromisoformat(
+                                raw.replace('Z', '+00:00')
+                            )
+                            if entry_date.tzinfo:
+                                entry_date = entry_date.replace(tzinfo=None)
+                    except (ValueError, TypeError):
+                        pass
+                
                 # Create timelapse entry
                 entry = TimelapseEntry(
                     crop_id=crop.id,
-                    date=datetime.datetime.now(),
+                    date=entry_date,
                     photo_url=photo_url,
                     highlighted_photo_url=highlighted_photo_url,
                     detected_disease=detection['disease'],
@@ -564,24 +623,43 @@ def get_timelapse(crop_id: int):
                 db.commit()
                 print(f"✅ Updated {updated_count} entries with weather data")
             
-            # Calculate statistics
+            # Calculate statistics from scanned images
             if entries:
                 avg_severity = db.query(func.avg(TimelapseEntry.severity_score)).filter(
                     TimelapseEntry.crop_id == crop_id
                 ).scalar() or 0
                 
-                # Calculate trend (compare last 2 entries)
+                # Trend: compare first (earliest date) vs latest (newest date) by user-input date
                 trend = 'stable'
                 if len(entries) >= 2:
+                    # entries are newest first: entries[0]=latest, entries[-1]=first by date
                     latest_score = entries[0].severity_score or 0
-                    previous_score = entries[1].severity_score or 0
-                    if latest_score > previous_score:
+                    first_score = entries[-1].severity_score or 0
+                    if latest_score > first_score:
                         trend = 'worsening'
-                    elif latest_score < previous_score:
+                    elif latest_score < first_score:
                         trend = 'improving'
+                
+                # Averages from scanned images
+                temps = [e.weather_temp for e in entries if e.weather_temp is not None]
+                humids = [e.weather_humidity for e in entries if e.weather_humidity is not None]
+                confs = [e.ai_confidence for e in entries if e.ai_confidence is not None]
+                avg_temp = round(sum(temps) / len(temps), 1) if temps else None
+                avg_humidity = round(sum(humids) / len(humids), 1) if humids else None
+                avg_ai_confidence = round(sum(confs) / len(confs), 4) if confs else None  # 0-1
+                # Top disease: most frequent
+                disease_counts = {}
+                for e in entries:
+                    d = (e.detected_disease or 'Healthy').strip() or 'Healthy'
+                    disease_counts[d] = disease_counts.get(d, 0) + 1
+                top_disease = max(disease_counts, key=disease_counts.get) if disease_counts else 'None'
             else:
                 avg_severity = 0
                 trend = 'stable'
+                avg_temp = None
+                avg_humidity = None
+                avg_ai_confidence = None
+                top_disease = 'None'
             
             entries_data = [{
                 'id': e.id,
@@ -605,7 +683,11 @@ def get_timelapse(crop_id: int):
                 'stats': {
                     'total_entries': len(entries),
                     'avg_severity_score': round(float(avg_severity), 2),
-                    'trend': trend
+                    'trend': trend,
+                    'avg_temp': avg_temp,
+                    'avg_humidity': avg_humidity,
+                    'avg_ai_confidence': avg_ai_confidence,
+                    'top_disease': top_disease,
                 }
             }), 200
             

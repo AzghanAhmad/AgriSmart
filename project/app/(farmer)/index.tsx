@@ -1,42 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image, ActivityIndicator } from 'react-native';
-import { Camera, Shield, Calendar, MapPin, MessageCircle, TrendingUp, Sun, Droplets, Wind, BarChart3, Sparkles } from 'lucide-react-native';
-import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator, ImageBackground } from 'react-native';
+import { Camera, Shield, Calendar, MapPin, MessageCircle, Sun, Droplets, Wind, Sparkles } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { translate } from '@/utils/translations';
 import { colors, spacing, borderRadius, shadows } from '@/utils/designSystem';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { apiGet } from '@/utils/api';
 import { getApiBaseUrl } from '@/utils/env';
+import { resolveWeatherCoordinates } from '@/utils/pakistanGeocode';
+import { CropHealthPieSummary } from '@/components/farmer/CropHealthPieSummary';
+import { YieldTrendChart } from '@/components/farmer/YieldTrendChart';
+import { warmupChatbot } from '@/services/chatbotService';
 
 const screenWidth = Dimensions.get('window').width;
 
-const chartConfig = {
-  backgroundColor: '#FFFFFF',
-  backgroundGradientFrom: '#FFFFFF',
-  backgroundGradientTo: '#FFFFFF',
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(22, 163, 74, ${opacity})`,
-  style: {
-    borderRadius: 16,
-  },
-  propsForBackgroundLines: {
-    strokeDasharray: '', // solid lines
-    stroke: '#E5E7EB',
-    strokeWidth: 1,
-  },
+const HEADER_FIELD_BG = require('@/assets/crops/background.jpg');
+type ProfileStatsResponse = {
+  acresFarmed: number | null;
+  cropTypesCount: number | null;
+  healthScorePercent: number | null;
+  monthlyRevenue: number | null;
+  totalScans: number;
 };
 
 export default function FarmerHomeScreen() {
   const { user } = useAuth();
   const { language } = useApp();
+  const { colors: tc, isDark } = useTheme();
   const router = useRouter();
-  
-  const [healthData, setHealthData] = useState({ healthy: 75, atRisk: 15, diseased: 10, totalScans: 0 });
-  const [diseaseData, setDiseaseData] = useState({ wheat: 12, rice: 8, cotton: 15, corn: 5 });
+
+  const [healthData, setHealthData] = useState({
+    healthy: 0,
+    atRisk: 0,
+    diseased: 0,
+    totalScans: 0,
+    healthyCount: 0,
+    atRiskCount: 0,
+    diseasedCount: 0,
+  });
+  const [diseaseData, setDiseaseData] = useState({ wheat: 0, rice: 0, cotton: 0, corn: 0 });
+  const [farmOverview, setFarmOverview] = useState<ProfileStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [todayWeather, setTodayWeather] = useState<{
     temp: number;
@@ -53,39 +58,60 @@ export default function FarmerHomeScreen() {
     return translate('goodEvening', language);
   };
 
-  // Fetch real data from backend
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!user?.id) return;
-      
-      try {
-        setLoading(true);
-        
-        // Fetch crop health stats
-        const health = await apiGet<any>(`/api/farmer/stats/health?farmerId=${encodeURIComponent(user.id)}`);
-        setHealthData(health);
-        
-        // Fetch disease incidence stats
-        const disease = await apiGet<any>(`/api/farmer/stats/disease-incidence?farmerId=${encodeURIComponent(user.id)}`);
-        setDiseaseData(disease);
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-        // Keep default mock data on error
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchStats();
+  const fetchStats = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setLoading(true);
+
+      // Fetch crop health stats
+      const health = await apiGet<any>(`/api/farmer/stats/health?farmerId=${encodeURIComponent(user.id)}`);
+      setHealthData({
+        healthy: Number(health.healthy) || 0,
+        atRisk: Number(health.atRisk) || 0,
+        diseased: Number(health.diseased) || 0,
+        totalScans: Number(health.totalScans) || 0,
+        healthyCount: Number(health.healthyCount) || 0,
+        atRiskCount: Number(health.atRiskCount) || 0,
+        diseasedCount: Number(health.diseasedCount) || 0,
+      });
+
+      // Fetch disease incidence stats
+      const disease = await apiGet<any>(`/api/farmer/stats/disease-incidence?farmerId=${encodeURIComponent(user.id)}`);
+      setDiseaseData({
+        wheat: Number(disease?.wheat) || 0,
+        rice: Number(disease?.rice) || 0,
+        cotton: Number(disease?.cotton) || 0,
+        corn: Number(disease?.corn) || 0,
+      });
+
+      const profile = await apiGet<ProfileStatsResponse>(
+        `/api/farmer/stats/profile?farmerId=${encodeURIComponent(user.id)}`
+      );
+      setFarmOverview(profile);
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+      // Keep current data on error
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
 
-  // Fetch today's weather
+  // Initial fetch + refresh whenever Home tab is focused.
+  useEffect(() => {
+    void fetchStats();
+  }, [fetchStats]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchStats();
+    }, [fetchStats]),
+  );
+
+  // Fetch today's weather (profile coordinates or geocoded city in Pakistan)
   useEffect(() => {
     const fetchTodayWeather = async () => {
       try {
-        // Default to Lahore, Pakistan coordinates
-        const lat = 31.5204;
-        const lon = 74.3587;
+        const { latitude: lat, longitude: lon } = await resolveWeatherCoordinates(user);
         
         const API_BASE_URL = getApiBaseUrl();
         const response = await fetch(
@@ -113,105 +139,86 @@ export default function FarmerHomeScreen() {
     };
     
     fetchTodayWeather();
-  }, []);
-
-  // Mock data for weekly yield
-  const yieldData = {
-    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-    datasets: [{
-      data: [45, 52, 48, 61],
-      color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-      strokeWidth: 3,
-    }],
-  };
-
-  // Dynamic crop health data from backend
-  const cropHealthData = [
-    { name: 'Healthy', population: healthData.healthy, color: '#22C55E', legendFontColor: '#16A34A', legendFontSize: 13 },
-    { name: 'At Risk', population: healthData.atRisk, color: '#F59E0B', legendFontColor: '#D97706', legendFontSize: 13 },
-    { name: 'Diseased', population: healthData.diseased, color: '#EF4444', legendFontColor: '#DC2626', legendFontSize: 13 },
-  ];
-
-  // Dynamic disease incidence data
-  const diseaseIncidenceData = {
-    labels: ['Wheat', 'Rice', 'Cotton', 'Corn'],
-    datasets: [{
-      data: [diseaseData.wheat || 1, diseaseData.rice || 1, diseaseData.cotton || 1, diseaseData.corn || 1],
-    }],
-  };
+  }, [user?.id, user?.latitude, user?.longitude, user?.location]);
 
   const quickActions = [
     { title: translate('scanCrop', language), icon: Camera, color: '#22C55E', route: '/disease-detection' },
-    { title: 'Smart TimeLapse', icon: Sparkles, color: '#FFD700', route: '/timelapse-upload' },
-    { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6', route: '/disease-detection' },
+    { title: translate('smartTimelapse', language), icon: Sparkles, color: '#FFD700', route: '/timelapse-upload' },
+    { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6', route: '/cure-guidance-history' },
     { title: translate('farmingSchedule', language), icon: Calendar, color: '#F59E0B', route: '/schedule' },
     { title: translate('diseaseHeatmap', language), icon: MapPin, color: '#EF4444', route: '/heatmap' },
-    { title: translate('yieldEstimate', language), icon: BarChart3, color: '#10B981', route: '/yield-estimation' },
     { title: translate('chatbot', language), icon: MessageCircle, color: '#8B5CF6', route: '/chatbot' },
   ];
 
   const handleQuickAction = (route: string) => {
+    if (route === '/chatbot') {
+      warmupChatbot().catch((err) => console.warn('Chatbot warmup (prefetch):', err));
+    }
     router.push(route as any);
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Enhanced Header with Gradient */}
-      <LinearGradient
-        colors={['#22C55E', '#16A34A']}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
+      <ImageBackground source={HEADER_FIELD_BG} style={styles.header} resizeMode="cover" imageStyle={styles.headerImage}>
+        <View style={styles.headerOverlay} pointerEvents="none" />
         <View style={styles.headerContent}>
           <View style={styles.greetingSection}>
             <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.userName}>{user?.name || 'Farmer'}</Text>
-            <Text style={styles.headerSubtext}>Welcome back to your farm</Text>
+            <Text style={styles.userName}>{user?.name || translate('defaultFarmerName', language)}</Text>
+            <Text style={styles.headerSubtext}>{translate('welcomeBackFarm', language)}</Text>
           </View>
-          <View style={styles.weatherCard}>
+          <View
+            style={[
+              styles.weatherCard,
+              {
+                backgroundColor: tc.card,
+                borderWidth: isDark ? 1 : 0,
+                borderColor: isDark ? tc.border : 'transparent',
+              },
+            ]}
+          >
             <Sun color="#F59E0B" size={32} />
-            <Text style={styles.temperature}>
+            <Text style={[styles.temperature, { color: tc.text }]}>
               {todayWeather ? `${todayWeather.temp}°C` : '--°C'}
             </Text>
-            <Text style={styles.weatherDesc}>
-              {todayWeather ? todayWeather.description : 'Loading...'}
+            <Text style={[styles.weatherDesc, { color: tc.textMuted }]}>
+              {todayWeather ? todayWeather.description : translate('loading', language)}
             </Text>
             <View style={styles.weatherDetails}>
               <View style={styles.weatherItem}>
                 <Droplets color="#3B82F6" size={16} />
-                <Text style={styles.weatherSmall}>
+                <Text style={[styles.weatherSmall, { color: tc.textMuted }]}>
                   {todayWeather ? `${todayWeather.humidity}%` : '--%'}
                 </Text>
               </View>
               <View style={styles.weatherItem}>
-                <Wind color="#6B7280" size={16} />
-                <Text style={styles.weatherSmall}>
+                <Wind color={tc.textMuted} size={16} />
+                <Text style={[styles.weatherSmall, { color: tc.textMuted }]}>
                   {todayWeather ? `${todayWeather.windSpeed.toFixed(1)} m/s` : '-- m/s'}
                 </Text>
               </View>
             </View>
           </View>
         </View>
-      </LinearGradient>
+      </ImageBackground>
 
       {/* Quick Actions */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('quickActions', language)}</Text>
         <View style={styles.actionsGrid}>
           {quickActions.map((action, index) => {
             const IconComponent = action.icon;
             return (
               <TouchableOpacity 
                 key={index} 
-                style={styles.actionCard}
+                style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}
                 onPress={() => handleQuickAction(action.route)}
                 activeOpacity={0.7}
               >
                 <View style={[styles.actionIcon, { backgroundColor: action.color }]}>
                   <IconComponent color="white" size={24} />
                 </View>
-                <Text style={styles.actionText}>{action.title}</Text>
+                <Text style={[styles.actionText, { color: tc.text }]}>{action.title}</Text>
               </TouchableOpacity>
             );
           })}
@@ -221,27 +228,25 @@ export default function FarmerHomeScreen() {
       {/* Crop Health Summary */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{translate('cropHealthSummary', language)}</Text>
-          {healthData.totalScans > 0 && (
-            <Text style={styles.sectionSubtitle}>Based on {healthData.totalScans} scans</Text>
-          )}
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('cropHealthSummary', language)}</Text>
         </View>
-        <View style={styles.chartCard}>
+        <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#22C55E" />
-              <Text style={styles.loadingText}>Loading statistics...</Text>
+              <Text style={[styles.loadingText, { color: tc.textMuted }]}>
+                {translate('loadingStatistics', language)}
+              </Text>
             </View>
           ) : (
-            <PieChart
-              data={cropHealthData}
-              width={screenWidth - 48}
-              height={220}
-              chartConfig={chartConfig}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              absolute
+            <CropHealthPieSummary
+              healthy={healthData.healthy}
+              atRisk={healthData.atRisk}
+              diseased={healthData.diseased}
+              totalScans={healthData.totalScans}
+              healthyCount={healthData.healthyCount}
+              atRiskCount={healthData.atRiskCount}
+              diseasedCount={healthData.diseasedCount}
             />
           )}
         </View>
@@ -249,38 +254,27 @@ export default function FarmerHomeScreen() {
 
       {/* Weekly Yield Trend */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{translate('weeklyYieldTrend', language)}</Text>
-        <View style={styles.chartCard}>
-          <LineChart
-            data={yieldData}
-            width={screenWidth - 48}
-            height={220}
-            chartConfig={chartConfig}
-            bezier
-            style={{
-              marginVertical: 8,
-              borderRadius: 16,
-            }}
-          />
+        <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
+          <YieldTrendChart />
         </View>
       </View>
 
       {/* Disease Incidence - Redesigned */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{translate('diseaseIncidence', language)}</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('diseaseIncidence', language)}</Text>
         <View style={styles.diseaseGrid}>
           {[
-            { crop: 'Wheat', count: diseaseData.wheat, color: '#F59E0B', icon: '🌾' },
-            { crop: 'Rice', count: diseaseData.rice, color: '#10B981', icon: '🍚' },
-            { crop: 'Cotton', count: diseaseData.cotton, color: '#8B5CF6', icon: '☁️' },
+            { crop: translate('cropWheat', language), count: diseaseData.wheat, color: '#F59E0B', icon: '🌾' },
+            { crop: translate('cropRice', language), count: diseaseData.rice, color: '#10B981', icon: '🍚' },
+            { crop: translate('cropCotton', language), count: diseaseData.cotton, color: '#8B5CF6', icon: '☁️' },
           ].map((item, index) => (
-            <View key={index} style={styles.diseaseCard}>
+            <View key={index} style={[styles.diseaseCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
               <View style={[styles.diseaseIconBg, { backgroundColor: item.color + '20' }]}>
                 <Text style={styles.diseaseIcon}>{item.icon}</Text>
               </View>
-              <Text style={styles.diseaseCrop}>{item.crop}</Text>
+              <Text style={[styles.diseaseCrop, { color: tc.text }]}>{item.crop}</Text>
               <Text style={[styles.diseaseCount, { color: item.color }]}>{item.count}</Text>
-              <Text style={styles.diseaseLabel}>Cases</Text>
+              <Text style={[styles.diseaseLabel, { color: tc.textMuted }]}>{translate('casesLabel', language)}</Text>
               {item.count > 0 && (
                 <View style={[styles.diseaseBar, { backgroundColor: item.color }]}>
                   <View style={[styles.diseaseBarFill, { width: `${Math.min((item.count / 20) * 100, 100)}%` }]} />
@@ -293,24 +287,43 @@ export default function FarmerHomeScreen() {
 
       {/* Farm Statistics */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Farm Overview</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('farmOverview', language)}</Text>
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>12.5</Text>
-            <Text style={styles.statLabel}>Acres</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>4</Text>
-            <Text style={styles.statLabel}>Crops</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>95%</Text>
-            <Text style={styles.statLabel}>Health Score</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>₨25K</Text>
-            <Text style={styles.statLabel}>Monthly Revenue</Text>
-          </View>
+          {[
+            {
+              v:
+                farmOverview?.acresFarmed != null
+                  ? String(farmOverview.acresFarmed)
+                  : '—',
+              l: translate('statAcres', language),
+            },
+            {
+              v:
+                farmOverview?.cropTypesCount != null
+                  ? String(farmOverview.cropTypesCount)
+                  : '—',
+              l: translate('statCrops', language),
+            },
+            {
+              v:
+                farmOverview?.healthScorePercent != null
+                  ? `${Math.round(farmOverview.healthScorePercent)}%`
+                  : '—',
+              l: translate('statHealthScore', language),
+            },
+            {
+              v:
+                farmOverview?.monthlyRevenue != null
+                  ? `Rs ${Math.round(farmOverview.monthlyRevenue).toLocaleString()}`
+                  : '—',
+              l: translate('statMonthlyRevenue', language),
+            },
+          ].map((s, i) => (
+            <View key={i} style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
+              <Text style={styles.statValue}>{s.v}</Text>
+              <Text style={[styles.statLabel, { color: tc.textMuted }]}>{s.l}</Text>
+            </View>
+          ))}
         </View>
       </View>
     </ScrollView>
@@ -330,6 +343,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.xl,
     marginBottom: spacing.lg,
+    overflow: 'hidden',
+  },
+  headerImage: {
+    borderRadius: 0,
+  },
+  headerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(22, 101, 52, 0.45)',
   },
   headerContent: {
     flexDirection: 'row',
@@ -355,7 +376,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
   },
   weatherCard: {
-    backgroundColor: 'white',
     borderRadius: borderRadius.lg,
     padding: spacing.base,
     alignItems: 'center',
@@ -365,14 +385,13 @@ const styles = StyleSheet.create({
   temperature: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: colors.text.primary,
     marginTop: 4,
   },
   weatherDesc: {
     fontSize: 13,
-    color: colors.text.secondary,
     marginTop: 2,
     marginBottom: 8,
+    textTransform: 'capitalize',
   },
   weatherDetails: {
     flexDirection: 'row',
@@ -385,7 +404,6 @@ const styles = StyleSheet.create({
   },
   weatherSmall: {
     fontSize: 12,
-    color: colors.text.secondary,
   },
   section: {
     marginBottom: spacing.xl,
@@ -401,12 +419,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: 18,
     color: colors.text.secondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   loadingContainer: {
-    height: 220,
+    minHeight: 260,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,

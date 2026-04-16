@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { Search, Filter, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, Eye, MapPin, Calendar } from 'lucide-react-native';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface DiseaseReport {
   id: string;
@@ -27,6 +28,7 @@ interface DiseaseReport {
 }
 
 export default function ReportsScreen() {
+  const { colors: tc } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
 
@@ -160,33 +162,34 @@ export default function ReportsScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Disease Reports</Text>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.title, { color: tc.text }]}>Disease Reports</Text>
         <TouchableOpacity style={styles.exportButton}>
           <Text style={styles.exportButtonText}>Export</Text>
         </TouchableOpacity>
       </View>
 
       {/* Stats */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.statsScroll, { backgroundColor: tc.headerBg }]}>
         {statsData.map((stat, index) => (
-          <View key={index} style={styles.statCard}>
+          <View key={index} style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
             <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>{stat.label}</Text>
           </View>
         ))}
       </ScrollView>
 
       {/* Search and Filter */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchContainer}>
-          <Search color="#6B7280" size={20} />
+      <View style={[styles.searchSection, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <View style={[styles.searchContainer, { backgroundColor: tc.inputBg }]}>
+          <Search color={tc.textMuted} size={20} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: tc.text }]}
             placeholder="Search reports..."
             value={searchQuery}
             onChangeText={setSearchQuery}
+            placeholderTextColor={tc.textMuted}
           />
         </View>
         
@@ -196,12 +199,14 @@ export default function ReportsScreen() {
               key={filter.id}
               style={[
                 styles.filterButton,
+                { backgroundColor: tc.inputBg, borderColor: tc.border },
                 selectedFilter === filter.id && styles.activeFilterButton
               ]}
               onPress={() => setSelectedFilter(filter.id)}
             >
               <Text style={[
                 styles.filterText,
+                { color: tc.textSecondary },
                 selectedFilter === filter.id && styles.activeFilterText
               ]}>
                 {filter.label}
@@ -212,11 +217,11 @@ export default function ReportsScreen() {
       </View>
 
       {/* Reports List */}
-      <ScrollView style={styles.reportsList} contentContainerStyle={styles.reportsContent}>
+      <ScrollView style={[styles.reportsList, { backgroundColor: tc.screen }]} contentContainerStyle={styles.reportsContent}>
         {filteredReports.map((report) => {
           const StatusIcon = getStatusIcon(report.status);
           return (
-            <TouchableOpacity key={report.id} style={styles.reportCard}>
+            <TouchableOpacity key={report.id} style={[styles.reportCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <View style={styles.reportHeader}>
                 <View style={styles.reportImage}>
                   <Image source={{ uri: report.imageUrl }} style={styles.cropImage} />
@@ -227,17 +232,17 @@ export default function ReportsScreen() {
                 </View>
                 
                 <View style={styles.reportInfo}>
-                  <Text style={styles.diseaseName}>{report.diseaseName}</Text>
-                  <Text style={styles.farmerName}>{report.farmerName}</Text>
+                  <Text style={[styles.diseaseName, { color: tc.text }]}>{report.diseaseName}</Text>
+                  <Text style={[styles.farmerName, { color: tc.textSecondary }]}>{report.farmerName}</Text>
                   
                   <View style={styles.reportMeta}>
                     <View style={styles.metaItem}>
-                      <MapPin color="#6B7280" size={12} />
-                      <Text style={styles.metaText}>{report.location}</Text>
+                      <MapPin color={tc.textMuted} size={12} />
+                      <Text style={[styles.metaText, { color: tc.textMuted }]}>{report.location}</Text>
                     </View>
                     <View style={styles.metaItem}>
-                      <Calendar color="#6B7280" size={12} />
-                      <Text style={styles.metaText}>{formatDate(report.submittedAt)}</Text>
+                      <Calendar color={tc.textMuted} size={12} />
+                      <Text style={[styles.metaText, { color: tc.textMuted }]}>{formatDate(report.submittedAt)}</Text>
                     </View>
                   </View>
                 </View>
@@ -255,17 +260,17 @@ export default function ReportsScreen() {
                       {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                     </Text>
                   </View>
-                  <Text style={styles.confidenceText}>{report.confidence}% confidence</Text>
+                  <Text style={[styles.confidenceText, { color: tc.textMuted }]}>{report.confidence}% confidence</Text>
                 </View>
               </View>
 
               <View style={styles.reportDetails}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Crop:</Text>
-                  <Text style={styles.detailValue}>{report.cropType}</Text>
+                  <Text style={[styles.detailLabel, { color: tc.textMuted }]}>Crop:</Text>
+                  <Text style={[styles.detailValue, { color: tc.text }]}>{report.cropType}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Severity:</Text>
+                  <Text style={[styles.detailLabel, { color: tc.textMuted }]}>Severity:</Text>
                   <View style={styles.severityBadge}>
                     <View style={[
                       styles.severityDot,
@@ -281,21 +286,21 @@ export default function ReportsScreen() {
                 </View>
               </View>
 
-              <Text style={styles.description}>{report.description}</Text>
+              <Text style={[styles.description, { color: tc.textSecondary }]}>{report.description}</Text>
 
               {report.status === 'pending' && (
                 <View style={styles.actionButtons}>
                   <TouchableOpacity style={styles.reviewButton}>
                     <Text style={styles.reviewButtonText}>Review Report</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.viewDetailsButton}>
-                    <Eye color="#6B7280" size={16} />
+                  <TouchableOpacity style={[styles.viewDetailsButton, { backgroundColor: tc.inputBg }]}>
+                    <Eye color={tc.textMuted} size={16} />
                   </TouchableOpacity>
                 </View>
               )}
 
               {report.reviewedAt && (
-                <Text style={styles.reviewedText}>
+                <Text style={[styles.reviewedText, { color: tc.textMuted }]}>
                   Reviewed on {formatDate(report.reviewedAt)}
                 </Text>
               )}
@@ -305,9 +310,9 @@ export default function ReportsScreen() {
 
         {filteredReports.length === 0 && (
           <View style={styles.emptyState}>
-            <AlertTriangle color="#6B7280" size={48} />
-            <Text style={styles.emptyTitle}>No reports found</Text>
-            <Text style={styles.emptyText}>
+            <AlertTriangle color={tc.textMuted} size={48} />
+            <Text style={[styles.emptyTitle, { color: tc.text }]}>No reports found</Text>
+            <Text style={[styles.emptyText, { color: tc.textMuted }]}>
               {searchQuery ? 'Try adjusting your search terms' : 'No reports match the selected filter'}
             </Text>
           </View>

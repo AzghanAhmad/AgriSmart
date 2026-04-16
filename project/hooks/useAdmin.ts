@@ -18,6 +18,7 @@ export interface AdminDetectionItem {
 export interface OutbreakAlertItem {
   alertId: string;
   diseaseId: string;
+  diseaseName: string;  // Added: actual disease name
   status: string;
   createdAt: string | null;
   centerLat: number;

@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Platform } from 'react-native';
-import { MapPin, TriangleAlert as AlertTriangle, Layers } from 'lucide-react-native';
+import { MapPin, TriangleAlert as AlertTriangle, Plus, Minus } from 'lucide-react-native';
 import { getApiBaseUrl } from '@/utils/env';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useApp } from '@/contexts/AppContext';
+import { translate } from '@/utils/translations';
+import * as Location from 'expo-location';
 
 const screenWidth = Dimensions.get('window').width;
 
 interface OutbreakAlertItem {
   alertId: string;
   diseaseId: string;
+  diseaseName: string;
   status: string;
   createdAt: string | null;
   centerLat: number;
@@ -15,55 +20,172 @@ interface OutbreakAlertItem {
   radiusKm: number;
 }
 
+interface HotspotData extends OutbreakAlertItem {
+  cityName: string;
+  cases: number;
+  /** 0–100 regional cluster sensitivity (same scale as admin outbreak threshold). */
+  sensitivityPercent: number;
+  severity: 'high' | 'medium' | 'low';
+}
+
+interface HeatmapStats {
+  totalCases: number;
+  affectedRegions: number;
+  weeklyIncrease: number;
+  acresAffected: number;
+  acresAffectedRaw: number;
+}
+
+interface HeatmapPoint {
+  latitude: number;
+  longitude: number;
+  intensity: number;
+  diseaseName: string;
+}
+
 export default function HeatmapScreen() {
+  const { colors: tc } = useTheme();
+  const { language } = useApp();
   const [selectedFilter, setSelectedFilter] = useState('all');
-  const [selectedLayer, setSelectedLayer] = useState('disease');
   const [alerts, setAlerts] = useState<OutbreakAlertItem[]>([]);
+  const [hotspots, setHotspots] = useState<HotspotData[]>([]);
+  const [heatmapPoints, setHeatmapPoints] = useState<HeatmapPoint[]>([]);
+  const [stats, setStats] = useState<HeatmapStats>({
+    totalCases: 0,
+    affectedRegions: 0,
+    weeklyIncrease: 0,
+    acresAffected: 0,
+    acresAffectedRaw: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const mapRef = useRef<any>(null);
 
-  const filters = [
-    { id: 'all', label: 'All Diseases' },
-    { id: 'wheat', label: 'Wheat' },
-    { id: 'rice', label: 'Rice' },
-    { id: 'cotton', label: 'Cotton' },
-  ];
+  const filters = useMemo(
+    () => [
+      { id: 'all', label: translate('heatmapAllDiseases', language) },
+      { id: 'wheat', label: translate('cropWheat', language) },
+      { id: 'rice', label: translate('cropRice', language) },
+      { id: 'cotton', label: translate('cropCotton', language) },
+    ],
+    [language],
+  );
 
-  const layers = [
-    { id: 'disease', label: 'Disease Spread' },
-    { id: 'weather', label: 'Weather Conditions' },
-    { id: 'soil', label: 'Soil Health' },
-    { id: 'yield', label: 'Yield Prediction' },
-  ];
+  const hotspotSeverityLabel = (sev: string) => {
+    const s = (sev || '').toLowerCase();
+    if (s === 'high') return translate('heatmapRiskHigh', language);
+    if (s === 'medium') return translate('heatmapRiskMedium', language);
+    return translate('heatmapRiskLow', language);
+  };
 
+  // Filter hotspots based on selected filter
+  const filteredHotspots = hotspots.filter((hotspot) => {
+    if (selectedFilter === 'all') return true;
+    const diseaseName = (hotspot.diseaseName || hotspot.diseaseId || '').toLowerCase();
+    return diseaseName.includes(selectedFilter.toLowerCase());
+  });
+
+  // Load alerts and stats
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
+    const loadData = async () => {
       try {
+        setLoading(true);
         const baseUrl = getApiBaseUrl();
-        const resp = await fetch(`${baseUrl}/api/admin/alerts?status=approved`);
-        const j = await resp.json();
+        
+        // Load approved alerts
+        const alertsResp = await fetch(`${baseUrl}/api/admin/alerts?status=approved`);
+        const alertsData = await alertsResp.json();
+        const alertsList = Array.isArray(alertsData.items) ? alertsData.items : [];
+        
+        // Load statistics
+        const statsResp = await fetch(`${baseUrl}/api/admin/heatmap/stats`);
+        const statsData = await statsResp.json();
+        
+        // Load heatmap points
+        const pointsResp = await fetch(`${baseUrl}/api/admin/heatmap/points`);
+        const pointsData = await pointsResp.json();
+        const pointsList = Array.isArray(pointsData.points) ? pointsData.points : [];
+        
+        console.log('📊 Heatmap points loaded:', pointsList.length);
+        if (pointsList.length > 0) {
+          console.log('📍 Sample point:', pointsList[0]);
+        }
+        
         if (!cancelled) {
-          setAlerts(Array.isArray(j.items) ? j.items : []);
+          setAlerts(alertsList);
+          setStats(statsData);
+          setHeatmapPoints(pointsList);
+          
+          // Process alerts to get city names and case counts
+          const processedHotspots = await Promise.all(
+            alertsList.map(async (alert: OutbreakAlertItem) => {
+              // Get city name from reverse geocoding
+              let cityName = translate('heatmapUnknownLocation', language);
+              try {
+                const [address] = await Location.reverseGeocodeAsync({
+                  latitude: alert.centerLat,
+                  longitude: alert.centerLng,
+                });
+                if (address) {
+                  cityName =
+                    address.city ||
+                    address.region ||
+                    address.country ||
+                    translate('heatmapUnknownLocation', language);
+                }
+              } catch (e) {
+                console.log('Reverse geocoding failed:', e);
+              }
+              
+              let cases = 0;
+              let sensitivityPercent = 0;
+              let severity: 'high' | 'medium' | 'low' = 'low';
+              try {
+                const casesResp = await fetch(`${baseUrl}/api/admin/heatmap/alert-details/${alert.alertId}`);
+                const casesData = await casesResp.json();
+                cases = casesData.cases ?? 0;
+                sensitivityPercent =
+                  typeof casesData.sensitivityPercent === 'number'
+                    ? casesData.sensitivityPercent
+                    : Math.min(100, (cases / 10) * 100);
+                const sev = casesData.severity;
+                if (sev === 'high' || sev === 'medium' || sev === 'low') {
+                  severity = sev;
+                } else if (sensitivityPercent >= 70) {
+                  severity = 'high';
+                } else if (sensitivityPercent >= 40) {
+                  severity = 'medium';
+                }
+              } catch (e) {
+                console.log('Failed to fetch case count:', e);
+              }
+
+              return {
+                ...alert,
+                cityName,
+                cases,
+                sensitivityPercent,
+                severity,
+              };
+            })
+          );
+          
+          setHotspots(processedHotspots);
         }
       } catch (e) {
-        // keep silent for now; could add toast/logging
+        console.error('Error loading heatmap data:', e);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
-    run();
+    
+    loadData();
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const diseaseHotspots = alerts.map((a) => ({
-    id: a.alertId,
-    name: a.diseaseId || 'Disease Outbreak',
-    location: 'Pakistan Region',
-    severity: 'high' as const,
-    cases: 100,
-    latitude: a.centerLat,
-    longitude: a.centerLng,
-    radiusKm: a.radiusKm,
-  }));
+  }, [language]);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -74,31 +196,105 @@ export default function HeatmapScreen() {
     }
   };
 
+  const handleZoomIn = () => {
+    if (mapRef.current) {
+      mapRef.current.getCamera().then((camera: any) => {
+        camera.zoom = (camera.zoom || 5) + 1;
+        mapRef.current.animateCamera(camera, { duration: 300 });
+      });
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (mapRef.current) {
+      mapRef.current.getCamera().then((camera: any) => {
+        camera.zoom = Math.max((camera.zoom || 5) - 1, 1);
+        mapRef.current.animateCamera(camera, { duration: 300 });
+      });
+    }
+  };
+
+  const formatStatValue = (value: number, isPercent: boolean = false, isAcres: boolean = false) => {
+    if (isPercent) {
+      return `${value > 0 ? '+' : ''}${value}%`;
+    }
+    if (isAcres) {
+      if (value >= 1000) {
+        return `${(value / 1000).toFixed(1)}K`;
+      }
+      return value.toFixed(1);
+    }
+    return value.toString();
+  };
+
+  // Get heatmap color based on intensity (0-100)
+  const getHeatmapColor = (intensity: number): string => {
+    // Intensity 0-25: Green to Yellow
+    if (intensity < 25) {
+      const ratio = intensity / 25;
+      const r = Math.floor(34 + (255 - 34) * ratio);
+      const g = Math.floor(197 + (193 - 197) * ratio);
+      const b = Math.floor(76 + (7 - 76) * ratio);
+      return `rgba(${r}, ${g}, ${b}, 0.7)`;
+    }
+    // Intensity 25-50: Yellow to Orange
+    if (intensity < 50) {
+      const ratio = (intensity - 25) / 25;
+      const r = Math.floor(255);
+      const g = Math.floor(193 - (107 - 193) * ratio);
+      const b = Math.floor(7);
+      return `rgba(${r}, ${g}, ${b}, 0.75)`;
+    }
+    // Intensity 50-75: Orange to Red
+    if (intensity < 75) {
+      const ratio = (intensity - 50) / 25;
+      const r = Math.floor(255);
+      const g = Math.floor(107 - (69 - 107) * ratio);
+      const b = Math.floor(7);
+      return `rgba(${r}, ${g}, ${b}, 0.8)`;
+    }
+    // Intensity 75-100: Red (bright red)
+    const ratio = (intensity - 75) / 25;
+    const r = Math.floor(255);
+    const g = Math.floor(69 - 69 * ratio); // 69 -> 0
+    const b = Math.floor(7 - 7 * ratio); // 7 -> 0
+    return `rgba(${r}, ${g}, ${b}, 0.85)`;
+  };
+
+  // Filter heatmap points based on disease filter
+  const filteredHeatmapPoints = useMemo(() => {
+    return heatmapPoints.filter((point) => {
+      if (selectedFilter === 'all') return true;
+      const diseaseName = (point.diseaseName || '').toLowerCase();
+      return diseaseName.includes(selectedFilter.toLowerCase());
+    });
+  }, [heatmapPoints, selectedFilter]);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Disease Heatmap</Text>
-        <Text style={styles.subtitle}>
-          Real-time disease spread monitoring across regions
-        </Text>
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.title, { color: tc.text }]}>{translate('diseaseHeatmap', language)}</Text>
+        <Text style={[styles.subtitle, { color: tc.textMuted }]}>{translate('heatmapSubtitle', language)}</Text>
       </View>
 
-      {/* Filter Controls */}
-      <View style={styles.controlsContainer}>
+      {/* Disease Filter */}
+      <View style={[styles.controlsContainer, { backgroundColor: tc.card, borderColor: tc.border }]}>
         <View style={styles.filterGroup}>
-          <Text style={styles.filterTitle}>Crop Filter</Text>
+          <Text style={[styles.filterTitle, { color: tc.text }]}>{translate('heatmapFilterDisease', language)}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
             {filters.map((filter) => (
               <TouchableOpacity
                 key={filter.id}
                 style={[
                   styles.filterButton,
+                  { backgroundColor: tc.screenSecondary, borderColor: tc.border },
                   selectedFilter === filter.id && styles.activeFilterButton
                 ]}
                 onPress={() => setSelectedFilter(filter.id)}
               >
                 <Text style={[
                   styles.filterText,
+                  { color: tc.textMuted },
                   selectedFilter === filter.id && styles.activeFilterText
                 ]}>
                   {filter.label}
@@ -107,142 +303,160 @@ export default function HeatmapScreen() {
             ))}
           </ScrollView>
         </View>
-
-        <View style={styles.filterGroup}>
-          <Text style={styles.filterTitle}>Map Layer</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-            {layers.map((layer) => (
-              <TouchableOpacity
-                key={layer.id}
-                style={[
-                  styles.layerButton,
-                  selectedLayer === layer.id && styles.activeLayerButton
-                ]}
-                onPress={() => setSelectedLayer(layer.id)}
-              >
-                <Layers 
-                  size={16} 
-                  color={selectedLayer === layer.id ? '#22C55E' : '#6B7280'} 
-                />
-                <Text style={[
-                  styles.layerText,
-                  selectedLayer === layer.id && styles.activeLayerText
-                ]}>
-                  {layer.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
       </View>
 
       {/* Pakistan Map View */}
-      <View style={styles.mapContainer}>
-        <View style={styles.mapHeader}>
+      <View style={[styles.mapContainer, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+        <View style={[styles.mapHeader, { borderBottomColor: tc.border, borderBottomWidth: 1 }]}>
           <MapPin color="#22C55E" size={20} />
-          <Text style={styles.mapTitle}>Pakistan Agricultural Map</Text>
+          <Text style={[styles.mapTitle, { color: tc.text }]}>{translate('heatmapPakMapTitle', language)}</Text>
         </View>
 
-        {Platform.OS === 'web' ? (
-          <View style={styles.mapPlaceholder}>
-            <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-            <Text style={styles.mapSubtext}>
-              Interactive map showing disease hotspots across regions
-            </Text>
-          </View>
-        ) : (
-          (() => {
-            try {
-              // Dynamically require react-native-maps on native to avoid web bundling issues
-              // eslint-disable-next-line @typescript-eslint/no-var-requires
-              const Maps = require('react-native-maps');
-              const MapView = Maps && Maps.default;
-              const Circle = Maps && Maps.Circle;
-              const Marker = Maps && Maps.Marker;
+        <View style={styles.mapWrapper}>
+          {Platform.OS === 'web' ? (
+            <View style={[styles.mapPlaceholder, { backgroundColor: tc.screenSecondary, borderColor: tc.border }]}>
+              <Text style={[styles.mapText, { color: tc.text }]}>{translate('heatmapPlaceholderTitle', language)}</Text>
+              <Text style={[styles.mapSubtext, { color: tc.textMuted }]}>
+                {translate('heatmapPlaceholderSub', language)}
+              </Text>
+              <Text style={[styles.mapSubtext, { marginTop: 8, fontSize: 12, color: tc.textMuted }]}>
+                {translate('heatmapPointsLoaded', language)} {filteredHeatmapPoints.length}
+              </Text>
+            </View>
+          ) : (
+            (() => {
+              try {
+                const Maps = require('react-native-maps');
+                const MapView = Maps && Maps.default;
+                const Circle = Maps && Maps.Circle;
+                const Marker = Maps && Maps.Marker;
 
-              if (!MapView || !Circle || !Marker) {
-                // Fallback if library is not available or misconfigured
+                if (!MapView || !Circle || !Marker) {
+                  return (
+                    <View style={[styles.mapPlaceholder, { backgroundColor: tc.screenSecondary, borderColor: tc.border }]}>
+                      <Text style={[styles.mapText, { color: tc.text }]}>{translate('heatmapPlaceholderTitle', language)}</Text>
+                      <Text style={[styles.mapSubtext, { color: tc.textMuted }]}>
+                        {translate('heatmapMapNotAvailable', language)}
+                      </Text>
+                    </View>
+                  );
+                }
+
                 return (
-                  <View style={styles.mapPlaceholder}>
-                    <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-                    <Text style={styles.mapSubtext}>
-                      Map component not available. Please check react-native-maps installation.
+                  <>
+                    <MapView
+                      ref={mapRef}
+                      style={styles.map}
+                      initialRegion={{
+                        latitude: 30.3753, // Pakistan center
+                        longitude: 69.3451,
+                        latitudeDelta: 20, // Wider view to show all of Pakistan
+                        longitudeDelta: 20,
+                      }}
+                      showsUserLocation={false}
+                    >
+                      {/* Heatmap gradient overlay - multiple overlapping circles */}
+                      {filteredHeatmapPoints.flatMap((point, idx) => {
+                        const radius = 25000; // 25km radius for better visibility
+                        const color = getHeatmapColor(point.intensity);
+                        const baseKey = `hm-${idx}-${Math.round(point.latitude * 1000)}-${Math.round(point.longitude * 1000)}`;
+                        
+                        // Return array of circles (flatMap will flatten automatically)
+                        return [
+                          // Outer circle - largest
+                          <Circle
+                            key={`${baseKey}-outer`}
+                            center={{
+                              latitude: point.latitude || 0,
+                              longitude: point.longitude || 0,
+                            }}
+                            radius={radius}
+                            fillColor={color}
+                            strokeColor="transparent"
+                          />,
+                          // Middle circle
+                          <Circle
+                            key={`${baseKey}-middle`}
+                            center={{
+                              latitude: point.latitude || 0,
+                              longitude: point.longitude || 0,
+                            }}
+                            radius={radius * 0.7}
+                            fillColor={color}
+                            strokeColor="transparent"
+                          />,
+                          // Inner circle - smallest and most intense
+                          <Circle
+                            key={`${baseKey}-inner`}
+                            center={{
+                              latitude: point.latitude || 0,
+                              longitude: point.longitude || 0,
+                            }}
+                            radius={radius * 0.4}
+                            fillColor={color}
+                            strokeColor="transparent"
+                          />,
+                        ];
+                      })}
+                      
+                      {/* Red dot markers for alert centers */}
+                      {filteredHotspots && filteredHotspots.length > 0 && filteredHotspots.map((hotspot) => (
+                        <Marker
+                          key={hotspot.alertId || `marker-${hotspot.centerLat}-${hotspot.centerLng}`}
+                          coordinate={{
+                            latitude: hotspot.centerLat || 0,
+                            longitude: hotspot.centerLng || 0,
+                          }}
+                          title={hotspot.diseaseName || hotspot.diseaseId || translate('heatmapOutbreakTitle', language)}
+                          description={`${hotspot.cityName || translate('heatmapUnknownLocation', language)} • ${Math.round(hotspot.sensitivityPercent)}%`}
+                        >
+                          <View style={styles.redDotMarker}>
+                            <View style={[styles.redDot, { backgroundColor: '#EF4444' }]} />
+                          </View>
+                        </Marker>
+                      ))}
+                    </MapView>
+                    
+                    {/* Zoom Controls */}
+                    <View style={styles.zoomControls}>
+                      <TouchableOpacity style={[styles.zoomButton, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]} onPress={handleZoomIn}>
+                        <Plus color="#22C55E" size={20} />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.zoomButton, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]} onPress={handleZoomOut}>
+                        <Minus color="#22C55E" size={20} />
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                );
+              } catch (e) {
+                return (
+                  <View style={[styles.mapPlaceholder, { backgroundColor: tc.screenSecondary, borderColor: tc.border }]}>
+                    <Text style={[styles.mapText, { color: tc.text }]}>{translate('heatmapPlaceholderTitle', language)}</Text>
+                    <Text style={[styles.mapSubtext, { color: tc.textMuted }]}>
+                      {translate('heatmapMapFailedLoad', language)}
                     </Text>
                   </View>
                 );
               }
-
-              return (
-                <MapView
-                  style={styles.mapPlaceholder}
-                  initialRegion={{
-                    latitude: 30.3753,
-                    longitude: 69.3451,
-                    latitudeDelta: 15,
-                    longitudeDelta: 15,
-                  }}
-                >
-                  {diseaseHotspots.map((hotspot) => (
-                    <React.Fragment key={hotspot.id}>
-                      <Circle
-                        center={{
-                          latitude: hotspot.latitude,
-                          longitude: hotspot.longitude,
-                        }}
-                        radius={(hotspot.radiusKm || 10) * 1000}
-                        strokeColor="rgba(220, 38, 38, 0.9)"
-                        fillColor="rgba(248, 113, 113, 0.25)"
-                      />
-                      <Marker
-                        coordinate={{
-                          latitude: hotspot.latitude,
-                          longitude: hotspot.longitude,
-                        }}
-                        title={hotspot.name}
-                        description={hotspot.location}
-                      >
-                        <View
-                          style={[
-                            styles.mapMarker,
-                            { backgroundColor: getSeverityColor(hotspot.severity) },
-                          ]}
-                        >
-                          <AlertTriangle color="white" size={20} />
-                        </View>
-                      </Marker>
-                    </React.Fragment>
-                  ))}
-                </MapView>
-              );
-            } catch (e) {
-              // Final fallback if require itself fails
-              return (
-                <View style={styles.mapPlaceholder}>
-                  <Text style={styles.mapText}>Pakistan Disease Monitoring</Text>
-                  <Text style={styles.mapSubtext}>
-                    Map component failed to load. Please verify react-native-maps setup.
-                  </Text>
-                </View>
-              );
-            }
-          })()
-        )}
+            })()
+          )}
+        </View>
 
         {/* Legend */}
-        <View style={styles.legend}>
-          <Text style={styles.legendTitle}>Severity Levels</Text>
+        <View style={[styles.legend, { borderTopColor: tc.border }]}>
+          <Text style={[styles.legendTitle, { color: tc.text }]}>{translate('heatmapSeverityLevels', language)}</Text>
           <View style={styles.legendItems}>
             <View style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: '#EF4444' }]} />
-              <Text style={styles.legendText}>High Risk</Text>
+              <Text style={[styles.legendText, { color: tc.textSecondary }]}>{translate('heatmapHighRisk', language)}</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: '#F59E0B' }]} />
-              <Text style={styles.legendText}>Medium Risk</Text>
+              <Text style={[styles.legendText, { color: tc.textSecondary }]}>{translate('heatmapMediumRisk', language)}</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendColor, { backgroundColor: '#22C55E' }]} />
-              <Text style={styles.legendText}>Low Risk</Text>
+              <Text style={[styles.legendText, { color: tc.textSecondary }]}>{translate('heatmapLowRisk', language)}</Text>
             </View>
           </View>
         </View>
@@ -250,64 +464,83 @@ export default function HeatmapScreen() {
 
       {/* Disease Hotspots List */}
       <View style={styles.hotspotsSection}>
-        <Text style={styles.sectionTitle}>Active Disease Hotspots</Text>
-        {diseaseHotspots.map((hotspot) => (
-          <TouchableOpacity key={hotspot.id} style={styles.hotspotCard}>
-            <View style={styles.hotspotHeader}>
-              <View style={styles.hotspotInfo}>
-                <Text style={styles.hotspotName}>{hotspot.name}</Text>
-                <Text style={styles.hotspotLocation}>{hotspot.location}</Text>
-              </View>
-              <View style={styles.hotspotStats}>
-                <View style={[
-                  styles.severityBadge,
-                  { backgroundColor: getSeverityColor(hotspot.severity) }
-                ]}>
-                  <Text style={styles.severityText}>
-                    {hotspot.severity.toUpperCase()}
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('heatmapActiveHotspots', language)}</Text>
+        {loading ? (
+          <Text style={[styles.loadingText, { color: tc.textMuted }]}>{translate('heatmapLoadingHotspots', language)}</Text>
+        ) : filteredHotspots.length === 0 ? (
+          <Text style={[styles.emptyText, { color: tc.textMuted }]}>{translate('heatmapNoHotspots', language)}</Text>
+        ) : (
+          filteredHotspots.map((hotspot) => (
+            <TouchableOpacity
+              key={hotspot.alertId}
+              style={[styles.hotspotCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}
+            >
+              <View style={styles.hotspotHeader}>
+                <View style={styles.hotspotInfo}>
+                  <Text style={[styles.hotspotName, { color: tc.text }]}>
+                    {hotspot.diseaseName || hotspot.diseaseId || translate('heatmapOutbreakTitle', language)}
+                  </Text>
+                  <Text style={[styles.hotspotLocation, { color: tc.textMuted }]}>{hotspot.cityName}</Text>
+                </View>
+                <View style={styles.hotspotStats}>
+                  <View style={[
+                    styles.severityBadge,
+                    { backgroundColor: getSeverityColor(hotspot.severity) }
+                  ]}>
+                    <Text style={styles.severityText}>{hotspotSeverityLabel(hotspot.severity)}</Text>
+                  </View>
+                  <Text style={[styles.casesText, { color: tc.textSecondary }]}>
+                    {Math.round(hotspot.sensitivityPercent)}% {translate('heatmapSensitivityLabel', language)}
                   </Text>
                 </View>
-                <Text style={styles.casesText}>{hotspot.cases} cases</Text>
               </View>
-            </View>
-            
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill,
-                    { 
-                      width: `${Math.min(hotspot.cases, 100)}%`,
-                      backgroundColor: getSeverityColor(hotspot.severity)
-                    }
-                  ]} 
-                />
+              
+              <View style={styles.progressContainer}>
+                <View style={[styles.progressBar, { backgroundColor: tc.border }]}>
+                  <View 
+                    style={[
+                      styles.progressFill,
+                      { 
+                        width: `${Math.min(Math.max(hotspot.sensitivityPercent, 0), 100)}%`,
+                        backgroundColor: getSeverityColor(hotspot.severity)
+                      }
+                    ]} 
+                  />
+                </View>
+                <Text style={[styles.progressText, { color: tc.textMuted }]}>
+                  {translate('heatmapFooterSensitivity', language)} {Math.round(hotspot.sensitivityPercent)}% •{' '}
+                  {translate('heatmapFooterSpread', language)}{' '}
+                  {hotspot.radiusKm} {translate('heatmapFooterKmRadius', language)}
+                </Text>
               </View>
-              <Text style={styles.progressText}>Spread rate: {hotspot.cases}%</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+            </TouchableOpacity>
+          ))
+        )}
       </View>
 
       {/* Statistics */}
       <View style={styles.statsSection}>
-        <Text style={styles.sectionTitle}>Regional Statistics</Text>
+        <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('heatmapRegionalStats', language)}</Text>
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>147</Text>
-            <Text style={styles.statLabel}>Total Cases</Text>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+            <Text style={styles.statValue}>{stats.totalCases}</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>{translate('heatmapTotalCases', language)}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>4</Text>
-            <Text style={styles.statLabel}>Affected Regions</Text>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+            <Text style={styles.statValue}>{stats.affectedRegions}</Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>{translate('heatmapAffectedRegions', language)}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>12%</Text>
-            <Text style={styles.statLabel}>Weekly Increase</Text>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+            <Text style={styles.statValue}>
+              {formatStatValue(stats.weeklyIncrease, true)}
+            </Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>{translate('heatmapWeeklyIncrease', language)}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>3.2K</Text>
-            <Text style={styles.statLabel}>Acres Affected</Text>
+          <View style={[styles.statCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+            <Text style={styles.statValue}>
+              {formatStatValue(stats.acresAffected, false, true)}
+            </Text>
+            <Text style={[styles.statLabel, { color: tc.textMuted }]}>{translate('heatmapAcresAffected', language)}</Text>
           </View>
         </View>
       </View>
@@ -340,7 +573,6 @@ const styles = StyleSheet.create({
   },
   controlsContainer: {
     marginBottom: 24,
-    gap: 16,
   },
   filterGroup: {
     gap: 8,
@@ -374,30 +606,6 @@ const styles = StyleSheet.create({
   activeFilterText: {
     color: '#22C55E',
   },
-  layerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginRight: 8,
-  },
-  activeLayerButton: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#22C55E',
-  },
-  layerText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  activeLayerText: {
-    color: '#22C55E',
-  },
   mapContainer: {
     backgroundColor: 'white',
     borderRadius: 16,
@@ -420,68 +628,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
-  mapPlaceholder: {
+  mapWrapper: {
+    position: 'relative',
     height: 300,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+  mapPlaceholder: {
+    height: '100%',
     backgroundColor: '#E0F2E9',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
-    overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#BBF7D0',
     borderStyle: 'dashed',
-  },
-  mapOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  mapMarker: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  markerTooltip: {
-    position: 'absolute',
-    top: 45,
-    backgroundColor: 'white',
-    padding: 8,
-    borderRadius: 8,
-    minWidth: 120,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-    display: 'none',
-  },
-  markerTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  markerSubtitle: {
-    fontSize: 10,
-    color: '#6B7280',
-  },
-  markerCases: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#EF4444',
-    marginTop: 2,
   },
   mapText: {
     fontSize: 18,
@@ -494,6 +659,42 @@ const styles = StyleSheet.create({
     color: '#22C55E',
     textAlign: 'center',
     paddingHorizontal: 32,
+  },
+  zoomControls: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    flexDirection: 'column',
+    gap: 8,
+  },
+  zoomButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  redDotMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  redDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 5,
   },
   legend: {
     marginTop: 16,
@@ -534,6 +735,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
     marginBottom: 16,
+  },
+  loadingText: {
+    textAlign: 'center',
+    color: '#6B7280',
+    padding: 20,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#6B7280',
+    padding: 20,
+    fontStyle: 'italic',
   },
   hotspotCard: {
     backgroundColor: 'white',

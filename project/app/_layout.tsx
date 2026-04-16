@@ -1,10 +1,18 @@
+import 'react-native-gesture-handler';
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { AppProvider } from '@/contexts/AppContext';
+import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { ToastProvider } from '@/components/Toast';
 import { testBackendConnection } from '@/utils/env';
+
+function ThemedStatusBar() {
+  const { isDark } = useTheme();
+  return <StatusBar style={isDark ? 'light' : 'dark'} />;
+}
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
@@ -43,14 +51,8 @@ function RootLayoutNav() {
     }
   }, [user, segments, isLoading]);
 
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="auth" />
-      <Stack.Screen name="(farmer)" />
-      <Stack.Screen name="(admin)" />
-      <Stack.Screen name="+not-found" />
-    </Stack>
-  );
+  /* File-based routes only — manual Stack.Screen entries can break resolution (undefined components). */
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 export default function RootLayout() {
@@ -59,8 +61,12 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <AppProvider>
-        <RootLayoutNav />
-        <StatusBar style="auto" />
+        <ThemeProvider>
+          <ToastProvider>
+            <RootLayoutNav />
+            <ThemedStatusBar />
+          </ToastProvider>
+        </ThemeProvider>
       </AppProvider>
     </AuthProvider>
   );

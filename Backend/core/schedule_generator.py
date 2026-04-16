@@ -92,42 +92,83 @@ def generate_schedule(
         try:
             recent_detections = db.query(Detection).filter(
                 Detection.farmer_id == farmer_id
-            ).order_by(Detection.timestamp.desc()).limit(5).all()
-            
+            ).order_by(Detection.timestamp.desc()).limit(10).all()
+
+            def _det_matches_crop(det: Detection) -> bool:
+                c = (getattr(det, "crop_type", None) or "").strip().lower()
+                if not c:
+                    return True  # legacy rows without crop_type
+                return c == crop_type
+
             active_diseases = []
             for det in recent_detections:
-                if det.status == 'pending' or (det.confidence_score and det.confidence_score > 50):
-                    disease_name_from_det = det.disease_name or 'Unknown Disease'
-                    active_diseases.append({
-                        'disease': disease_name_from_det,
-                        'confidence': det.confidence_score or 0,
-                        'severity': 'high' if (det.confidence_score or 0) > 80 else 'medium'
-                    })
+                if not _det_matches_crop(det):
+                    continue
+                if not (det.status == "pending" or (det.confidence_score and det.confidence_score > 50)):
+                    continue
+                # Use model label from DB; if missing, fall back to name passed into generate_schedule
+                dn = (det.disease_name or "").strip()
+                if not dn and disease_name:
+                    dn = str(disease_name).strip()
+                if not dn:
+                    dn = "Unknown Disease"
+                active_diseases.append({
+                    "disease": dn,
+                    "confidence": det.confidence_score or 0,
+                    "severity": "high" if (det.confidence_score or 0) > 80 else "medium",
+                })
         finally:
             db.close()
-        
-        # Generate tasks from disease status
-        if active_diseases:
-            for i, disease in enumerate(active_diseases[:2]):  # Limit to 2 most critical
-                task_date = today + timedelta(days=i)
-            tasks.append({
-                'id': f"disease-{i}",
-                'title': f"Apply treatment for {disease['disease']}",
-                'description': f"High priority: {disease['disease']} detected with {disease['confidence']:.0f}% confidence. Apply recommended fungicide/pesticide.",
-                'dueDate': task_date.isoformat(),
-                'priority': disease['severity'],
-                'category': 'disease_management',
-                'completed': False,
-                'source': 'disease_detection',
-                'cropType': crop_type  # Add crop type to task
+
+        # If we have a disease name from the client but no matching DB rows, still create one task
+        if not active_diseases and disease_name and str(disease_name).strip():
+            active_diseases.append({
+                "disease": str(disease_name).strip(),
+                "confidence": 85.0,
+                "severity": "high",
             })
+
+        # Generate tasks from disease status (up to 2)
+        if active_diseases:
+            for i, disease in enumerate(active_diseases[:2]):
+                task_date = today + timedelta(days=i)
+                tasks.append({
+                    "id": f"disease-{i}",
+                    "title": f"Apply treatment for {disease['disease']}",
+                    "description": (
+                        f"High priority: {disease['disease']} detected with "
+                        f"{disease['confidence']:.0f}% confidence. Apply recommended fungicide/pesticide."
+                    ),
+                    "dueDate": task_date.isoformat(),
+                    "priority": disease["severity"],
+                    "category": "disease_management",
+                    "completed": False,
+                    "source": "disease_detection",
+                    "cropType": crop_type,
+                })
     
     # 2. Weather-based tasks (if weather API is available)
     if lat and lon:
         try:
-            from .weather import get_weather_forecast, get_weather_recommendations
+            from .weather import get_weather_forecast, get_weather_recommendations, check_rain_in_next_hours
         except ImportError:
-            from core.weather import get_weather_forecast, get_weather_recommendations
+            from core.weather import get_weather_forecast, get_weather_recommendations, check_rain_in_next_hours
+        
+        # Check if rain is expected in 2-3 hours - add irrigation warning
+        rain_expected = check_rain_in_next_hours(lat, lon, hours=3)
+        if rain_expected:
+            tasks.append({
+                'id': f"irrigation-warning-{today.isoformat()}",
+                'title': '⚠️ Do Not Water Crops',
+                'description': 'Rain is expected within the next 2-3 hours. Do not water your crops as natural rainfall will provide sufficient moisture.',
+                'dueDate': today.isoformat(),
+                'priority': 'high',
+                'category': 'weather_advisory',
+                'completed': False,
+                'source': 'weather_forecast',
+                'cropType': crop_type
+            })
+        
         weather_data = get_weather_forecast(lat, lon, 7)
         if weather_data:
             weather_recs = get_weather_recommendations(weather_data)
@@ -152,34 +193,34 @@ def generate_schedule(
         location_tasks = get_location_based_tasks(location, crop_type)
         for i, loc_task in enumerate(location_tasks):
             task_date = today + timedelta(days=i % 7)
-        tasks.append({
-            'id': f"location-{i}",
-            'title': loc_task['title'],
-            'description': loc_task['description'],
-            'dueDate': task_date.isoformat(),
-            'priority': loc_task.get('priority', 'medium'),
-            'category': 'location_specific',
-            'completed': False,
-            'source': 'location_analysis',
-            'cropType': crop_type  # Add crop type to task
-        })
+            tasks.append({
+                'id': f"location-{i}",
+                'title': loc_task['title'],
+                'description': loc_task['description'],
+                'dueDate': task_date.isoformat(),
+                'priority': loc_task.get('priority', 'medium'),
+                'category': 'location_specific',
+                'completed': False,
+                'source': 'location_analysis',
+                'cropType': crop_type  # Add crop type to task
+            })
     
     # 4. Standard crop maintenance tasks (only if not already in disease schedule)
     if not disease_schedule:
         maintenance_tasks = get_crop_maintenance_tasks(crop_type, previous_week_progress)
         for i, maint_task in enumerate(maintenance_tasks):
             task_date = today + timedelta(days=i % 7)
-        tasks.append({
-            'id': f"maintenance-{i}",
-            'title': maint_task['title'],
-            'description': maint_task['description'],
-            'dueDate': task_date.isoformat(),
-            'priority': maint_task.get('priority', 'low'),
-            'category': 'maintenance',
-            'completed': False,
-            'source': 'crop_schedule',
-            'cropType': crop_type  # Add crop type to task
-        })
+            tasks.append({
+                "id": f"maintenance-{i}",
+                "title": maint_task["title"],
+                "description": maint_task["description"],
+                "dueDate": task_date.isoformat(),
+                "priority": maint_task.get("priority", "low"),
+                "category": "maintenance",
+                "completed": False,
+                "source": "crop_schedule",
+                "cropType": crop_type,
+            })
     
     # Sort by priority and date
     priority_order = {'high': 3, 'medium': 2, 'low': 1}

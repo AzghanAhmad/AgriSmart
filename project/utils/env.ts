@@ -9,31 +9,24 @@ type ExtraConfig = {
  * Get the backend API URL - Always uses backend server's network IP
  */
 export function getApiBaseUrl(): string {
-  // Smart IP detection for different environments
-  let BACKEND_NETWORK_IP: string;
-  
-  if (__DEV__) {
-    // Development mode - use appropriate IP based on platform
-    if (Platform.OS === 'android') {
-      // Android Emulator uses 10.0.2.2 to reach host machine
-      // For physical Android device, use actual network IP
-      BACKEND_NETWORK_IP = '10.235.31.18'; // Your current network IP
-    } else if (Platform.OS === 'ios') {
-      // iOS Simulator can use localhost
-      // For physical iOS device, use actual network IP
-      BACKEND_NETWORK_IP = '10.235.31.18'; // Your current network IP
-    } else {
-      // Web or other platforms
-      BACKEND_NETWORK_IP = '10.235.31.18';
-    }
-  } else {
-    // Production - use configured IP
-    BACKEND_NETWORK_IP = Constants.expoConfig?.extra?.API_BASE_URL?.replace('http://', '').replace(':5000', '') || '172.20.10.3';
+  // FIX: prefer runtime env value so mobile + backend can be switched without code edits
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  if (envUrl) {
+    console.log('📡 Using API URL from EXPO_PUBLIC_API_BASE_URL:', envUrl, `(Platform: ${Platform.OS})`);
+    return envUrl;
   }
-  
-  const url = `http://${BACKEND_NETWORK_IP}:5000`;
-  console.log('📡 Using Backend Network IP:', url, `(Platform: ${Platform.OS})`);
-  return url;
+
+  // Fallback to app config extra value if provided
+  const extraUrl = Constants.expoConfig?.extra?.API_BASE_URL?.trim();
+  if (extraUrl) {
+    console.log('📡 Using API URL from app config extra:', extraUrl, `(Platform: ${Platform.OS})`);
+    return extraUrl;
+  }
+
+  // Last-resort fallback
+  const fallback = 'http://192.168.100.15:5000';
+  console.log('📡 Using fallback backend URL:', fallback, `(Platform: ${Platform.OS})`);
+  return fallback;
 }
 
 /**
@@ -46,7 +39,8 @@ export async function testBackendConnection(): Promise<boolean> {
     console.log('🔍 Testing backend connection to:', baseUrl);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    // FIX: mobile devices and first backend response can be slower than 5s
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
     
     const response = await fetch(`${baseUrl}/health`, {
       method: 'GET',
@@ -67,12 +61,15 @@ export async function testBackendConnection(): Promise<boolean> {
     console.log('   Message:', data.message);
     return true;
   } catch (error: any) {
-    console.error('❌ Backend connection failed:', error.message);
+    const message = error?.name === 'AbortError'
+      ? 'Connection timed out after 15s'
+      : (error?.message || 'Unknown error');
+    console.error('❌ Backend connection failed:', message);
     console.error('');
     console.error('🔧 Troubleshooting Steps:');
     console.error('   1. Start backend: cd Backend && python app.py');
     console.error('   2. Check backend shows "Running on http://0.0.0.0:5000"');
-    console.error('   3. Test in browser: http://192.168.18.94:5000/health');
+    console.error('   3. Test in browser: http://192.168.100.15:5000/health');
     console.error('   4. Verify IP unchanged: ipconfig | findstr IPv4');
     console.error('   5. Check Windows Firewall allows port 5000');
     console.error('   6. Ensure same WiFi network (if using physical device)');

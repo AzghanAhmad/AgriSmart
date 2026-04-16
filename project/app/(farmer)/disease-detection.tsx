@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,20 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Camera  as CameraIcon , Upload, Scan, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Wheat, Leaf, ArrowLeft } from 'lucide-react-native';
+import { Camera  as CameraIcon , Upload, Scan, CircleAlert as AlertCircle, CircleCheck as CheckCircle, Wheat, Leaf, ArrowLeft, Trash2 } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
 import { ErrorAlert } from '@/components/ErrorAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
-
 import axios from 'axios';
 import { Platform } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getApiBaseUrl } from '@/utils/env';
+import { apiDelete } from '@/utils/api';
+import { resolveScanCoordinates } from '@/utils/pakistanGeocode';
 
 
 type CropType = 'wheat' | 'rice' | 'cotton' | null;
@@ -37,48 +39,88 @@ interface Crop {
 
 export default function DiseaseDetectionScreen() {
   const { user } = useAuth();
+  const { colors: tc } = useTheme();
   const [selectedCrop, setSelectedCrop] = useState<CropType>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [showError, setShowError] = useState(false);
-  const { language, cropDiseases, addRecentDetection } = useApp();
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const { language, cropDiseases, addRecentDetection, removeRecentDetection } = useApp();
 
-  const crops: Crop[] = [
-    {
-      id: 'wheat',
-      name: 'Wheat',
-      icon: Wheat,
-      color: '#F59E0B',
-      gradient: ['#FCD34D', '#F59E0B'],
-      description: 'Detect rust, smut, and other wheat diseases',
-      image: require('@/assets/crops/Wheat.jpg')
+  const crops = useMemo<Crop[]>(
+    () => [
+      {
+        id: 'wheat',
+        name: translate('cropWheat', language),
+        icon: Wheat,
+        color: '#F59E0B',
+        gradient: ['#FCD34D', '#F59E0B'],
+        description: translate('detectDescWheat', language),
+        image: require('@/assets/crops/Wheat.jpg'),
+      },
+      {
+        id: 'rice',
+        name: translate('cropRice', language),
+        icon: Leaf,
+        color: '#10B981',
+        gradient: ['#6EE7B7', '#10B981'],
+        description: translate('detectDescRice', language),
+        image: require('@/assets/crops/Rice.jpg'),
+      },
+      {
+        id: 'cotton',
+        name: translate('cropCotton', language),
+        icon: Leaf,
+        color: '#8B5CF6',
+        gradient: ['#C4B5FD', '#8B5CF6'],
+        description: translate('detectDescCotton', language),
+        image: require('@/assets/crops/cotton.jpg'),
+      },
+    ],
+    [language],
+  );
+
+  const cropTitle = useCallback(
+    (id: CropType) => {
+      if (!id) return '';
+      if (id === 'wheat') return translate('cropWheat', language);
+      if (id === 'rice') return translate('cropRice', language);
+      return translate('cropCotton', language);
     },
-    {
-      id: 'rice',
-      name: 'Rice',
-      icon: Leaf,
-      color: '#10B981',
-      gradient: ['#6EE7B7', '#10B981'],
-      description: 'Identify blast, brown spot, and rice diseases',
-      image: require('@/assets/crops/Rice.jpg')
+    [language],
+  );
+
+  const severityLabel = useCallback(
+    (sev: string | undefined) => {
+      const s = (sev || '').toLowerCase();
+      if (s === 'high') return translate('severityHigh', language);
+      if (s === 'medium') return translate('severityMedium', language);
+      return translate('severityLow', language);
     },
-    {
-      id: 'cotton',
-      name: 'Cotton',
-      icon: Leaf,
-      color: '#8B5CF6',
-      gradient: ['#C4B5FD', '#8B5CF6'],
-      description: 'Detect bollworm, leaf curl, and cotton issues',
-      image: require('@/assets/crops/cotton.jpg')
-    }
-  ];
+    [language],
+  );
+
+  // GPS in Pakistan → profile lat/lng → geocode profile location text → Lahore
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const coords = await resolveScanCoordinates(user);
+      if (!cancelled) {
+        setUserLocation(coords);
+        console.log('📍 Scan location:', coords.latitude, coords.longitude);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const handleCameraCapture = async () => {
     const permission = await Camera.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission Denied', 'Camera access is required');
+      Alert.alert(translate('permissionDenied', language), translate('detectCameraAccessRequired', language));
       return;
     }
 
@@ -98,7 +140,7 @@ export default function DiseaseDetectionScreen() {
   try {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert('Permission Denied', 'You need to allow access to photos.');
+      Alert.alert(translate('permissionDenied', language), translate('detectNeedPhotoAccess', language));
       return;
     }
 
@@ -115,7 +157,7 @@ export default function DiseaseDetectionScreen() {
     }
     } catch (err) {
       console.error(err);
-      Alert.alert('Error', 'Failed to upload image');
+      Alert.alert(translate('error', language), translate('detectFailedUploadImage', language));
     }
   };
 
@@ -197,7 +239,7 @@ export default function DiseaseDetectionScreen() {
   const analyzeImage = async (uri: string) => {
   try {
     if (!selectedCrop) {
-      Alert.alert('Error', 'Please select a crop type first.');
+      Alert.alert(translate('error', language), translate('detectSelectCropFirst', language));
       return;
     }
 
@@ -221,6 +263,15 @@ export default function DiseaseDetectionScreen() {
     formData.append('cropType', selectedCrop);
     if (user?.id) {
       formData.append('farmerId', user.id);
+    }
+    
+    // Attach location for outbreak detection
+    if (userLocation) {
+      formData.append('latitude', userLocation.latitude.toString());
+      formData.append('longitude', userLocation.longitude.toString());
+      console.log('📍 Sending location:', userLocation.latitude, userLocation.longitude);
+    } else {
+      console.log('⚠️ No location available for detection');
     }
 
     console.log('📤 Sending crop type to backend:', selectedCrop);
@@ -280,7 +331,7 @@ export default function DiseaseDetectionScreen() {
     });
   } catch (err) {
     console.error('❌ Error analyzing image:', err);
-    setError('Network or prediction error');
+    setError(translate('detectPredictionError', language));
     setShowError(true);
   } finally {
     setIsAnalyzing(false);
@@ -298,21 +349,57 @@ export default function DiseaseDetectionScreen() {
     setResult(null);
   };
 
+  const isBackendDetectionId = (id: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+
+  const formatScanDate = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleString(language === 'ur' ? 'ur-PK' : 'en-US');
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleDeleteScan = (id: string) => {
+    Alert.alert(translate('detectDeleteScanTitle', language), translate('detectDeleteScanBody', language), [
+      { text: translate('cancel', language), style: 'cancel' },
+      {
+        text: translate('delete', language),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            if (user?.id && isBackendDetectionId(id)) {
+              await apiDelete(`/api/farmer/detections/${encodeURIComponent(id)}?farmerId=${encodeURIComponent(user.id)}`);
+            }
+            removeRecentDetection(id);
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : translate('detectCouldNotDelete', language);
+            Alert.alert(translate('detectDeleteFailed', language), msg);
+          }
+        },
+      },
+    ]);
+  };
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         {selectedCrop && (
-          <TouchableOpacity style={styles.backButton} onPress={goBackToCropSelection}>
-            <ArrowLeft color="#111827" size={24} />
+          <TouchableOpacity style={[styles.backButton, { backgroundColor: tc.screenSecondary }]} onPress={goBackToCropSelection}>
+            <ArrowLeft color={tc.text} size={24} />
           </TouchableOpacity>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>
-            {selectedCrop ? `${selectedCrop.charAt(0).toUpperCase() + selectedCrop.slice(1)} Disease Detection` : 'Select Your Crop'}
+          <Text style={[styles.title, { color: tc.text }]}>
+            {selectedCrop
+              ? `${cropTitle(selectedCrop)}${translate('detectDiseaseDetectionSuffix', language)}`
+              : translate('detectSelectCropTitle', language)}
           </Text>
-          <Text style={styles.subtitle}>
-            {selectedCrop ? 'Scan or upload crop images for AI analysis' : 'Choose a crop type to start disease detection'}
+          <Text style={[styles.subtitle, { color: tc.textMuted }]}>
+            {selectedCrop ? translate('detectScanSubtitle', language) : translate('detectSelectCropSubtitle', language)}
           </Text>
         </View>
       </View>
@@ -347,7 +434,7 @@ export default function DiseaseDetectionScreen() {
                       <Text style={styles.cropDescription}>{crop.description}</Text>
                     </View>
                     <View style={[styles.selectButton, { backgroundColor: crop.color }]}>
-                      <Text style={styles.selectButtonText}>Select & Scan</Text>
+                      <Text style={styles.selectButtonText}>{translate('detectSelectScan', language)}</Text>
                       <Scan color="white" size={18} />
                     </View>
                   </LinearGradient>
@@ -367,8 +454,8 @@ export default function DiseaseDetectionScreen() {
               onPress={handleCameraCapture}
             >
               <CameraIcon color="white" size={40} />
-              <Text style={styles.optionText}>Scan with Camera</Text>
-              <Text style={styles.optionSubtext}>Take a photo now</Text>
+              <Text style={styles.optionText}>{translate('detectScanWithCamera', language)}</Text>
+              <Text style={styles.optionSubtext}>{translate('detectTakePhotoNow', language)}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -376,18 +463,18 @@ export default function DiseaseDetectionScreen() {
               onPress={handleImageUpload}
             >
               <Upload color="white" size={40} />
-              <Text style={styles.optionText}>Upload Image</Text>
-              <Text style={styles.optionSubtext}>Choose from gallery</Text>
+              <Text style={styles.optionText}>{translate('detectUploadImage', language)}</Text>
+              <Text style={styles.optionSubtext}>{translate('detectChooseGallery', language)}</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.tipsCard}>
+          <View style={[styles.tipsCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
             <Scan color="#22C55E" size={24} />
-            <Text style={styles.tipsTitle}>Photo Tips for Best Results:</Text>
-            <Text style={styles.tipText}>✓ Capture clear, well-lit images</Text>
-            <Text style={styles.tipText}>✓ Focus on affected plant parts</Text>
-            <Text style={styles.tipText}>✓ Avoid shadows and blur</Text>
-            <Text style={styles.tipText}>✓ Include multiple angles if possible</Text>
+            <Text style={[styles.tipsTitle, { color: tc.text }]}>{translate('detectPhotoTipsTitle', language)}</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>{translate('detectTip1', language)}</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>{translate('detectTip2', language)}</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>{translate('detectTip3', language)}</Text>
+            <Text style={[styles.tipText, { color: tc.textSecondary }]}>{translate('detectTip4', language)}</Text>
           </View>
         </View>
       )}
@@ -399,48 +486,48 @@ export default function DiseaseDetectionScreen() {
             {isAnalyzing && (
               <View style={styles.analysingOverlay}>
                 <Scan color="#22C55E" size={48} />
-                <Text style={styles.analysingText}>Analyzing crop...</Text>
+                <Text style={styles.analysingText}>{translate('detectAnalyzingCrop', language)}</Text>
               </View>
             )}
           </View>
 
           {result && (
-            <View style={styles.resultCard}>
+            <View style={[styles.resultCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
               <View style={styles.resultHeader}>
                 <View style={styles.diseaseInfo}>
-                  <Text style={styles.diseaseName}>{result.disease}</Text>
-                  <Text style={styles.confidence}>Confidence: {result.confidence}%</Text>
+                  <Text style={[styles.diseaseName, { color: tc.text }]}>{result.disease}</Text>
+                  <Text style={[styles.confidence, { color: tc.textMuted }]}>Confidence: {result.confidence}%</Text>
                 </View>
                 <View style={[
                   styles.severityBadge,
                   { backgroundColor: result.severity === 'High' ? '#EF4444' : 
                     result.severity === 'Medium' ? '#F59E0B' : '#22C55E' }
                 ]}>
-                  <Text style={styles.severityText}>{result.severity}</Text>
+                  <Text style={styles.severityText}>{severityLabel(result.severity)}</Text>
                 </View>
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Treatment Recommendation</Text>
-                <Text style={styles.treatmentText}>{result.treatment}</Text>
+                <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('detectTreatmentRecommendation', language)}</Text>
+                <Text style={[styles.treatmentText, { color: tc.textSecondary }]}>{result.treatment}</Text>
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Symptoms Detected</Text>
-                {result.symptoms.map((symptom: string, index: number) => (
+                <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('detectSymptomsDetected', language)}</Text>
+                {(Array.isArray(result.symptoms) ? result.symptoms : []).map((symptom: string, index: number) => (
                   <View key={index} style={styles.listItem}>
                     <AlertCircle color="#F59E0B" size={16} />
-                    <Text style={styles.listText}>{symptom}</Text>
+                    <Text style={[styles.listText, { color: tc.textSecondary }]}>{symptom}</Text>
                   </View>
                 ))}
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Prevention Tips</Text>
-                {result.prevention.map((tip: string, index: number) => (
+                <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('detectPreventionTips', language)}</Text>
+                {(Array.isArray(result.prevention) ? result.prevention : []).map((tip: string, index: number) => (
                   <View key={index} style={styles.listItem}>
                     <CheckCircle color="#22C55E" size={16} />
-                    <Text style={styles.listText}>{tip}</Text>
+                    <Text style={[styles.listText, { color: tc.textSecondary }]}>{tip}</Text>
                   </View>
                 ))}
               </View>
@@ -448,30 +535,67 @@ export default function DiseaseDetectionScreen() {
           )}
 
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.resetButton} onPress={resetAnalysis}>
-              <Text style={styles.resetButtonText}>Analyze New Image</Text>
+            <TouchableOpacity style={[styles.resetButton, { backgroundColor: tc.card, borderColor: tc.primary }]} onPress={resetAnalysis}>
+              <Text style={[styles.resetButtonText, { color: tc.primary }]}>{translate('detectAnalyzeNewImage', language)}</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Recent Detections */}
+      {/* Previous scans (history) */}
       <View style={styles.recentSection}>
-        <Text style={styles.sectionTitle}>Recent Detections</Text>
-        {cropDiseases.slice(0, 3).map((disease) => (
-          <View key={disease.id} style={styles.recentItem}>
-            <Image source={{ uri: disease.imageUrl }} style={styles.recentImage} />
-            <View style={styles.recentInfo}>
-              <Text style={styles.recentName}>{disease.name}</Text>
-              <Text style={styles.recentDate}>{disease.detectedAt}</Text>
+        <Text style={[styles.previousScansHeading, { color: tc.text }]}>{translate('detectPreviousScans', language)}</Text>
+        <Text style={[styles.previousScansSub, { color: tc.textMuted }]}>{translate('detectPreviousScansSub', language)}</Text>
+        {cropDiseases.length === 0 ? (
+          <Text style={[styles.previousScansSub, { marginTop: 8, color: tc.textMuted }]}>
+            {translate('detectNoScansYet', language)}
+          </Text>
+        ) : (
+          cropDiseases.map((disease) => (
+            <View
+              key={disease.id}
+              style={[
+                styles.recentItem,
+                { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border },
+              ]}
+            >
+              {disease.imageUrl ? (
+                <Image source={{ uri: disease.imageUrl }} style={styles.recentImage} />
+              ) : (
+                <View style={[styles.recentImage, { backgroundColor: tc.screenSecondary }]} />
+              )}
+              <View style={styles.recentInfo}>
+                <Text style={[styles.recentName, { color: tc.text }]}>{disease.name}</Text>
+                <Text style={[styles.recentDate, { color: tc.textMuted }]}>
+                  {formatScanDate(disease.detectedAt)}
+                </Text>
+              </View>
+              <View style={styles.recentRowEnd}>
+                <View
+                  style={[
+                    styles.severityIndicator,
+                    {
+                      backgroundColor:
+                        disease.severity === 'high'
+                          ? '#EF4444'
+                          : disease.severity === 'medium'
+                            ? '#F59E0B'
+                            : '#22C55E',
+                    },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => handleDeleteScan(disease.id)}
+                  style={[styles.deleteScanBtn, { backgroundColor: tc.screenSecondary }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Delete scan"
+                >
+                  <Trash2 color="#EF4444" size={20} />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={[
-              styles.severityIndicator,
-              { backgroundColor: disease.severity === 'high' ? '#EF4444' : 
-                disease.severity === 'medium' ? '#F59E0B' : '#22C55E' }
-            ]} />
-          </View>
-        ))}
+          ))
+        )}
       </View>
 
       <ErrorAlert
@@ -774,9 +898,17 @@ const styles = StyleSheet.create({
   recentSection: {
     marginBottom: 32,
   },
+  previousScansHeading: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  previousScansSub: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
   recentItem: {
     flexDirection: 'row',
-    backgroundColor: 'white',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -786,6 +918,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+  },
+  recentRowEnd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  deleteScanBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   recentImage: {
     width: 48,

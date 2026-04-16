@@ -13,3 +13,13 @@ psycopg2-binary>=2.9
 opencv-python
 scikit-learn
 numpy
+langgraph
+langchain-groq
+langchain_huggingface
+langchain_community
+sentence-transformers
+chromadb
+openai-whisper>=20231117
+imageio-ffmpeg>=0.5.1
+pyttsx3>=2.90
+gTTS>=2.5.0

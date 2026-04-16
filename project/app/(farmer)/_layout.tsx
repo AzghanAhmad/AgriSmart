@@ -1,103 +1,138 @@
 import { Tabs } from 'expo-router';
-import { Home, Camera, Calendar, MapPin, MessageCircle, User } from 'lucide-react-native';
+import { View, StyleSheet, Platform } from 'react-native';
+import {
+  House as Home,
+  ScanLine,
+  CalendarCheck,
+  MapPin,
+  MessageSquare,
+  CircleUser,
+} from 'lucide-react-native';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useApp } from '@/contexts/AppContext';
+import { translate } from '@/utils/translations';
 
 export default function FarmerTabLayout() {
+  const { colors: tc, isDark } = useTheme();
+  const { language } = useApp();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#22C55E',
-        tabBarInactiveTintColor: '#6B7280',
+        tabBarInactiveTintColor: tc.textMuted,
         tabBarStyle: {
-          backgroundColor: 'white',
+          backgroundColor: tc.tabBarBg,
           borderTopWidth: 1,
-          borderTopColor: '#E5E7EB',
+          borderTopColor: tc.tabBarBorder,
+          height: Platform.OS === 'ios' ? 88 : 68,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          paddingTop: 8,
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 8,
+            },
+            android: {
+              elevation: 8,
+            },
+          }),
         },
-      }}>
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ size, color }) => (
-            <Home size={size} color={color} />
+          title: translate('tabHome', language),
+          tabBarIcon: ({ size, color, focused }) => (
+            <View style={focused ? styles.activeIconBg : undefined}>
+              <Home size={22} color={color} />
+            </View>
           ),
         }}
       />
       <Tabs.Screen
         name="disease-detection"
         options={{
-          title: 'Scan',
-          tabBarIcon: ({ size, color }) => (
-            <Camera size={size} color={color} />
+          title: translate('tabScanCrop', language),
+          tabBarIcon: ({ size, color, focused }) => (
+            <View style={focused ? styles.activeIconBg : undefined}>
+              <ScanLine size={22} color={color} />
+            </View>
           ),
         }}
       />
       <Tabs.Screen
         name="schedule"
         options={{
-          title: 'Schedule',
-          tabBarIcon: ({ size, color }) => (
-            <Calendar size={size} color={color} />
+          title: translate('tabSchedule', language),
+          tabBarIcon: ({ size, color, focused }) => (
+            <View style={focused ? styles.activeIconBg : undefined}>
+              <CalendarCheck size={22} color={color} />
+            </View>
           ),
         }}
       />
       <Tabs.Screen
         name="heatmap"
         options={{
-          title: 'Map',
-          tabBarIcon: ({ size, color }) => (
-            <MapPin size={size} color={color} />
+          title: translate('tabDiseaseMap', language),
+          tabBarIcon: ({ size, color, focused }) => (
+            <View style={focused ? styles.activeIconBg : undefined}>
+              <MapPin size={22} color={color} />
+            </View>
           ),
         }}
       />
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: 'Assistant',
-          tabBarIcon: ({ size, color }) => (
-            <MessageCircle size={size} color={color} />
+          title: translate('tabAssistant', language),
+          tabBarIcon: ({ size, color, focused }) => (
+            <View style={focused ? styles.activeIconBg : undefined}>
+              <MessageSquare size={22} color={color} />
+            </View>
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ size, color }) => (
-            <User size={size} color={color} />
+          title: translate('tabProfile', language),
+          tabBarIcon: ({ size, color, focused }) => (
+            <View style={focused ? styles.activeIconBg : undefined}>
+              <CircleUser size={22} color={color} />
+            </View>
           ),
         }}
       />
-      <Tabs.Screen
-        name="weather"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="yield-estimation"
-        options={{
-          href: null, // Hide from tab bar, accessible via quick actions
-        }}
-      />
-      <Tabs.Screen
-        name="schedule-select"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="timelapse-upload"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="timelapse-view"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
+      {/* Hidden pages — accessible via navigation but not visible in tab bar */}
+      <Tabs.Screen name="weather" options={{ href: null }} />
+      <Tabs.Screen name="schedule-select" options={{ href: null }} />
+      <Tabs.Screen name="timelapse-upload" options={{ href: null }} />
+      <Tabs.Screen name="timelapse-view" options={{ href: null }} />
+      <Tabs.Screen name="privacy-settings" options={{ href: null }} />
+      <Tabs.Screen name="help-support" options={{ href: null }} />
+      <Tabs.Screen name="cure-guidance-history" options={{ href: null }} />
+      <Tabs.Screen name="cure-guidance-detail" options={{ href: null }} />
+      <Tabs.Screen name="personalized-schedule" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  activeIconBg: {
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    borderRadius: 10,
+    padding: 6,
+    marginBottom: -4,
+  },
+});

@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Search, Plus, DollarSign, Calendar, Users, CircleCheck as CheckCircle, Clock, CreditCard as Edit3, Trash2, CircleAlert as AlertCircle } from 'lucide-react-native';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface SubsidyProgram {
   id: string;
@@ -26,6 +27,7 @@ interface SubsidyProgram {
 }
 
 export default function SubsidiesScreen() {
+  const { colors: tc } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
 
@@ -201,9 +203,9 @@ export default function SubsidiesScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Subsidy Management</Text>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.title, { color: tc.text }]}>Subsidy Management</Text>
         <TouchableOpacity style={styles.addButton}>
           <Plus color="white" size={20} />
           <Text style={styles.addButtonText}>Add Program</Text>
@@ -211,36 +213,37 @@ export default function SubsidiesScreen() {
       </View>
 
       {/* Statistics Cards */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{totalStats.totalPrograms}</Text>
-          <Text style={styles.statLabel}>Total Programs</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.statsScroll, { backgroundColor: tc.headerBg }]}>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalPrograms}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Programs</Text>
         </View>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
           <Text style={[styles.statValue, { color: '#22C55E' }]}>{totalStats.activePrograms}</Text>
-          <Text style={styles.statLabel}>Active</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Active</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{totalStats.totalApplicants.toLocaleString()}</Text>
-          <Text style={styles.statLabel}>Total Applicants</Text>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalApplicants.toLocaleString()}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Applicants</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { fontSize: 18 }]}>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { fontSize: 18, color: tc.text }]}>
             {formatCurrency(totalStats.totalDisbursed).replace('PKR', '₨')}
           </Text>
-          <Text style={styles.statLabel}>Disbursed</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Disbursed</Text>
         </View>
       </ScrollView>
 
       {/* Search and Filter */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchContainer}>
-          <Search color="#6B7280" size={20} />
+      <View style={[styles.searchSection, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <View style={[styles.searchContainer, { backgroundColor: tc.inputBg }]}>
+          <Search color={tc.textMuted} size={20} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: tc.text }]}
             placeholder="Search programs..."
             value={searchQuery}
             onChangeText={setSearchQuery}
+            placeholderTextColor={tc.textMuted}
           />
         </View>
         
@@ -250,12 +253,14 @@ export default function SubsidiesScreen() {
               key={filter.id}
               style={[
                 styles.filterButton,
+                { backgroundColor: tc.inputBg, borderColor: tc.border },
                 selectedFilter === filter.id && styles.activeFilterButton
               ]}
               onPress={() => setSelectedFilter(filter.id)}
             >
               <Text style={[
                 styles.filterText,
+                { color: tc.textSecondary },
                 selectedFilter === filter.id && styles.activeFilterText
               ]}>
                 {filter.label}
@@ -266,16 +271,16 @@ export default function SubsidiesScreen() {
       </View>
 
       {/* Programs List */}
-      <ScrollView style={styles.programsList} contentContainerStyle={styles.programsContent}>
+      <ScrollView style={[styles.programsList, { backgroundColor: tc.screen }]} contentContainerStyle={styles.programsContent}>
         {filteredPrograms.map((program) => {
           const StatusIcon = getStatusIcon(program.status);
           const approvalRate = Math.round((program.approvedApplicants / program.totalApplicants) * 100);
           
           return (
-            <View key={program.id} style={styles.programCard}>
+            <View key={program.id} style={[styles.programCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <View style={styles.programHeader}>
                 <View style={styles.programInfo}>
-                  <Text style={styles.programTitle}>{program.title}</Text>
+                  <Text style={[styles.programTitle, { color: tc.text }]}>{program.title}</Text>
                   <View style={[
                     styles.statusBadge,
                     {
@@ -292,13 +297,13 @@ export default function SubsidiesScreen() {
                 
                 <View style={styles.programActions}>
                   <TouchableOpacity 
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tc.inputBg }]}
                     onPress={() => handleEdit(program.id)}
                   >
-                    <Edit3 color="#6B7280" size={16} />
+                    <Edit3 color={tc.textMuted} size={16} />
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tc.inputBg }]}
                     onPress={() => handleDelete(program.id)}
                   >
                     <Trash2 color="#EF4444" size={16} />
@@ -306,38 +311,38 @@ export default function SubsidiesScreen() {
                 </View>
               </View>
 
-              <Text style={styles.programDescription}>{program.description}</Text>
+              <Text style={[styles.programDescription, { color: tc.textSecondary }]}>{program.description}</Text>
 
               {/* Program Details */}
               <View style={styles.programDetails}>
                 <View style={styles.detailRow}>
                   <DollarSign color="#22C55E" size={16} />
-                  <Text style={styles.detailText}>
+                  <Text style={[styles.detailText, { color: tc.textSecondary }]}>
                     {formatCurrency(program.amount)} - {formatCurrency(program.maxAmount)}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Calendar color="#F59E0B" size={16} />
-                  <Text style={styles.detailText}>
+                  <Text style={[styles.detailText, { color: tc.textSecondary }]}>
                     Deadline: {formatDate(program.applicationDeadline)}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Users color="#3B82F6" size={16} />
-                  <Text style={styles.detailText}>
+                  <Text style={[styles.detailText, { color: tc.textSecondary }]}>
                     {program.approvedApplicants}/{program.totalApplicants} approved ({approvalRate}%)
                   </Text>
                 </View>
               </View>
 
               {/* Eligibility Criteria */}
-              <View style={styles.criteriaSection}>
-                <Text style={styles.criteriaTitle}>Eligibility Criteria:</Text>
+              <View style={[styles.criteriaSection, { backgroundColor: tc.screenSecondary }]}>
+                <Text style={[styles.criteriaTitle, { color: tc.text }]}>Eligibility Criteria:</Text>
                 {program.eligibilityCriteria.slice(0, 2).map((criteria, index) => (
-                  <Text key={index} style={styles.criteriaText}>• {criteria}</Text>
+                  <Text key={index} style={[styles.criteriaText, { color: tc.textMuted }]}>• {criteria}</Text>
                 ))}
                 {program.eligibilityCriteria.length > 2 && (
-                  <Text style={styles.moreText}>
+                  <Text style={[styles.moreText, { color: tc.textMuted }]}>
                     +{program.eligibilityCriteria.length - 2} more criteria
                   </Text>
                 )}
@@ -346,12 +351,12 @@ export default function SubsidiesScreen() {
               {/* Progress Bar */}
               <View style={styles.progressSection}>
                 <View style={styles.progressHeader}>
-                  <Text style={styles.progressLabel}>Disbursement Progress</Text>
-                  <Text style={styles.progressValue}>
+                  <Text style={[styles.progressLabel, { color: tc.textMuted }]}>Disbursement Progress</Text>
+                  <Text style={[styles.progressValue, { color: tc.text }]}>
                     {formatCurrency(program.totalDisbursed)}
                   </Text>
                 </View>
-                <View style={styles.progressBar}>
+                <View style={[styles.progressBar, { backgroundColor: tc.border }]}>
                   <View 
                     style={[
                       styles.progressFill,
@@ -377,8 +382,8 @@ export default function SubsidiesScreen() {
                     {program.status === 'active' ? 'Pause' : 'Activate'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.viewButton}>
-                  <Text style={styles.viewButtonText}>View Details</Text>
+                <TouchableOpacity style={[styles.viewButton, { backgroundColor: tc.inputBg, borderColor: tc.border, borderWidth: 1 }]}>
+                  <Text style={[styles.viewButtonText, { color: tc.textSecondary }]}>View Details</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -387,9 +392,9 @@ export default function SubsidiesScreen() {
 
         {filteredPrograms.length === 0 && (
           <View style={styles.emptyState}>
-            <DollarSign color="#6B7280" size={48} />
-            <Text style={styles.emptyTitle}>No programs found</Text>
-            <Text style={styles.emptyText}>
+            <DollarSign color={tc.textMuted} size={48} />
+            <Text style={[styles.emptyTitle, { color: tc.text }]}>No programs found</Text>
+            <Text style={[styles.emptyText, { color: tc.textMuted }]}>
               {searchQuery ? 'Try adjusting your search terms' : 'No programs match the selected filter'}
             </Text>
           </View>

@@ -8,6 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { Database, Upload, Download, Trash2, CreditCard as Edit3, Plus, FileText, Image, Leaf, Bug } from 'lucide-react-native';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface DatasetItem {
   id: string;
@@ -21,6 +22,7 @@ interface DatasetItem {
 }
 
 export default function DataScreen() {
+  const { colors: tc } = useTheme();
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const mockDatasets: DatasetItem[] = [
@@ -171,9 +173,9 @@ export default function DataScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Dataset Management</Text>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.title, { color: tc.text }]}>Dataset Management</Text>
         <TouchableOpacity style={styles.uploadButton} onPress={handleUpload}>
           <Upload color="white" size={20} />
           <Text style={styles.uploadButtonText}>Upload</Text>
@@ -182,49 +184,53 @@ export default function DataScreen() {
 
       {/* Statistics Cards */}
       <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{totalStats.totalDatasets}</Text>
-          <Text style={styles.statLabel}>Total Datasets</Text>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalDatasets}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Datasets</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{totalStats.totalRecords.toLocaleString()}</Text>
-          <Text style={styles.statLabel}>Total Records</Text>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalRecords.toLocaleString()}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Records</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{totalStats.totalSize}</Text>
-          <Text style={styles.statLabel}>Total Size</Text>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalSize}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Size</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{formatDate(totalStats.lastUpdate)}</Text>
-          <Text style={styles.statLabel}>Last Updated</Text>
+        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{formatDate(totalStats.lastUpdate)}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Last Updated</Text>
         </View>
       </View>
 
       {/* Category Filter */}
-      <View style={styles.categorySection}>
-        <Text style={styles.categoryTitle}>Categories</Text>
+      <View style={[styles.categorySection, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.categoryTitle, { color: tc.text }]}>Categories</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
           {categories.map((category) => (
             <TouchableOpacity
               key={category.id}
               style={[
                 styles.categoryButton,
+                { backgroundColor: tc.inputBg, borderColor: tc.border },
                 selectedCategory === category.id && styles.activeCategoryButton
               ]}
               onPress={() => setSelectedCategory(category.id)}
             >
               <Text style={[
                 styles.categoryText,
+                { color: tc.textSecondary },
                 selectedCategory === category.id && styles.activeCategoryText
               ]}>
                 {category.label}
               </Text>
               <View style={[
                 styles.categoryBadge,
+                { backgroundColor: tc.screenSecondary },
                 selectedCategory === category.id && styles.activeCategoryBadge
               ]}>
                 <Text style={[
                   styles.categoryCount,
+                  { color: tc.textMuted },
                   selectedCategory === category.id && styles.activeCategoryCount
                 ]}>
                   {category.count}
@@ -236,12 +242,12 @@ export default function DataScreen() {
       </View>
 
       {/* Datasets List */}
-      <ScrollView style={styles.datasetsList} contentContainerStyle={styles.datasetsContent}>
+      <ScrollView style={[styles.datasetsList, { backgroundColor: tc.screen }]} contentContainerStyle={styles.datasetsContent}>
         {filteredDatasets.map((dataset) => {
           const TypeIcon = getTypeIcon(dataset.type);
           
           return (
-            <View key={dataset.id} style={styles.datasetCard}>
+            <View key={dataset.id} style={[styles.datasetCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <View style={styles.datasetHeader}>
                 <View style={styles.datasetInfo}>
                   <View style={styles.datasetTitleRow}>
@@ -251,20 +257,20 @@ export default function DataScreen() {
                     ]}>
                       <TypeIcon color={getTypeColor(dataset.type)} size={20} />
                     </View>
-                    <Text style={styles.datasetName}>{dataset.name}</Text>
+                    <Text style={[styles.datasetName, { color: tc.text }]}>{dataset.name}</Text>
                   </View>
-                  <Text style={styles.datasetDescription}>{dataset.description}</Text>
+                  <Text style={[styles.datasetDescription, { color: tc.textSecondary }]}>{dataset.description}</Text>
                 </View>
                 
                 <View style={styles.datasetActions}>
                   <TouchableOpacity 
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tc.inputBg }]}
                     onPress={() => handleEdit(dataset.id)}
                   >
-                    <Edit3 color="#6B7280" size={16} />
+                    <Edit3 color={tc.textMuted} size={16} />
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tc.inputBg }]}
                     onPress={() => handleDelete(dataset.id)}
                   >
                     <Trash2 color="#EF4444" size={16} />
@@ -272,22 +278,22 @@ export default function DataScreen() {
                 </View>
               </View>
 
-              <View style={styles.datasetMetrics}>
+              <View style={[styles.datasetMetrics, { borderTopColor: tc.border, borderBottomColor: tc.border }]}>
                 <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>{dataset.recordCount.toLocaleString()}</Text>
-                  <Text style={styles.metricLabel}>Records</Text>
+                  <Text style={[styles.metricValue, { color: tc.text }]}>{dataset.recordCount.toLocaleString()}</Text>
+                  <Text style={[styles.metricLabel, { color: tc.textMuted }]}>Records</Text>
                 </View>
                 <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>{dataset.size}</Text>
-                  <Text style={styles.metricLabel}>Size</Text>
+                  <Text style={[styles.metricValue, { color: tc.text }]}>{dataset.size}</Text>
+                  <Text style={[styles.metricLabel, { color: tc.textMuted }]}>Size</Text>
                 </View>
                 <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>{formatDate(dataset.lastUpdated)}</Text>
-                  <Text style={styles.metricLabel}>Updated</Text>
+                  <Text style={[styles.metricValue, { color: tc.text }]}>{formatDate(dataset.lastUpdated)}</Text>
+                  <Text style={[styles.metricLabel, { color: tc.textMuted }]}>Updated</Text>
                 </View>
               </View>
 
-              <View style={styles.datasetFooter}>
+              <View style={[styles.datasetFooter, { borderTopColor: tc.border }]}>
                 <View style={[
                   styles.categoryTag,
                   { backgroundColor: getTypeBgColor(dataset.type) }
@@ -301,11 +307,11 @@ export default function DataScreen() {
                 </View>
                 
                 <TouchableOpacity 
-                  style={styles.exportButton}
+                  style={[styles.exportButton, { backgroundColor: tc.screenSecondary, borderColor: tc.border, borderWidth: 1 }]}
                   onPress={() => handleExport(dataset.id)}
                 >
                   <Download color="#22C55E" size={16} />
-                  <Text style={styles.exportButtonText}>Export</Text>
+                  <Text style={[styles.exportButtonText, { color: tc.textSecondary }]}>Export</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -314,9 +320,9 @@ export default function DataScreen() {
 
         {filteredDatasets.length === 0 && (
           <View style={styles.emptyState}>
-            <Database color="#6B7280" size={48} />
-            <Text style={styles.emptyTitle}>No datasets found</Text>
-            <Text style={styles.emptyText}>
+            <Database color={tc.textMuted} size={48} />
+            <Text style={[styles.emptyTitle, { color: tc.text }]}>No datasets found</Text>
+            <Text style={[styles.emptyText, { color: tc.textMuted }]}>
               No datasets match the selected category
             </Text>
           </View>
@@ -324,18 +330,18 @@ export default function DataScreen() {
       </ScrollView>
 
       {/* Quick Actions */}
-      <View style={styles.quickActions}>
-        <TouchableOpacity style={styles.quickAction}>
+      <View style={[styles.quickActions, { backgroundColor: tc.headerBg, borderTopColor: tc.border }]}>
+        <TouchableOpacity style={[styles.quickAction, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
           <Plus color="#22C55E" size={24} />
-          <Text style={styles.quickActionText}>Add Dataset</Text>
+          <Text style={[styles.quickActionText, { color: tc.textSecondary }]}>Add Dataset</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.quickAction}>
+        <TouchableOpacity style={[styles.quickAction, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
           <Upload color="#3B82F6" size={24} />
-          <Text style={styles.quickActionText}>Bulk Upload</Text>
+          <Text style={[styles.quickActionText, { color: tc.textSecondary }]}>Bulk Upload</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.quickAction}>
+        <TouchableOpacity style={[styles.quickAction, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
           <Download color="#F59E0B" size={24} />
-          <Text style={styles.quickActionText}>Export All</Text>
+          <Text style={[styles.quickActionText, { color: tc.textSecondary }]}>Export All</Text>
         </TouchableOpacity>
       </View>
     </View>

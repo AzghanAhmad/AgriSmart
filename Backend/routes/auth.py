@@ -96,24 +96,33 @@ def login():
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.email == email).first()
-        if not user or not check_password_hash(user.password_hash, password):
-            return jsonify({'error': 'Invalid email or password'}), 401
+        try:
+            user = db.query(User).filter(User.email == email).first()
+            if not user or not check_password_hash(user.password_hash, password):
+                return jsonify({'error': 'Invalid email or password'}), 401
 
-        token = _create_token({'uid': user.user_id, 'role': user.role})
-        return jsonify({
-            'token': token,
-            'user': {
-                'id': user.user_id,
-                'name': user.name,
-                'email': user.email,
-            'phone': user.phone,
-            'location': user.location,
-            'latitude': user.latitude,
-            'longitude': user.longitude,
-            'role': user.role,
-            }
-        })
+            token = _create_token({'uid': user.user_id, 'role': user.role})
+            return jsonify({
+                'token': token,
+                'user': {
+                    'id': user.user_id,
+                    'name': user.name,
+                    'email': user.email,
+                    'phone': user.phone,
+                    'location': user.location,
+                    'latitude': user.latitude,
+                    'longitude': user.longitude,
+                    'role': user.role,
+                }
+            })
+        except Exception as e:
+            # FIX: prevent server crash / connection abort on DB errors
+            current_app.logger.exception('Login DB/query error')
+            debug_details = str(e) if current_app.debug else None
+            return jsonify({
+                'error': 'Login failed',
+                'details': debug_details
+            }), 500
     finally:
         db.close()
 

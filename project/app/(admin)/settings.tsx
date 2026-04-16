@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Switch,
   Alert,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { 
   User, 
@@ -22,14 +23,19 @@ import {
   LogOut,
   Settings as SettingsIcon,
   Eye,
-  EyeOff
+  EyeOff,
+  Moon,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { translate } from '@/utils/translations';
 
 export default function SettingsScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
   const { language, setLanguage } = useApp();
+  const { colors: tc, isDark, setDarkMode } = useTheme();
+  const [savingProfile, setSavingProfile] = useState(false);
   
   const [settings, setSettings] = useState({
     emailNotifications: true,
@@ -48,6 +54,15 @@ export default function SettingsScreen() {
     location: user?.location || '',
   });
 
+  useEffect(() => {
+    setProfileData({
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+      location: user?.location || '',
+    });
+  }, [user?.name, user?.email, user?.phone, user?.location]);
+
   const [showPasswordSection, setShowPasswordSection] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -59,16 +74,33 @@ export default function SettingsScreen() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleSaveProfile = () => {
-    Alert.alert('Success', 'Profile updated successfully');
+  const handleSaveProfile = async () => {
+    if (!profileData.name.trim()) {
+      Alert.alert(translate('error', language), translate('nameRequired', language));
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await updateProfile({
+        name: profileData.name,
+        phone: profileData.phone,
+        location: profileData.location,
+      });
+      Alert.alert(translate('success', language), translate('profileUpdatedBody', language));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : translate('couldNotSaveProfile', language);
+      Alert.alert(translate('updateFailedTitle', language), msg);
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const handleChangePassword = () => {
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
+      Alert.alert(translate('error', language), translate('newPasswordsNoMatch', language));
       return;
     }
-    Alert.alert('Success', 'Password changed successfully');
+    Alert.alert(translate('success', language), translate('passwordChangedSuccess', language));
     setPasswordData({
       currentPassword: '',
       newPassword: '',
@@ -77,93 +109,94 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: logout },
-      ]
-    );
+    Alert.alert(translate('logoutConfirmTitle', language), translate('logoutConfirmBody', language), [
+      { text: translate('cancel', language), style: 'cancel' },
+      { text: translate('logoutNav', language), style: 'destructive', onPress: logout },
+    ]);
   };
 
   const handleBackupData = () => {
-    Alert.alert('Data Backup', 'Starting system backup. This may take a few minutes.');
+    Alert.alert(translate('dataBackupAlertTitle', language), translate('dataBackupAlertMsg', language));
   };
 
   const handleExportReports = () => {
-    Alert.alert('Export Reports', 'Generating comprehensive system reports...');
+    Alert.alert(translate('exportReportsAlertTitle', language), translate('exportReportsAlertMsg', language));
   };
 
-  const settingsGroups = [
-    {
-      title: 'Notifications',
-      icon: Bell,
-      items: [
-        {
-          key: 'emailNotifications',
-          label: 'Email Notifications',
-          description: 'Receive notifications via email',
-          value: settings.emailNotifications,
-        },
-        {
-          key: 'pushNotifications',
-          label: 'Push Notifications',
-          description: 'Receive mobile push notifications',
-          value: settings.pushNotifications,
-        },
-        {
-          key: 'smsNotifications',
-          label: 'SMS Notifications',
-          description: 'Receive critical alerts via SMS',
-          value: settings.smsNotifications,
-        },
-      ]
-    },
-    {
-      title: 'System Settings',
-      icon: SettingsIcon,
-      items: [
-        {
-          key: 'dataBackup',
-          label: 'Automatic Backup',
-          description: 'Auto-backup system data daily',
-          value: settings.dataBackup,
-        },
-        {
-          key: 'autoReports',
-          label: 'Automatic Reports',
-          description: 'Generate weekly system reports',
-          value: settings.autoReports,
-        },
-        {
-          key: 'systemMaintenance',
-          label: 'Maintenance Mode',
-          description: 'Enable system maintenance mode',
-          value: settings.systemMaintenance,
-        },
-      ]
-    },
-    {
-      title: 'Developer Settings',
-      icon: Database,
-      items: [
-        {
-          key: 'debugMode',
-          label: 'Debug Mode',
-          description: 'Enable detailed system logging',
-          value: settings.debugMode,
-        },
-      ]
-    },
-  ];
+  const settingsGroups = useMemo(
+    () => [
+      {
+        title: translate('notificationsGroup', language),
+        icon: Bell,
+        items: [
+          {
+            key: 'emailNotifications',
+            label: translate('settingsEmailNotif', language),
+            description: translate('settingsEmailNotifDesc', language),
+            value: settings.emailNotifications,
+          },
+          {
+            key: 'pushNotifications',
+            label: translate('settingsPushNotif', language),
+            description: translate('settingsPushNotifDesc', language),
+            value: settings.pushNotifications,
+          },
+          {
+            key: 'smsNotifications',
+            label: translate('settingsSmsNotif', language),
+            description: translate('settingsSmsNotifDesc', language),
+            value: settings.smsNotifications,
+          },
+        ],
+      },
+      {
+        title: translate('systemSettingsGroup', language),
+        icon: SettingsIcon,
+        items: [
+          {
+            key: 'dataBackup',
+            label: translate('settingsAutoBackup', language),
+            description: translate('settingsAutoBackupDesc', language),
+            value: settings.dataBackup,
+          },
+          {
+            key: 'autoReports',
+            label: translate('settingsAutoReports', language),
+            description: translate('settingsAutoReportsDesc', language),
+            value: settings.autoReports,
+          },
+          {
+            key: 'systemMaintenance',
+            label: translate('settingsMaintenance', language),
+            description: translate('settingsMaintenanceDesc', language),
+            value: settings.systemMaintenance,
+          },
+        ],
+      },
+      {
+        title: translate('developerSettings', language),
+        icon: Database,
+        items: [
+          {
+            key: 'debugMode',
+            label: translate('settingsDebug', language),
+            description: translate('settingsDebugDesc', language),
+            value: settings.debugMode,
+          },
+        ],
+      },
+    ],
+    [language, settings],
+  );
+
+  const ph = tc.textMuted;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Admin Settings</Text>
+    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.title, { color: tc.text }]}>{translate('adminSettingsTitle', language)}</Text>
         <View style={styles.headerSubtitle}>
-          <Text style={styles.subtitle}>Manage system configuration and preferences</Text>
+          <Text style={[styles.subtitle, { color: tc.textMuted }]}>{translate('adminSettingsSubtitle', language)}</Text>
         </View>
       </View>
 
@@ -171,54 +204,67 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <User color="#22C55E" size={20} />
-          <Text style={styles.sectionTitle}>Profile Information</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('profileInformation', language)}</Text>
         </View>
-        <View style={styles.sectionContent}>
+        <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Full Name</Text>
+            <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('name', language)}</Text>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]}
               value={profileData.name}
               onChangeText={(text) => setProfileData(prev => ({ ...prev, name: text }))}
-              placeholder="Enter your full name"
+              placeholder={translate('enterFullName', language)}
+              placeholderTextColor={ph}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Email Address</Text>
+            <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('emailAddress', language)}</Text>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { color: tc.textMuted, borderColor: tc.border, backgroundColor: tc.screenSecondary }]}
               value={profileData.email}
-              onChangeText={(text) => setProfileData(prev => ({ ...prev, email: text }))}
-              placeholder="Enter your email"
-              keyboardType="email-address"
+              editable={false}
+              placeholder={translate('email', language)}
+              placeholderTextColor={ph}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Phone Number</Text>
+            <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('phone', language)}</Text>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]}
               value={profileData.phone}
               onChangeText={(text) => setProfileData(prev => ({ ...prev, phone: text }))}
-              placeholder="Enter your phone number"
+              placeholder={translate('enterPhone', language)}
+              placeholderTextColor={ph}
               keyboardType="phone-pad"
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Location</Text>
+            <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('location', language)}</Text>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]}
               value={profileData.location}
               onChangeText={(text) => setProfileData(prev => ({ ...prev, location: text }))}
-              placeholder="Enter your location"
+              placeholder={translate('enterYourLocation', language)}
+              placeholderTextColor={ph}
             />
           </View>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveProfile}>
-            <Save color="white" size={16} />
-            <Text style={styles.saveButtonText}>Save Profile</Text>
+          <TouchableOpacity
+            style={[styles.saveButton, savingProfile && { opacity: 0.7 }]}
+            onPress={handleSaveProfile}
+            disabled={savingProfile}
+          >
+            {savingProfile ? (
+              <ActivityIndicator color="white" size="small" />
+            ) : (
+              <Save color="white" size={16} />
+            )}
+            <Text style={styles.saveButtonText}>
+              {savingProfile ? translate('saving', language) : translate('saveProfile', language)}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -230,52 +276,55 @@ export default function SettingsScreen() {
           onPress={() => setShowPasswordSection(!showPasswordSection)}
         >
           <Shield color="#3B82F6" size={20} />
-          <Text style={styles.sectionTitle}>Security Settings</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('securitySettings', language)}</Text>
           {showPasswordSection ? (
-            <EyeOff color="#6B7280" size={16} />
+            <EyeOff color={tc.textMuted} size={16} />
           ) : (
-            <Eye color="#6B7280" size={16} />
+            <Eye color={tc.textMuted} size={16} />
           )}
         </TouchableOpacity>
         
         {showPasswordSection && (
-          <View style={styles.sectionContent}>
+          <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Current Password</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('currentPassword', language)}</Text>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]}
                 value={passwordData.currentPassword}
                 onChangeText={(text) => setPasswordData(prev => ({ ...prev, currentPassword: text }))}
-                placeholder="Enter current password"
+                placeholder={translate('enterCurrentPassword', language)}
+                placeholderTextColor={ph}
                 secureTextEntry
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>New Password</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('newPassword', language)}</Text>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]}
                 value={passwordData.newPassword}
                 onChangeText={(text) => setPasswordData(prev => ({ ...prev, newPassword: text }))}
-                placeholder="Enter new password"
+                placeholder={translate('enterNewPassword', language)}
+                placeholderTextColor={ph}
                 secureTextEntry
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Confirm New Password</Text>
+              <Text style={[styles.inputLabel, { color: tc.textSecondary }]}>{translate('confirmNewPassword', language)}</Text>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]}
                 value={passwordData.confirmPassword}
                 onChangeText={(text) => setPasswordData(prev => ({ ...prev, confirmPassword: text }))}
-                placeholder="Confirm new password"
+                placeholder={translate('confirmNewPasswordPh', language)}
+                placeholderTextColor={ph}
                 secureTextEntry
               />
             </View>
 
             <TouchableOpacity style={styles.changePasswordButton} onPress={handleChangePassword}>
               <Shield color="white" size={16} />
-              <Text style={styles.changePasswordButtonText}>Change Password</Text>
+              <Text style={styles.changePasswordButtonText}>{translate('changePassword', language)}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -285,24 +334,49 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Globe color="#F59E0B" size={20} />
-          <Text style={styles.sectionTitle}>Language & Region</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('languageRegion', language)}</Text>
         </View>
-        <View style={styles.sectionContent}>
-          <View style={styles.settingItem}>
+        <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          <View style={[styles.settingItem, { borderBottomColor: tc.border }]}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Application Language</Text>
-              <Text style={styles.settingDescription}>
-                Current: {language === 'en' ? 'English' : 'اردو'}
+              <Text style={[styles.settingLabel, { color: tc.text }]}>{translate('appLanguage', language)}</Text>
+              <Text style={[styles.settingDescription, { color: tc.textMuted }]}>
+                {translate('currentLanguage', language)}{' '}
+                {language === 'en' ? translate('langEnglish', language) : translate('langUrdu', language)}
               </Text>
             </View>
             <TouchableOpacity 
-              style={styles.toggleButton}
+              style={[styles.toggleButton, { backgroundColor: tc.screenSecondary }]}
               onPress={() => setLanguage(language === 'en' ? 'ur' : 'en')}
             >
-              <Text style={styles.toggleText}>
-                {language === 'en' ? 'Switch to اردو' : 'Switch to English'}
+              <Text style={[styles.toggleText, { color: tc.textSecondary }]}>
+                {language === 'en' ? translate('switchToUrdu', language) : translate('switchToEnglish', language)}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* Appearance */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Moon color="#8B5CF6" size={20} />
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('appearance', language)}</Text>
+        </View>
+        <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Text style={[styles.settingLabel, { color: tc.text }]}>{translate('darkMode', language)}</Text>
+              <Text style={[styles.settingDescription, { color: tc.textMuted }]}>
+                {translate('darkModeAdminDesc', language)}
+              </Text>
+            </View>
+            <Switch
+              value={isDark}
+              onValueChange={setDarkMode}
+              trackColor={{ false: tc.border, true: '#22C55E' }}
+              thumbColor="#FFFFFF"
+            />
           </View>
         </View>
       </View>
@@ -313,21 +387,27 @@ export default function SettingsScreen() {
         return (
           <View key={groupIndex} style={styles.section}>
             <View style={styles.sectionHeader}>
-              <GroupIcon color="#6B7280" size={20} />
-              <Text style={styles.sectionTitle}>{group.title}</Text>
+              <GroupIcon color={tc.textMuted} size={20} />
+              <Text style={[styles.sectionTitle, { color: tc.text }]}>{group.title}</Text>
             </View>
-            <View style={styles.sectionContent}>
+            <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
               {group.items.map((item, itemIndex) => (
-                <View key={itemIndex} style={styles.settingItem}>
+                <View
+                  key={itemIndex}
+                  style={[
+                    styles.settingItem,
+                    itemIndex < group.items.length - 1 && { borderBottomWidth: 1, borderBottomColor: tc.border },
+                  ]}
+                >
                   <View style={styles.settingInfo}>
-                    <Text style={styles.settingLabel}>{item.label}</Text>
-                    <Text style={styles.settingDescription}>{item.description}</Text>
+                    <Text style={[styles.settingLabel, { color: tc.text }]}>{item.label}</Text>
+                    <Text style={[styles.settingDescription, { color: tc.textMuted }]}>{item.description}</Text>
                   </View>
                   <Switch
                     value={item.value}
                     onValueChange={(value) => handleSettingChange(item.key, value)}
-                    trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
-                    thumbColor="white"
+                    trackColor={{ false: tc.border, true: '#22C55E' }}
+                    thumbColor="#FFFFFF"
                   />
                 </View>
               ))}
@@ -340,17 +420,17 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Database color="#8B5CF6" size={20} />
-          <Text style={styles.sectionTitle}>System Actions</Text>
+          <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('systemActions', language)}</Text>
         </View>
-        <View style={styles.sectionContent}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleBackupData}>
+        <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tc.screenSecondary }]} onPress={handleBackupData}>
             <Database color="#22C55E" size={16} />
-            <Text style={styles.actionButtonText}>Backup System Data</Text>
+            <Text style={[styles.actionButtonText, { color: tc.textSecondary }]}>{translate('backupSystemData', language)}</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.actionButton} onPress={handleExportReports}>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tc.screenSecondary }]} onPress={handleExportReports}>
             <Mail color="#3B82F6" size={16} />
-            <Text style={styles.actionButtonText}>Export System Reports</Text>
+            <Text style={[styles.actionButtonText, { color: tc.textSecondary }]}>{translate('exportSystemReports', language)}</Text>
           </TouchableOpacity>
         
         </View>
@@ -358,18 +438,18 @@ export default function SettingsScreen() {
 
       {/* Logout Section */}
       <View style={styles.section}>
-        <View style={styles.sectionContent}>
+        <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <LogOut color="white" size={16} />
-            <Text style={styles.logoutButtonText}>Logout</Text>
+            <Text style={styles.logoutButtonText}>{translate('logoutNav', language)}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* App Version */}
       <View style={styles.versionContainer}>
-        <Text style={styles.versionText}>AgriSmart Admin v1.0.0</Text>
-        <Text style={styles.buildText}>Build 2024.01.15 - Admin Panel</Text>
+        <Text style={[styles.versionText, { color: tc.textMuted }]}>{translate('adminVersionLine', language)}</Text>
+        <Text style={[styles.buildText, { color: tc.textMuted }]}>{translate('adminBuildLine', language)}</Text>
       </View>
     </ScrollView>
   );
@@ -484,8 +564,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   settingInfo: {
     flex: 1,

@@ -7,12 +7,16 @@ import os
 import datetime
 try:
     from .db import Base, engine
+    from .schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401 — register tables
     from .routes.farmer import farmer_bp
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp
+    from .routes.support import support_bp
     from .routes.guidance import guidance_bp
     from .routes.schedule import schedule_bp
     from .routes.timelapse import timelapse_bp
+    from .routes.chatbot_bp import chatbot_bp
+    from .routes.voice_bp import voice_bp
     from .modules.yield_estimation import yield_estimation_bp
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
@@ -21,12 +25,16 @@ try:
 except ImportError:
     # Fallback for running as a script: python Backend/app.py
     from db import Base, engine
+    from schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401
     from routes.farmer import farmer_bp
     from routes.admin import admin_bp
     from routes.auth import auth_bp
+    from routes.support import support_bp
     from routes.guidance import guidance_bp
     from routes.schedule import schedule_bp
     from routes.timelapse import timelapse_bp
+    from routes.chatbot_bp import chatbot_bp
+    from routes.voice_bp import voice_bp
     from modules.yield_estimation import yield_estimation_bp
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
@@ -34,6 +42,8 @@ except ImportError:
     from core.seed_schedules import seed_schedules_if_needed
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
+# Timelapse JSON uploads send multiple base64 images; allow a generous body size
+app.config['MAX_CONTENT_LENGTH'] = 48 * 1024 * 1024
 # Configure CORS via env; default to permissive in dev
 allowed_origins = get_allowed_origins()
 if allowed_origins == '*':
@@ -89,10 +99,13 @@ with app.app_context():
 app.register_blueprint(farmer_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(support_bp)
 app.register_blueprint(guidance_bp)
 app.register_blueprint(schedule_bp)
 app.register_blueprint(timelapse_bp)  # Smart TimeLapse Module
 app.register_blueprint(yield_estimation_bp)  # Yield Estimation Module
+app.register_blueprint(chatbot_bp)  # LangGraph + Chroma + Groq assistant
+app.register_blueprint(voice_bp)  # Hybrid STT/TTS (Whisper / Vosk / pyttsx3 / gTTS)
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
@@ -130,7 +143,11 @@ def home():
             "guidance": "/api/guidance",
             "schedule": "/api/farmer/schedule/*",
             "yield": "/api/yield/*",
-            "predict": "/predict"
+            "predict": "/predict",
+            "chatbot": "/api/chatbot/chat",
+            "chatbot_warmup": "/api/chatbot/warmup",
+            "voice_stt": "/api/voice/stt",
+            "voice_tts": "/api/voice/tts"
         }
     })
 

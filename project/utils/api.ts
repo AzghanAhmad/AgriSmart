@@ -66,6 +66,8 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
       error.name === 'TypeError'
     )) {
       let helpfulMessage = `Network error: Unable to connect to server at ${base}\n\n`;
+      // DEBUG: include the exact path URL attempted on-device
+      helpfulMessage += `Attempted URL: ${fullUrl}\n\n`;
       
       if (base.includes('127.0.0.1') || base.includes('localhost')) {
         helpfulMessage += `If you're using a physical device, you need to use your computer's IP address.\n`;

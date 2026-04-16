@@ -43,7 +43,12 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     try {
       setError('');
-      await signup(formData);
+      // Convert null to undefined for API compatibility
+      await signup({
+        ...formData,
+        latitude: formData.latitude ?? undefined,
+        longitude: formData.longitude ?? undefined,
+      });
       // Navigation is handled in _layout.tsx based on user role
     } catch (err: any) {
       setError(err.message || translate('networkError', language));
@@ -84,9 +89,7 @@ export default function SignupScreen() {
             <Leaf color="#22C55E" size={48} />
             <Text style={styles.logoText}>AgriSmart</Text>
           </View>
-          <Text style={styles.subtitle}>
-            Join the smart farming revolution
-          </Text>
+          <Text style={styles.subtitle}>{translate('signupTagline', language)}</Text>
         </View>
 
         <View style={styles.form}>
@@ -247,7 +250,7 @@ export default function SignupScreen() {
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
+            <Text style={styles.loginText}>{translate('loginPrompt', language)}</Text>
             <TouchableOpacity onPress={navigateToLogin}>
               <Text style={styles.loginLink}>
                 {translate('login', language)}
@@ -267,6 +270,8 @@ export default function SignupScreen() {
       <LocationPickerModal
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
+        constrainToPakistan
+        title={translate('mapPickerTitlePK', language)}
         onSelect={handleLocationSelect}
         initialLocation={
           formData.latitude && formData.longitude

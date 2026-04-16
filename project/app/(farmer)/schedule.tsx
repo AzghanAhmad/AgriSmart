@@ -21,9 +21,12 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApp } from '@/contexts/AppContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { translate } from '@/utils/translations';
 import { getApiBaseUrl } from '@/utils/env';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ScheduleTask {
@@ -59,7 +62,11 @@ type CropType = 'wheat' | 'rice' | 'cotton';
 
 export default function ScheduleScreen() {
   const { user } = useAuth();
+  const { language } = useApp();
+  const { colors: tc } = useTheme();
   const router = useRouter();
+  const dateLocale = language === 'ur' ? 'ur-PK' : 'en-US';
+  const params = useLocalSearchParams<{ cropType?: string; diseaseName?: string; fromCureGuidance?: string }>();
   const [selectedTab, setSelectedTab] = useState<'today' | 'upcoming' | 'completed'>('today');
   const [selectedCrop, setSelectedCrop] = useState<CropType>('wheat'); // Default to wheat
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
@@ -150,7 +157,7 @@ export default function ScheduleScreen() {
     }
   }, [user?.id]);
 
-  const generateSchedule = async (cropType?: string) => {
+  const generateSchedule = async (cropType?: string, diseaseNameOverride?: string) => {
     if (!user?.id) return;
     
     const crop = cropType || selectedCrop; // Use selected crop (always has a value now)
@@ -158,23 +165,28 @@ export default function ScheduleScreen() {
     try {
       const API_BASE_URL = getApiBaseUrl();
       
-      // Get disease name from recent detections for this crop
-      let diseaseName = null;
-      try {
-        const detectionsResponse = await fetch(
-          `${API_BASE_URL}/api/farmer/detections/recent?farmerId=${user.id}`
-        );
-        if (detectionsResponse.ok) {
-          const detectionsData = await detectionsResponse.json();
-          const cropDetection = detectionsData.detections?.find(
-            (d: any) => d.cropType?.toLowerCase() === crop.toLowerCase()
+      // Use explicit disease from cure guidance when provided; otherwise infer from recent detections.
+      let diseaseName = diseaseNameOverride || null;
+      if (!diseaseName) {
+        try {
+          const detectionsResponse = await fetch(
+            `${API_BASE_URL}/api/farmer/detections/recent?farmerId=${user.id}`
           );
-          if (cropDetection?.diseaseName) {
-            diseaseName = cropDetection.diseaseName;
+          if (detectionsResponse.ok) {
+            const detectionsData = await detectionsResponse.json();
+            const cropDetection = detectionsData.detections?.find(
+              (d: any) => d.cropType?.toLowerCase() === crop.toLowerCase()
+            );
+            // API returns `name` (see /detections/recent); some clients use `diseaseName`
+            const fromDetection =
+              cropDetection?.diseaseName ?? cropDetection?.name ?? null;
+            if (fromDetection && fromDetection !== 'Unknown Disease') {
+              diseaseName = fromDetection;
+            }
           }
+        } catch (e) {
+          console.log('Could not fetch disease name:', e);
         }
-      } catch (e) {
-        console.log('Could not fetch disease name:', e);
       }
       
       const response = await fetch(`${API_BASE_URL}/api/farmer/schedule/generate`, {
@@ -213,6 +225,16 @@ export default function ScheduleScreen() {
     }
   };
 
+  // If opened from Cure Guidance, generate schedule for the selected disease/crop
+  useEffect(() => {
+    const fromCure = String(params.fromCureGuidance || '') === '1';
+    if (!fromCure || !user?.id) return;
+    const crop = (params.cropType || selectedCrop || 'wheat').toLowerCase() as CropType;
+    const disease = typeof params.diseaseName === 'string' ? params.diseaseName : undefined;
+    setSelectedCrop(crop);
+    void generateSchedule(crop, disease);
+  }, [params.fromCureGuidance, params.cropType, params.diseaseName, user?.id]);
+
   const toggleTaskCompletion = async (taskId: string) => {
     const updatedTasks = tasks.map(task =>
       task.id === taskId ? { ...task, completed: !task.completed } : task
@@ -244,11 +266,16 @@ export default function ScheduleScreen() {
 
   const getCategoryName = (category?: string) => {
     switch (category) {
-      case 'disease_management': return 'Disease Management';
-      case 'weather_advisory': return 'Weather Advisory';
-      case 'location_specific': return 'Location Specific';
-      case 'maintenance': return 'Crop Maintenance';
-      default: return 'General';
+      case 'disease_management':
+        return translate('schedCatDisease', language);
+      case 'weather_advisory':
+        return translate('schedCatWeather', language);
+      case 'location_specific':
+        return translate('schedCatLocation', language);
+      case 'maintenance':
+        return translate('schedCatMaintenance', language);
+      default:
+        return translate('schedCatGeneral', language);
     }
   };
 
@@ -261,7 +288,7 @@ export default function ScheduleScreen() {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      const dayName = date.toLocaleDateString(dateLocale, { weekday: 'long' });
       
       const dayTasks = tasks.filter(t => t.dueDate.split('T')[0] === dateStr);
       days.push({
@@ -337,29 +364,29 @@ export default function ScheduleScreen() {
   }, [loadSchedule]);
 
   if (isLoading) {
-    return <LoadingSpinner text="Loading your farming schedule..." />;
+    return <LoadingSpinner text={translate('scheduleLoadingSchedule', language)} />;
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: tc.screen }]}>
+      <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         <View>
-          <Text style={styles.title}>Farming Schedule</Text>
-          <Text style={styles.subtitle}>1 Week Personalized Plan</Text>
+          <Text style={[styles.title, { color: tc.text }]}>{translate('farmingSchedule', language)}</Text>
+          <Text style={[styles.subtitle, { color: tc.textMuted }]}>{translate('scheduleSubtitle', language)}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity 
-            style={styles.refreshButton} 
+          <TouchableOpacity
+            style={[styles.refreshButton, { backgroundColor: tc.screenSecondary }]}
             onPress={handleRefresh}
           >
-            <RefreshCw color="#22C55E" size={20} />
+            <RefreshCw color={tc.primary} size={20} />
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Crop Filter Bar */}
-      <View style={styles.cropFilterContainer}>
-        <Text style={styles.cropFilterLabel}>Filter by Crop:</Text>
+      <View style={[styles.cropFilterContainer, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+        <Text style={[styles.cropFilterLabel, { color: tc.textSecondary }]}>{translate('scheduleFilterByCrop', language)}</Text>
         <View style={styles.cropFilterButtons}>
           <TouchableOpacity
             style={[
@@ -374,7 +401,7 @@ export default function ScheduleScreen() {
                 selectedCrop === 'wheat' && styles.cropFilterButtonTextActive,
               ]}
             >
-              Wheat
+              {translate('cropWheat', language)}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -390,7 +417,7 @@ export default function ScheduleScreen() {
                 selectedCrop === 'rice' && styles.cropFilterButtonTextActive,
               ]}
             >
-              Rice
+              {translate('cropRice', language)}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -406,7 +433,7 @@ export default function ScheduleScreen() {
                 selectedCrop === 'cotton' && styles.cropFilterButtonTextActive,
               ]}
             >
-              Cotton
+              {translate('cropCotton', language)}
             </Text>
           </TouchableOpacity>
         </View>
@@ -414,95 +441,101 @@ export default function ScheduleScreen() {
 
       {/* Action Buttons - Prominent at top */}
       <View style={styles.actionButtonsContainer}>
-        <TouchableOpacity 
-          style={styles.secondaryActionButton} 
+        <TouchableOpacity
+          style={[
+            styles.secondaryActionButton,
+            { backgroundColor: tc.card, borderColor: tc.primary, borderWidth: 2 },
+          ]}
           onPress={() => router.push('/weather' as any)}
           activeOpacity={0.8}
         >
-          <Cloud color="white" size={20} />
-          <Text style={styles.secondaryActionButtonText}>7-Day Weather</Text>
+          <Cloud color={tc.primary} size={20} />
+          <Text style={[styles.secondaryActionButtonText, { color: tc.primaryDark }]}>
+            {translate('scheduleSevenDayWeather', language)}
+          </Text>
         </TouchableOpacity>
       </View>
 
       {/* Daily Progress */}
-      <View style={styles.progressCard}>
-        <Text style={styles.progressTitle}>Today's Progress</Text>
-        <View style={styles.progressBar}>
+      <View style={[styles.progressCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+        <Text style={[styles.progressTitle, { color: tc.text }]}>{translate('scheduleTodayProgress', language)}</Text>
+        <View style={[styles.progressBar, { backgroundColor: tc.border }]}>
           <View style={[styles.progressFill, { width: `${dailyProgress}%` }]} />
         </View>
-        <Text style={styles.progressText}>
-          {Math.round(dailyProgress)}% completed today
+        <Text style={[styles.progressText, { color: tc.textMuted }]}>
+          {Math.round(dailyProgress)}% {translate('scheduleCompletedTodaySuffix', language)}
         </Text>
       </View>
 
       {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
+      <View style={[styles.tabContainer, { backgroundColor: tc.headerBg, borderBottomWidth: 1, borderBottomColor: tc.border }]}>
         {(['today', 'upcoming', 'completed'] as const).map((tab) => (
           <TouchableOpacity
             key={tab}
-            style={[styles.tab, selectedTab === tab && styles.activeTab]}
+            style={[styles.tab, selectedTab === tab && { borderBottomColor: tc.primary, borderBottomWidth: 2 }]}
             onPress={() => setSelectedTab(tab)}
           >
-            <Text style={[styles.tabText, selectedTab === tab && styles.activeTabText]}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            <Text
+              style={[
+                styles.tabText,
+                { color: tc.textMuted },
+                selectedTab === tab && { color: tc.primary, fontWeight: '700' as const },
+              ]}
+            >
+              {tab === 'today'
+                ? translate('scheduleTabToday', language)
+                : tab === 'upcoming'
+                  ? translate('scheduleTabUpcoming', language)
+                  : translate('scheduleTabCompleted', language)}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
       <ScrollView
-        style={styles.content}
+        style={[styles.content, { backgroundColor: tc.screen }]}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl 
-            refreshing={isRefreshing} 
-            onRefresh={handleRefresh}
-          />
+          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={tc.primary} />
         }
       >
-        {/* Upcoming Tab - Show Days */}
+        {/* Upcoming Tab - Show Days in Grid */}
         {selectedTab === 'upcoming' && (
           <View style={styles.daysSection}>
-            <Text style={styles.sectionTitle}>Upcoming Days</Text>
-            {weekDays.map((day, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.dayCard}
-                onPress={() => setSelectedDay(day.date)}
-              >
-                <View style={styles.dayHeader}>
-                  <View style={styles.dayInfo}>
-                    <Text style={styles.dayName}>{day.dayName}</Text>
-                    <Text style={styles.dayDate}>
-                      {new Date(day.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </Text>
-                  </View>
-                  <View style={styles.dayStats}>
-                    <Text style={styles.dayTaskCount}>{day.tasks.length} tasks</Text>
-                    <Text style={styles.dayCompletedCount}>
-                      {day.tasks.filter(t => t.completed).length} completed
-                    </Text>
-                  </View>
-                </View>
-                {day.tasks.length > 0 && (
-                  <View style={styles.dayPreview}>
-                    {day.tasks.slice(0, 2).map((task, idx) => (
-                      <Text key={idx} style={styles.dayPreviewTask}>
-                        • {task.title}
-                      </Text>
-                    ))}
-                    {day.tasks.length > 2 && (
-                      <Text style={styles.dayMoreTasks}>
-                        +{day.tasks.length - 2} more tasks
+            <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('scheduleUpcomingDays', language)}</Text>
+            <View style={styles.daysGrid}>
+              {weekDays.map((day, index) => {
+                const allTasksCompleted = day.tasks.length > 0 && day.tasks.every(t => t.completed);
+                const dayDate = new Date(day.date);
+                const month = dayDate.toLocaleDateString(dateLocale, { month: 'short' });
+                const dayNum = dayDate.getDate();
+                
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.dayBox,
+                      { backgroundColor: tc.card, borderColor: tc.border },
+                      allTasksCompleted && styles.dayBoxCompleted
+                    ]}
+                    onPress={() => setSelectedDay(day.date)}
+                  >
+                    <Text style={[styles.dayBoxName, { color: tc.text }]}>{day.dayName}</Text>
+                    <Text style={[styles.dayBoxDate, { color: tc.textMuted }]}>{month} {dayNum}</Text>
+                    {allTasksCompleted && (
+                      <View style={styles.doneBadge}>
+                        <Text style={styles.doneText}>{translate('scheduleDone', language)}</Text>
+                      </View>
+                    )}
+                    {day.tasks.length > 0 && !allTasksCompleted && (
+                      <Text style={[styles.dayBoxTaskCount, { color: tc.primary }]}>
+                        {day.tasks.filter(t => t.completed).length}/{day.tasks.length}
                       </Text>
                     )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -510,16 +543,16 @@ export default function ScheduleScreen() {
         {(selectedTab === 'today' || selectedTab === 'completed') && (
           <View style={styles.tasksSection}>
             {Object.keys(groupedTasks).length === 0 ? (
-              <View style={styles.emptyState}>
-                <CheckCircle color="#22C55E" size={48} />
-                <Text style={styles.emptyTitle}>No tasks found</Text>
-                <Text style={styles.emptyText}>
-                  {selectedTab === 'today' && "You don't have any tasks scheduled for today"}
-                  {selectedTab === 'completed' && "No completed tasks yet"}
+              <View style={[styles.emptyState, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+                <CheckCircle color={tc.primary} size={48} />
+                <Text style={[styles.emptyTitle, { color: tc.text }]}>{translate('scheduleNoTasksFound', language)}</Text>
+                <Text style={[styles.emptyText, { color: tc.textMuted }]}>
+                  {selectedTab === 'today' && translate('scheduleNoTasksToday', language)}
+                  {selectedTab === 'completed' && translate('scheduleNoTasksCompleted', language)}
                 </Text>
                 {selectedTab === 'today' && (
-                  <TouchableOpacity style={styles.generateButton} onPress={generateSchedule}>
-                    <Text style={styles.generateButtonText}>Generate Schedule</Text>
+                  <TouchableOpacity style={[styles.generateButton, { backgroundColor: tc.primary }]} onPress={() => generateSchedule()}>
+                    <Text style={styles.generateButtonText}>{translate('scheduleGenerateSchedule', language)}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -527,19 +560,22 @@ export default function ScheduleScreen() {
               Object.entries(groupedTasks).map(([category, categoryTasks]) => {
                 const CategoryIcon = getCategoryIcon(category);
                 return (
-                  <View key={category} style={styles.categoryCard}>
-                    <View style={styles.categoryHeader}>
+                  <View key={category} style={[styles.categoryCard, { backgroundColor: tc.card, borderColor: tc.border }]}>
+                    <View style={[styles.categoryHeader, { borderBottomColor: tc.border }]}>
                       <CategoryIcon color={getPriorityColor(categoryTasks[0]?.priority || 'medium')} size={20} />
-                      <Text style={styles.categoryTitle}>
+                      <Text style={[styles.categoryTitle, { color: tc.text }]}>
                         {getCategoryName(category)}
                       </Text>
-                      <Text style={styles.categoryCount}>
-                        {categoryTasks.length} {categoryTasks.length === 1 ? 'task' : 'tasks'}
+                      <Text style={[styles.categoryCount, { color: tc.textMuted }]}>
+                        {categoryTasks.length}{' '}
+                        {categoryTasks.length === 1
+                          ? translate('scheduleTask', language)
+                          : translate('scheduleTasks', language)}
                       </Text>
                     </View>
                     <View style={styles.tasksList}>
                       {categoryTasks.map((task) => (
-                        <View key={task.id} style={styles.taskItem}>
+                        <View key={task.id} style={[styles.taskItem, { borderBottomColor: tc.border }]}>
                           <View style={styles.taskContent}>
                             <View style={styles.taskHeaderRow}>
                               <View style={[
@@ -548,6 +584,7 @@ export default function ScheduleScreen() {
                               ]} />
                               <Text style={[
                                 styles.taskBullet,
+                                { color: tc.text },
                                 task.completed && styles.taskCompleted
                               ]}>
                                 • {task.title}
@@ -555,15 +592,16 @@ export default function ScheduleScreen() {
                             </View>
                             <Text style={[
                               styles.taskDescription,
+                              { color: tc.textSecondary },
                               task.completed && styles.taskDescriptionCompleted
                             ]}>
                               {task.description}
                             </Text>
                             <View style={styles.taskMeta}>
-                              <View style={styles.dueDateBadge}>
-                                <Clock color="#6B7280" size={12} />
-                                <Text style={styles.dueDateText}>
-                                  {new Date(task.dueDate).toLocaleDateString('en-US', {
+                              <View style={[styles.dueDateBadge, { backgroundColor: tc.screenSecondary }]}>
+                                <Clock color={tc.textMuted} size={12} />
+                                <Text style={[styles.dueDateText, { color: tc.textMuted }]}>
+                                  {new Date(task.dueDate).toLocaleDateString(dateLocale, {
                                     month: 'short',
                                     day: 'numeric',
                                     hour: '2-digit',
@@ -572,8 +610,8 @@ export default function ScheduleScreen() {
                                 </Text>
                               </View>
                               {task.source && (
-                                <View style={styles.sourceBadge}>
-                                  <Text style={styles.sourceText}>{task.source}</Text>
+                                <View style={[styles.sourceBadge, { backgroundColor: tc.screenSecondary }]}>
+                                  <Text style={[styles.sourceText, { color: tc.textMuted }]}>{task.source}</Text>
                                 </View>
                               )}
                             </View>
@@ -581,7 +619,7 @@ export default function ScheduleScreen() {
                           <Switch
                             value={task.completed}
                             onValueChange={() => toggleTaskCompletion(task.id)}
-                            trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
+                            trackColor={{ false: tc.border, true: tc.primary }}
                             thumbColor="white"
                           />
                         </View>
@@ -602,18 +640,19 @@ export default function ScheduleScreen() {
         transparent={true}
         onRequestClose={() => setSelectedDay(null)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+        <View style={[styles.modalOverlay, { backgroundColor: tc.overlay }]}>
+          <View style={[styles.modalContent, { backgroundColor: tc.card }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: tc.border }]}>
               <TouchableOpacity onPress={() => setSelectedDay(null)}>
-                <ArrowLeft color="#111827" size={24} />
+                <ArrowLeft color={tc.text} size={24} />
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>
-                {selectedDay && new Date(selectedDay).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric'
-                })}
+              <Text style={[styles.modalTitle, { color: tc.text }]}>
+                {selectedDay &&
+                  new Date(selectedDay).toLocaleDateString(dateLocale, {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
               </Text>
               <View style={{ width: 24 }} />
             </View>
@@ -623,8 +662,10 @@ export default function ScheduleScreen() {
                 const dayData = weekDays.find(d => d.date === selectedDay);
                 if (!dayData || dayData.tasks.length === 0) {
                   return (
-                    <View style={styles.emptyState}>
-                      <Text style={styles.emptyText}>No tasks scheduled for this day</Text>
+                    <View style={[styles.emptyState, { backgroundColor: tc.screenSecondary, borderWidth: 0 }]}>
+                      <Text style={[styles.emptyText, { color: tc.textMuted }]}>
+                        {translate('scheduleModalEmptyDay', language)}
+                      </Text>
                     </View>
                   );
                 }
@@ -633,16 +674,16 @@ export default function ScheduleScreen() {
                 return Object.entries(grouped).map(([category, categoryTasks]) => {
                   const CategoryIcon = getCategoryIcon(category);
                   return (
-                    <View key={category} style={styles.categoryCard}>
-                      <View style={styles.categoryHeader}>
+                    <View key={category} style={[styles.categoryCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+                      <View style={[styles.categoryHeader, { borderBottomColor: tc.border }]}>
                         <CategoryIcon color={getPriorityColor(categoryTasks[0]?.priority || 'medium')} size={20} />
-                        <Text style={styles.categoryTitle}>
+                        <Text style={[styles.categoryTitle, { color: tc.text }]}>
                           {getCategoryName(category)}
                         </Text>
                       </View>
                       <View style={styles.tasksList}>
                         {categoryTasks.map((task) => (
-                          <View key={task.id} style={styles.taskItem}>
+                          <View key={task.id} style={[styles.taskItem, { borderBottomColor: tc.border }]}>
                             <View style={styles.taskContent}>
                               <View style={styles.taskHeaderRow}>
                                 <View style={[
@@ -651,6 +692,7 @@ export default function ScheduleScreen() {
                                 ]} />
                                 <Text style={[
                                   styles.taskBullet,
+                                  { color: tc.text },
                                   task.completed && styles.taskCompleted
                                 ]}>
                                   • {task.title}
@@ -658,6 +700,7 @@ export default function ScheduleScreen() {
                               </View>
                               <Text style={[
                                 styles.taskDescription,
+                                { color: tc.textSecondary },
                                 task.completed && styles.taskDescriptionCompleted
                               ]}>
                                 {task.description}
@@ -666,7 +709,7 @@ export default function ScheduleScreen() {
                             <Switch
                               value={task.completed}
                               onValueChange={() => toggleTaskCompletion(task.id)}
-                              trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
+                              trackColor={{ false: tc.border, true: tc.primary }}
                               thumbColor="white"
                             />
                           </View>
@@ -780,13 +823,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F59E0B',
     borderRadius: 12,
     padding: 12,
     gap: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -806,7 +848,6 @@ const styles = StyleSheet.create({
   secondaryActionButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: 'white',
   },
   progressCard: {
     backgroundColor: 'white',
@@ -873,62 +914,69 @@ const styles = StyleSheet.create({
   daysSection: {
     marginBottom: 24,
   },
-  dayCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  dayHeader: {
+  daysGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
     justifyContent: 'space-between',
+  },
+  dayBox: {
+    width: '48%',
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 18,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    minHeight: 130,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    position: 'relative',
   },
-  dayInfo: {
-    flex: 1,
+  dayBoxCompleted: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+    shadowColor: '#10B981',
   },
-  dayName: {
+  dayBoxName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#111827',
-    marginBottom: 2,
+    marginBottom: 6,
   },
-  dayDate: {
-    fontSize: 14,
+  dayBoxDate: {
+    fontSize: 15,
     color: '#6B7280',
-  },
-  dayStats: {
-    alignItems: 'flex-end',
-  },
-  dayTaskCount: {
-    fontSize: 16,
+    marginBottom: 10,
     fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
   },
-  dayCompletedCount: {
-    fontSize: 12,
-    color: '#22C55E',
-  },
-  dayPreview: {
-    gap: 4,
-  },
-  dayPreviewTask: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 20,
-  },
-  dayMoreTasks: {
-    fontSize: 12,
+  dayBoxTaskCount: {
+    fontSize: 13,
     color: '#6B7280',
-    fontStyle: 'italic',
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  doneBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 10,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  doneText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   tasksSection: {
     marginBottom: 24,
