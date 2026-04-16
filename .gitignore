@@ -113,3 +113,5 @@ project/.expo/
 
 # Assets maps (optional)
 assets/*.map
+
+Backend/ffmpeg_shim/ffmpeg.exe
