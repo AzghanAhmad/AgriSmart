@@ -45,12 +45,15 @@ export default function ChatbotScreen() {
   const [isAwaitingReply, setIsAwaitingReply] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
-  /** When app UI is English but you speak Urdu: send ur-PK to STT and ur to chat for voice only. */
-  const [preferUrduVoice, setPreferUrduVoice] = useState(false);
+  /** Explicit mic mode: ON => Urdu STT, OFF => English STT. */
+  const [useUrduVoice, setUseUrduVoice] = useState(language === 'ur');
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const voiceLocale: VoiceLocale =
-    language === 'ur' || preferUrduVoice ? 'ur-PK' : 'en-US';
+  const voiceLocale: VoiceLocale = useUrduVoice ? 'ur-PK' : 'en-US';
+
+  useEffect(() => {
+    setUseUrduVoice(language === 'ur');
+  }, [language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +101,7 @@ export default function ChatbotScreen() {
 
       try {
         const chatLang: 'en' | 'ur' =
-          language === 'ur' || (opts?.fromVoice && preferUrduVoice) ? 'ur' : 'en';
+          opts?.fromVoice ? (useUrduVoice ? 'ur' : 'en') : language === 'ur' ? 'ur' : 'en';
         const { response, session_id } = await sendChatbotMessage(
           text.trim(),
           sessionId,
@@ -116,7 +119,7 @@ export default function ChatbotScreen() {
         };
         setMessages((prev) => [...prev, botMessage]);
 
-        const loc: VoiceLocale = language === 'ur' ? 'ur-PK' : 'en-US';
+        const loc: VoiceLocale = useUrduVoice ? 'ur-PK' : 'en-US';
         try {
           await speakBotResponse(response, loc);
         } catch (e) {
@@ -131,7 +134,7 @@ export default function ChatbotScreen() {
         setIsAwaitingReply(false);
       }
     },
-    [sessionId, sessionReady, language, preferUrduVoice]
+    [sessionId, sessionReady, language, useUrduVoice]
   );
 
   const submitVoiceTranscript = useCallback(
@@ -221,18 +224,18 @@ export default function ChatbotScreen() {
         </TouchableOpacity>
       </View>
 
-      {language === 'en' ? (
-        <View style={styles.voiceLangRow}>
-          <Text style={styles.voiceLangLabel}>Urdu voice (mic)</Text>
-          <Switch
-            value={preferUrduVoice}
-            onValueChange={setPreferUrduVoice}
-            trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-            thumbColor={preferUrduVoice ? '#22C55E' : '#F3F4F6'}
-            accessibilityLabel="Use Urdu for microphone speech recognition"
-          />
-        </View>
-      ) : null}
+      <View style={styles.voiceLangRow}>
+        <Text style={styles.voiceLangLabel}>
+          {useUrduVoice ? 'Urdu voice mode' : 'English voice mode'}
+        </Text>
+        <Switch
+          value={useUrduVoice}
+          onValueChange={setUseUrduVoice}
+          trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+          thumbColor={useUrduVoice ? '#22C55E' : '#F3F4F6'}
+          accessibilityLabel="Toggle Urdu microphone speech recognition"
+        />
+      </View>
 
       <ScrollView
         ref={scrollViewRef}
