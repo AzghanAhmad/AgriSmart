@@ -62,9 +62,12 @@ ENV/
 .ipynb_checkpoints/
 
 # Database (local SQLite)
-#  *.db
-# *.sqlite3
-# *.sqlite
+*.db
+*.sqlite3
+*.sqlite
+
+# Keep any intentional, versioned DBs by exception (add more if needed)
+!Backend/chatbot/chroma_db/chroma.sqlite3
 
 # Logs
 logs/
