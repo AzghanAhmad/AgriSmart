@@ -207,6 +207,24 @@ export async function speakBotResponse(text: string, language: VoiceLocale): Pro
   const trimmed = (text || '').trim();
   if (!trimmed || Platform.OS === 'web') return;
 
+  // For Urdu replies, prefer backend TTS (gTTS lang='ur') so we reliably get Urdu audio
+  // even on devices without a proper Urdu voice installed.
+  if (language.toLowerCase().startsWith('ur')) {
+    const base = getApiBaseUrl().replace(/\/$/, '');
+    const res = await fetch(`${base}/api/voice/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ text: trimmed, language: 'ur' }),
+    });
+    const data = (await res.json()) as { url?: string; error?: string; details?: string };
+    if (!res.ok || !data.url) {
+      throw new Error(data.error || data.details || `TTS HTTP ${res.status}`);
+    }
+    const path = data.url.startsWith('/') ? data.url : `/${data.url}`;
+    await playUrlWithExpoAv(`${base}${path}`);
+    return;
+  }
+
   const Tts = getTtsModule();
   if (Tts) {
     try {

@@ -16,31 +16,26 @@ import logging
 
 from flask import Blueprint, request, jsonify, current_app, has_app_context
 
-try:
-    from .roman_urdu import FORCE_ROMAN_URDU, contains_urdu, urdu_to_roman
-except ImportError:
-    from roman_urdu import FORCE_ROMAN_URDU, contains_urdu, urdu_to_roman
-
 voice_bp = Blueprint('voice', __name__, url_prefix='/api/voice')
 
-_WHISPER_ROMAN_URDU_PROMPT = """The following speech is in Urdu.
-Transcribe it in Roman Urdu using English letters only.
-Do not translate to English.
-Do not output Urdu script.
-Example: mujhe gandum k bary ma btay"""
-
-_WHISPER_ROMAN_URDU_PROMPT_STRONG = (
-    _WHISPER_ROMAN_URDU_PROMPT
-    + "\n\nRepeat: write Urdu sounds as Latin letters only (Roman Urdu). Never answer in English."
+_URDU_CHAR_RE = re.compile(r'[\u0600-\u06FF]')
+_WS_COLLAPSE_RE = re.compile(r'\s+')
+_ENGLISH_STT_HINT = frozenset(
+    {
+        'what',
+        'tell',
+        'line',
+        'hello',
+        'how',
+        'is',
+        'the',
+        'are',
+        'where',
+        'when',
+        'why',
+        'please',
+    }
 )
-
-# Common English tokens — if many appear in a clip we expected as Urdu, retry with stronger prompt.
-_ENGLISH_STT_HINT = frozenset({
-    'what', 'the', 'is', 'are', 'was', 'were', 'tell', 'please', 'thank', 'thanks',
-    'hello', 'hi', 'how', 'when', 'where', 'why', 'who', 'this', 'that', 'these', 'those',
-    'you', 'your', 'can', 'could', 'would', 'should', 'about', 'with', 'from', 'have', 'has',
-    'me', 'my', 'do', 'does', 'did', 'want', 'need', 'know', 'like', 'just', 'not', 'for', 'and',
-})
 
 # Lazy-loaded Whisper model (global, loaded once)
 _whisper_model = None
@@ -90,24 +85,71 @@ def _stt_debug(msg: str) -> None:
         logging.getLogger(__name__).info(msg)
 
 
-def _normalize_stt_language(raw: str | None) -> str | None:
+def _normalize_urdu_text(text: str) -> str:
     """
-    Map client values (ur-PK, urdu, en-US) to Whisper: strictly 'ur' or 'en'.
-    Anything else / empty / auto / unknown → None (omit language = Whisper auto-detect).
+    Normalize common Urdu Unicode variants and collapse extra spaces.
+    Keeps only text cleanup; no semantic rewriting.
     """
+    if not text:
+        return ''
+    t = text
+    # Farsi Yeh / Alef Maksura -> Urdu Yeh
+    t = t.replace('\u064A', '\u06CC').replace('\u0649', '\u06CC')
+    # Heh Goal and Teh Marbuta -> Do Chashmi Heh
+    t = t.replace('\u06C1', '\u06BE').replace('\u0629', '\u06BE')
+    # Tatweel and Arabic diacritics
+    t = t.replace('\u0640', '')
+    t = re.sub(r'[\u064B-\u065F\u0670]', '', t)
+    # Urdu punctuation normalization
+    t = t.replace('،', '، ').replace('۔', '۔ ')
+    t = _WS_COLLAPSE_RE.sub(' ', t).strip()
+    return t
+
+
+def _postprocess_urdu(text: str) -> str:
+    """
+    Light rule-based fixes for common Urdu OCR/STT mistakes.
+    Intentionally conservative: only a few high-confidence replacements.
+    """
+    if not text:
+        return ''
+    fixes = {
+        'هے': 'ہے',
+        'تھیک': 'ٹھیک',
+        'هوں': 'ہوں',
+    }
+    out = text
+    for wrong, right in fixes.items():
+        out = out.replace(wrong, right)
+    return out
+
+
+def _normalize_stt_language(raw: str | None) -> str:
+    """Map incoming locale strings to explicit STT languages supported by this route."""
     s = (raw or '').strip().lower().replace('_', '-')
-    if not s or s in ('auto', 'unknown'):
-        return None
-    if s.startswith('ur') or s.split('-')[0] == 'urdu':
+    if s.startswith('ur'):
         return 'ur'
-    if s.startswith('en') or s.split('-')[0] in ('eng', 'english'):
-        return 'en'
-    return None
+    return 'en'
 
 
-def _output_looks_english_heavy_for_urdu_expected(text: str) -> bool:
-    """Heuristic: Latin transcript looks like English, not Roman Urdu."""
-    if not text or contains_urdu(text):
+def _urdu_ratio(text: str) -> float:
+    """Return ratio of Urdu-script chars among visible non-space chars."""
+    if not text:
+        return 0.0
+    visible = [ch for ch in text if not ch.isspace()]
+    if not visible:
+        return 0.0
+    urdu_count = sum(1 for ch in visible if _URDU_CHAR_RE.match(ch))
+    return urdu_count / len(visible)
+
+
+def _is_mostly_urdu(text: str, threshold: float = 0.60) -> bool:
+    return _urdu_ratio(text) >= threshold
+
+
+def _output_looks_english_heavy(text: str) -> bool:
+    """Heuristic for obvious bad STT output before Urdu validation."""
+    if not text:
         return False
     tokens = re.findall(r'[a-zA-Z]+', text.lower())
     if len(tokens) < 2:
@@ -139,47 +181,42 @@ def _whisper_load():
 
 def _transcribe_whisper(
     path: str,
-    whisper_lang: str | None,
+    whisper_lang: str = 'ur',
     *,
-    roman_urdu_prompt: bool = False,
-    strong_roman_prompt: bool = False,
+    temperature: float = 0.0,
 ) -> str:
     model = _whisper_load()
     if model is None:
         raise RuntimeError('whisper_unavailable')
     import whisper
 
-    kwargs: dict = {'task': 'transcribe'}
-    if whisper_lang:
-        kwargs['language'] = whisper_lang
-
-    if roman_urdu_prompt and whisper_lang == 'ur' and FORCE_ROMAN_URDU:
-        kwargs['initial_prompt'] = (
-            _WHISPER_ROMAN_URDU_PROMPT_STRONG if strong_roman_prompt else _WHISPER_ROMAN_URDU_PROMPT
-        )
-
-    _stt_debug(f'STT Whisper call: language={kwargs.get("language")!r} task={kwargs.get("task")!r} '
-               f'roman_prompt={roman_urdu_prompt} strong={strong_roman_prompt}')
+    kwargs: dict = {
+        'language': whisper_lang,
+        'task': 'transcribe',
+        'temperature': float(temperature),
+        'beam_size': 10,
+        'best_of': 10,
+        'condition_on_previous_text': False,
+        'compression_ratio_threshold': 2.4,
+        'logprob_threshold': -1.0,
+        'no_speech_threshold': 0.6,
+    }
+    _stt_debug(
+        'STT Whisper call: '
+        f'language={kwargs.get("language")!r} task={kwargs.get("task")!r} '
+        f'temperature={kwargs.get("temperature")} beam_size={kwargs.get("beam_size")} '
+        f'best_of={kwargs.get("best_of")} condition_on_previous_text={kwargs.get("condition_on_previous_text")} '
+        f'compression_ratio_threshold={kwargs.get("compression_ratio_threshold")} '
+        f'logprob_threshold={kwargs.get("logprob_threshold")} '
+        f'no_speech_threshold={kwargs.get("no_speech_threshold")}'
+    )
 
     result = model.transcribe(path, **kwargs)
     text = (result.get('text') or '').strip()
+    detected = result.get('language')
+    _stt_debug(f'Whisper detected language: {detected!r}')
     _stt_debug(f'Raw Whisper Output: {text!r}')
     return text
-
-
-def _apply_roman_urdu_postprocess(text: str) -> str:
-    """If Arabic-script Urdu remains, transliterate to Roman Urdu (no-op for pure Latin)."""
-    if not FORCE_ROMAN_URDU or not text:
-        return text
-    raw = text.strip()
-    if not contains_urdu(raw):
-        return text
-    roman = urdu_to_roman(raw)
-    if has_app_context():
-        current_app.logger.info('STT Roman Urdu: before=%r after=%r', raw, roman)
-    else:
-        logging.getLogger(__name__).info('STT Roman Urdu: before=%r after=%r', raw, roman)
-    return roman
 
 
 def _vosk_load():
@@ -319,49 +356,21 @@ def stt():
                 ),
             }), 503
 
+        # Audio preprocessing: 16 kHz mono WAV + basic normalization via ffmpeg.
         wav_path = _ffmpeg_to_wav_mono16k(tmp_path)
         path_for_stt = wav_path or tmp_path
         if wav_path:
             current_app.logger.info('STT: using ffmpeg-normalized wav (%s bytes)', os.path.getsize(wav_path))
 
         text = ''
+        whisper_lang = 'en'
         if has_whisper:
             try:
                 raw_lang = (language or '').strip()
                 whisper_lang = _normalize_stt_language(raw_lang)
                 _stt_debug(f'Detected language param (raw): {raw_lang!r} → whisper: {whisper_lang!r}')
-
-                roman_prompt = bool(whisper_lang == 'ur' and FORCE_ROMAN_URDU)
-                text = _transcribe_whisper(
-                    path_for_stt,
-                    whisper_lang,
-                    roman_urdu_prompt=roman_prompt,
-                    strong_roman_prompt=False,
-                )
-
-                # Never fall back to Whisper auto-detect for Urdu — that often picks English.
-                if not text.strip() and whisper_lang and whisper_lang != 'ur':
-                    _stt_debug(f'STT: empty with language={whisper_lang!r}, retrying auto-detect')
-                    text = _transcribe_whisper(
-                        path_for_stt,
-                        None,
-                        roman_urdu_prompt=False,
-                        strong_roman_prompt=False,
-                    )
-
-                if (
-                    whisper_lang == 'ur'
-                    and text.strip()
-                    and FORCE_ROMAN_URDU
-                    and _output_looks_english_heavy_for_urdu_expected(text)
-                ):
-                    _stt_debug('STT: Urdu expected but output looks English-heavy; retry with stronger Roman Urdu prompt')
-                    text = _transcribe_whisper(
-                        path_for_stt,
-                        'ur',
-                        roman_urdu_prompt=True,
-                        strong_roman_prompt=True,
-                    )
+                # Primary decode: deterministic, low temperature
+                text = _transcribe_whisper(path_for_stt, whisper_lang, temperature=0.0)
             except RuntimeError as e:
                 code = str(e)
                 if code == 'ffmpeg_missing':
@@ -392,7 +401,48 @@ def stt():
             if vosk_text:
                 text = vosk_text
 
-        text = _apply_roman_urdu_postprocess(text)
+        # Urdu-specific validation, retry, and post-correction
+        if whisper_lang == 'ur':
+            text = _normalize_urdu_text(text)
+            ratio = _urdu_ratio(text)
+            _stt_debug(f'STT Urdu validation: ratio={ratio:.3f} mostly_urdu={_is_mostly_urdu(text)}')
+
+            needs_retry = False
+            if not text or len(text) < 3:
+                needs_retry = True
+            elif not _is_mostly_urdu(text) or _output_looks_english_heavy(text):
+                needs_retry = True
+
+            if needs_retry and has_whisper:
+                _stt_debug('STT Urdu: primary decode low quality — retrying with relaxed temperature=0.2')
+                try:
+                    alt = _transcribe_whisper(path_for_stt, 'ur', temperature=0.2)
+                    alt = _normalize_urdu_text(alt)
+                    alt_ratio = _urdu_ratio(alt)
+                    _stt_debug(
+                        f'STT Urdu retry validation: ratio={alt_ratio:.3f} mostly_urdu={_is_mostly_urdu(alt)}'
+                    )
+                    if alt and _is_mostly_urdu(alt) and not _output_looks_english_heavy(alt):
+                        text = alt
+                        ratio = alt_ratio
+                        needs_retry = False
+                except Exception as e:  # pragma: no cover - defensive logging only
+                    current_app.logger.warning('Whisper Urdu retry failed: %s', e)
+
+            if needs_retry:
+                return jsonify(
+                    {
+                        'text': '',
+                        'error': 'speech_unclear',
+                        'hint': 'Speech unclear, please speak in Urdu',
+                    }
+                )
+
+            # Final Urdu-specific post-correction
+            text = _postprocess_urdu(text)
+        else:
+            # For non-Urdu, just trim and collapse whitespace; no script validation.
+            text = _WS_COLLAPSE_RE.sub(' ', (text or '').strip())
 
         return jsonify({'text': text})
     except Exception as e:
