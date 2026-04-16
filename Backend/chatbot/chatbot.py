@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import warnings
 warnings.filterwarnings("ignore")
@@ -28,6 +29,8 @@ class AgriState(TypedDict):
     messages: Annotated[List, add_messages]
     query: str
     language: str        # "roman_urdu" | "urdu_script" | "english"
+    language_hint: str   # from app: "ur" | "en" | ""
+    from_voice: bool     # True when message came from speech-to-text (mic)
     context: str
     response: str
 
@@ -94,16 +97,60 @@ URDU_SCRIPT_PROMPT = """<s>[INST] آپ AgriSmart ہیں، پاکستانی کس�
 
 # ── Language Detection ────────────────────────────────────────────────
 ROMAN_URDU_WORDS = {
-    "gandum", "chawal", "kapas", "fasal", "bimari", "keere", "keera",
+    "gandum", "gehun", "chawal", "kapas", "fasal", "bimari", "bemari", "keere", "keera",
     "paani", "pani", "khad", "beej", "zameen", "khet", "dawaai",
-    "ilaj", "achha", "theek", "kya", "hai", "mein", "aur", "nahi",
-    "karo", "kab", "kaise", "kyun", "hua", "raha", "patta", "zang",
-    "phool", "rog", "lagaya", "lagao", "batao", "kisan", "faida",
-    "nuqsan", "mosam", "barish", "dhoop", "geela", "sukha", "spray",
-    "dawai", "panwa", "tijarat", "munafa", "zyada", "kam", "achhi"
+    "ilaj", "ilay", "achha", "acha", "theek", "kya", "hai", "hain", "ho", "mein", "main", "aur", "nahi", "nahin",
+    "karo", "karein", "kab", "kaise", "kese", "kyun", "hua", "raha", "patta", "zang",
+    "phool", "rog", "lagaya", "lagao", "batao", "bataen", "btay", "kisan", "kisaan", "faida",
+    "nuqsan", "mosam", "mausam", "barish", "dhoop", "geela", "sukha", "spray",
+    "dawai", "panwa", "tijarat", "munafa", "zyada", "ziyada", "kam", "achhi",
+    "madad", "rehnumai", "rahnumai", "mashwara", "masla", "masail", "salam", "assalam",
+    "alaikum", "bhai", "jan", "thori", "chhota", "mutabiq", "bare", "baray", "bary",
+    "waqt", "bone", "boen", "kattai", "paidawar", "mun", "bag",
+    "abpashi", "nehr", "barani", "ridges", "khaad", "foilar", "gober", "fym",
+    "maloomat", "zalila", "nindaai", "jhariyon", "beej", "beejon",
 }
 
-URDU_SCRIPT_CHARS = set("ابتثجحخدذرزسشصضطظعغفقکلمنوہیءآاةپچژگڈڑں")
+# Common Roman Urdu function words / endings (Whisper STT often uses these; not in the small keyword set).
+_ROMAN_URDU_PATTERN = re.compile(
+    r"\b(?:"
+    r"hai|hain|ho|hon|hoon|hun|kya|kyun|kar|karun|karein|karta|karti|karte|kiya|kiye|"
+    r"ko|mein|main|se|par|aur|nahi|nahin|na|"
+    r"aap|apna|apne|apko|mere|mera|meri|mujhe|hum|ham|"
+    r"ki|ke|ka|wali|wala|walay|walon|"
+    r"tha|thi|the|raha|rahi|rahe|"
+    r"batao|bataen|btay|madad|rehnumai|mashwara|"
+    r"salam|assalam|alaikum|wa|"
+    r"zameen|khet|mausam|mosam|fasal|bimari|bemari|gandum|gehun|"
+    r"chawal|kapas|khad|beej|pani|paani|ilaj|dawai|dawaai|rog|kisan|kisaan|"
+    r"ji|haan|shukriya|acha|achha|kab|kaise|kese|hoga|hogi|hogay|"
+    r"baray|bary|bare|mutabiq|sab|ziada|ziyada|thori|chhota|koi|bhi|bas|toh|"
+    r"agar|lekin|warna|kyunki|isliye|jab|tab|phir|"
+    r"poore|poora|kitna|kitni|kitne|kahan|kaun|kis|kisne"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_query_tokens(text: str) -> set[str]:
+    """Split on whitespace; strip common punctuation so 'hai,' matches."""
+    out: set[str] = set()
+    for raw in re.split(r"\s+", text.lower()):
+        w = raw.strip(".,;:!?\"'()[]{}«»،؟٫")
+        if not w:
+            continue
+        out.add(w)
+        if len(w) > 2 and w.endswith("'s"):
+            out.add(w[:-2])
+    return out
+
+
+def _looks_like_roman_urdu(query: str) -> bool:
+    if _ROMAN_URDU_PATTERN.search(query):
+        return True
+    if _normalize_query_tokens(query) & ROMAN_URDU_WORDS:
+        return True
+    return False
 
 ROMAN_TO_ENGLISH = {
     "gandum": "wheat",
@@ -142,6 +189,19 @@ AGRI_WORDS = [
     "rog", "mosam", "barish", "patta", "phool", "kisan", "dawaai"
 ]
 
+def _normalize_lang_hint(raw: str) -> str:
+    """Map ur-PK, urdu, en-US → ur | en | ''."""
+    h = (raw or "").strip().lower().replace("_", "-")
+    if not h:
+        return ""
+    base = h.split("-")[0]
+    if base in ("ur", "urdu"):
+        return "ur"
+    if base in ("en", "eng", "english"):
+        return "en"
+    return base
+
+
 # ═══════════════════════════════════════════════════════════
 # Multi-turn context (must be fed to the LLM, not only stored after the fact)
 # ═══════════════════════════════════════════════════════════
@@ -158,17 +218,28 @@ def _prior_messages_plus_current_user(state: AgriState) -> List[Any]:
 
 def detect_language_node(state: AgriState) -> AgriState:
     query = state["query"]
+    hint = _normalize_lang_hint(state.get("language_hint") or "")
+    from_voice = bool(state.get("from_voice"))
 
-    # Check Urdu script characters
-    if any(c in URDU_SCRIPT_CHARS for c in query):
+    # Full Arabic block (Urdu/Persian script)
+    if re.search(r"[\u0600-\u06FF]", query):
         lang = "urdu_script"
+    # Mic + Urdu UI: STT text is often short or oddly tokenized — trust session language
+    elif from_voice and hint == "ur":
+        lang = "roman_urdu"
+    elif hint == "ur":
+        lang = "roman_urdu"
+    elif hint == "en":
+        if _looks_like_roman_urdu(query):
+            lang = "roman_urdu"
+        else:
+            lang = "english"
+    elif _looks_like_roman_urdu(query):
+        lang = "roman_urdu"
     else:
-        # Check Roman Urdu keywords
-        words_in_query = set(query.lower().split())
-        hits = words_in_query.intersection(ROMAN_URDU_WORDS)
-        lang = "roman_urdu" if hits else "english"
+        lang = "english"
 
-    print(f"Language detected: {lang}")
+    print(f"Language detected: {lang} (hint={hint!r}, from_voice={from_voice})")
     return {**state, "language": lang}
 
 
@@ -218,10 +289,14 @@ Disease puchne par: symptoms, dawaai, aur bachao tino batao."""
 گندم، چاول اور کپاس کے ماہر ہیں۔ اردو میں جواب دیں۔"""
 
     else:
-        system_msg = """You are AgriSmart, an AI agricultural assistant for Pakistani farmers.
-You specialize in wheat, rice, and cotton crops in Pakistan.
-Answer in simple, clear English. For disease questions mention symptoms, treatment and prevention.
-Keep answers practical and farmer-friendly."""
+        system_msg = """You are AgriSmart, an expert agricultural assistant for farmers in Pakistan.
+Focus on wheat, rice, and cotton (local practices, seasons, and common problems).
+
+Answer only in clear, simple English. Use short sentences and bullet points when listing steps.
+Be practical: say what to do, roughly when, and what to watch for.
+For diseases or pests: symptoms first, then treatment or spray options, then prevention.
+If the farmer writes in Roman Urdu (Urdu in Latin letters), understand it and reply in English.
+Stay concise; avoid jargon unless you explain it in one line."""
 
     # Add context to system message
     system_msg += f"\n\nContext from Agricultural Documents:\n{context}"
@@ -275,7 +350,10 @@ def direct_response_node(state: AgriState) -> AgriState:
     elif lang == "urdu_script":
         system = "آپ AgriSmart ہیں۔ مختصر اور دوستانہ جواب دیں۔ زراعت کی طرف رہنمائی کریں۔"
     else:
-        system = "You are AgriSmart, an agricultural assistant for Pakistani farmers. Be friendly. If not agriculture related, politely guide back to farming topics."
+        system = """You are AgriSmart, a friendly farming assistant for Pakistan.
+Reply only in clear English. Keep answers short.
+If the question is not about farming, politely steer the user toward crops, soil, water, pests, or fertilizer.
+If the user message is Roman Urdu, understand it and still answer in English."""
 
     try:
         from langchain_core.messages import SystemMessage as SM
@@ -330,13 +408,15 @@ class AgriSmartChatbot:
         self.graph   = build_graph()
         self.history = []
 
-    def chat(self, user_input: str) -> str:
+    def chat(self, user_input: str, language_hint: str = "", from_voice: bool = False) -> str:
         state = AgriState(
             messages=self.history,
             query=user_input,
             language="english",
+            language_hint=language_hint or "",
+            from_voice=from_voice,
             context="",
-            response=""
+            response="",
         )
         result       = self.graph.invoke(state)
         self.history = result["messages"]

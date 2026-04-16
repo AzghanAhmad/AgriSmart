@@ -89,6 +89,13 @@ export type ChatMessageDto = {
   created_at: string | null;
 };
 
+export type ChatbotSendOptions = {
+  /** True when text came from speech-to-text so backend can treat it as voice-originated */
+  fromVoice?: boolean;
+  /** Optional DB-backed conversation id for authenticated mode */
+  conversationId?: string | null;
+};
+
 /**
  * Preloads chatbot.py (ChromaDB + embeddings).
  * If the backend has no `/api/chatbot/warmup` route (404), returns skipped without throwing.
@@ -206,26 +213,31 @@ export async function fetchChatMessages(
 }
 
 /**
- * Sends a message. When `conversationId` is set (logged-in user), messages are stored server-side
- * and the model uses a sliding window of the last 20 turns.
+ * Sends a message to the Flask /api/chatbot/chat endpoint.
+ * Always sends language + from_voice fields for robust backend detection.
  */
 export async function sendChatbotMessage(
   message: string,
-  options: {
-    conversationId?: string | null;
-    sessionId?: string | null;
-  } = {}
+  sessionId?: string | null,
+  language: 'en' | 'ur' = 'en',
+  options?: ChatbotSendOptions
 ): Promise<ChatbotChatResponse> {
   const body: {
     message: string;
-    conversation_id?: string;
+    language: 'en' | 'ur';
+    from_voice: boolean;
     session_id?: string;
-  } = { message };
-  if (options.conversationId) {
-    body.conversation_id = options.conversationId;
+    conversation_id?: string;
+  } = {
+    message,
+    language: language === 'ur' ? 'ur' : 'en',
+    from_voice: options?.fromVoice === true,
+  };
+  if (sessionId) {
+    body.session_id = sessionId;
   }
-  if (options.sessionId) {
-    body.session_id = options.sessionId;
+  if (options?.conversationId) {
+    body.conversation_id = options.conversationId;
   }
   return apiPost<ChatbotChatResponse>('/api/chatbot/chat', body);
 }

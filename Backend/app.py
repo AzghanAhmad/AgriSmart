@@ -16,6 +16,7 @@ try:
     from .routes.schedule import schedule_bp
     from .routes.timelapse import timelapse_bp
     from .routes.chatbot_bp import chatbot_bp
+    from .routes.voice_bp import voice_bp
     from .modules.yield_estimation import yield_estimation_bp
     from .core.yolo import get_model_for_crop
     from .config import get_allowed_origins, get_upload_root, get_secret_key
@@ -33,6 +34,7 @@ except ImportError:
     from routes.schedule import schedule_bp
     from routes.timelapse import timelapse_bp
     from routes.chatbot_bp import chatbot_bp
+    from routes.voice_bp import voice_bp
     from modules.yield_estimation import yield_estimation_bp
     from core.yolo import get_model_for_crop
     from config import get_allowed_origins, get_upload_root, get_secret_key
@@ -103,6 +105,7 @@ app.register_blueprint(schedule_bp)
 app.register_blueprint(timelapse_bp)  # Smart TimeLapse Module
 app.register_blueprint(yield_estimation_bp)  # Yield Estimation Module
 app.register_blueprint(chatbot_bp)  # LangGraph + Chroma + Groq assistant
+app.register_blueprint(voice_bp)  # Hybrid STT/TTS (Whisper / Vosk / pyttsx3 / gTTS)
 
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
@@ -142,7 +145,9 @@ def home():
             "yield": "/api/yield/*",
             "predict": "/predict",
             "chatbot": "/api/chatbot/chat",
-            "chatbot_warmup": "/api/chatbot/warmup"
+            "chatbot_warmup": "/api/chatbot/warmup",
+            "voice_stt": "/api/voice/stt",
+            "voice_tts": "/api/voice/tts"
         }
     })
 

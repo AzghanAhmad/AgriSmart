@@ -37,10 +37,16 @@ const Animated = {
 // Fallback animation helpers (no-op for now, can add RN Animated later if needed)
 const useSharedValue = (initial: number) => ({ value: initial });
 const useAnimatedStyle = (fn: () => any) => ({});
-const withSpring = (value: any) => value;
-const withTiming = (value: any) => value;
-const withRepeat = (value: any) => value;
-const withSequence = (...args: any[]) => args[0];
+const withSpring = (value: any, _userConfig?: unknown, _callback?: unknown) => value;
+const withTiming = (value: any, _userConfig?: unknown, _callback?: unknown) => value;
+const withRepeat = (
+  animation: any,
+  _numberOfReps?: number,
+  _reverse?: boolean,
+  _callback?: unknown,
+  _reduceMotion?: unknown
+) => animation;
+const withSequence = (...args: any[]) => args[args.length - 1] ?? args[0];
 const FadeIn = { duration: () => ({}) };
 const FadeOut = { duration: () => ({}) };
 const SlideInDown = { delay: () => ({}) };

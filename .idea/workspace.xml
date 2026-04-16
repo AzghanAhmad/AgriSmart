@@ -5,8 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
+<<<<<<< HEAD
       <change beforePath="$PROJECT_DIR$/Backend/routes/farmer.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/farmer.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Backend/routes/timelapse.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/timelapse.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" afterDir="false" />
@@ -25,6 +27,14 @@
       <change beforePath="$PROJECT_DIR$/project/app/auth/signup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/auth/signup.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/contexts/AppContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AppContext.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
+=======
+      <change beforePath="$PROJECT_DIR$/Backend/chatbot/chroma_db/chroma.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/chatbot/chroma_db/chroma.sqlite3" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/app.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/chatbot.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/chatbot.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/project/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/project/package.json" afterDir="false" />
+>>>>>>> f36a323 (Urdu voice issue resolved.)
       <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/project/utils/translations.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/translations.ts" afterDir="false" />
     </list>

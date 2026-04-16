@@ -213,6 +213,38 @@ def chat():
     uid = _bearer_uid()
     conversation_id = (data.get("conversation_id") or "").strip()
     session_id = (data.get("session_id") or "").strip() or str(uuid.uuid4())
+    language_hint = (
+        data.get("language")
+        or data.get("language_hint")
+        or data.get("Language")
+        or ""
+    )
+    if isinstance(language_hint, str):
+        language_hint = language_hint.strip()
+    else:
+        language_hint = ""
+
+    if not language_hint:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "chat: missing language in JSON; keys=%s (rebuild app so chat sends language + from_voice)",
+            list(data.keys()),
+        )
+
+    def _bool_from_json(v):
+        if v is True:
+            return True
+        if v is False or v is None:
+            return False
+        if isinstance(v, str):
+            return v.strip().lower() in ("1", "true", "yes")
+        return bool(v)
+
+    _fv = data.get("from_voice")
+    if _fv is None:
+        _fv = data.get("fromVoice")
+    from_voice = _bool_from_json(_fv)
 
     # —— DB-backed thread (logged-in farmer, ChatGPT-style) ——
     if uid and conversation_id:
@@ -280,7 +312,7 @@ def chat():
     # —— Legacy in-memory session (no auth / no conversation_id) ——
     try:
         bot = _get_bot_for_session(session_id)
-        response_text = bot.chat(message)
+        response_text = bot.chat(message, language_hint, from_voice)
         if response_text is None:
             response_text = ""
         elif not isinstance(response_text, str):

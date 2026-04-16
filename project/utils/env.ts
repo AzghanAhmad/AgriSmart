@@ -24,7 +24,7 @@ export function getApiBaseUrl(): string {
   }
 
   // Last-resort fallback
-  const fallback = 'http://192.168.18.122:5000';
+  const fallback = 'http://172.17.13.112:5000';
   console.log('📡 Using fallback backend URL:', fallback, `(Platform: ${Platform.OS})`);
   return fallback;
 }
@@ -69,7 +69,7 @@ export async function testBackendConnection(): Promise<boolean> {
     console.error('🔧 Troubleshooting Steps:');
     console.error('   1. Start backend: cd Backend && python app.py');
     console.error('   2. Check backend shows "Running on http://0.0.0.0:5000"');
-    console.error('   3. Test in browser: http://192.168.18.122:5000/health');
+    console.error('   3. Test in browser: http://172.17.13.112:5000/health');
     console.error('   4. Verify IP unchanged: ipconfig | findstr IPv4');
     console.error('   5. Check Windows Firewall allows port 5000');
     console.error('   6. Ensure same WiFi network (if using physical device)');

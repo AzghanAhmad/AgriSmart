@@ -9,13 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  PermissionsAndroid,
+  Switch,
 } from 'react-native';
 import { Send, Mic, MicOff, Bot, User, RotateCcw } from 'lucide-react-native';
-import Voice from '@react-native-voice/voice';
-import Tts from 'react-native-tts';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
+import { useHybridVoice, speakBotResponse, type VoiceLocale } from '@/services/voiceService';
 import {
   getStoredChatbotSessionId,
   saveChatbotSessionId,
@@ -42,18 +41,16 @@ export default function ChatbotScreen() {
   const { language } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  // Voice status states: Idle → Listening → Processing
-  const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening' | 'processing'>('idle');
+  /** Chat API in-flight only (mic phases handled in voiceService hook). */
+  const [isAwaitingReply, setIsAwaitingReply] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  /** When app UI is English but you speak Urdu: send ur-PK to STT and ur to chat for voice only. */
+  const [preferUrduVoice, setPreferUrduVoice] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Newly added refs for voice workflow (recognized text + control flags)
-  const recognizedTextRef = useRef<string>('');
-  const manualStopRef = useRef<boolean>(false);
-
-  const isListening = voiceStatus === 'listening';
-  const isProcessing = voiceStatus === 'processing';
+  const voiceLocale: VoiceLocale =
+    language === 'ur' || preferUrduVoice ? 'ur-PK' : 'en-US';
 
   useEffect(() => {
     let cancelled = false;
@@ -81,49 +78,13 @@ export default function ChatbotScreen() {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
-  // Newly added: Configure TTS language once (English only: en-US)
-  useEffect(() => {
-    let cancelled = false;
-
-    const init = async () => {
-      try {
-        // Some environments may not have the native TTS module ready yet.
-        const getInitStatus = (Tts as any).getInitStatus;
-        if (typeof getInitStatus === 'function') {
-          const status = await getInitStatus();
-          if (cancelled) return;
-
-          // react-native-tts usually returns 'succeeded' / 'failed'
-          if (status === 'succeeded') {
-            Tts.setDefaultLanguage('en-US');
-          }
-        } else {
-          // Fallback (older versions): attempt directly, but keep it safe.
-          try {
-            Tts.setDefaultLanguage('en-US');
-          } catch {
-            // ignore init issues
-          }
-        }
-      } catch {
-        // Ignore TTS init errors; we still try speaking inside try/catch later.
-      }
-    };
-
-    init();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, opts?: { fromVoice?: boolean }) => {
       if (!text.trim() || !sessionReady) {
         return;
       }
 
-      // While the chatbot request is in-flight, we treat this as "Processing"
-      setVoiceStatus('processing');
+      setIsAwaitingReply(true);
 
       const userMessage: Message = {
         id: Date.now().toString(),
@@ -136,7 +97,14 @@ export default function ChatbotScreen() {
       setInputText('');
 
       try {
-        const { response, session_id } = await sendChatbotMessage(text.trim(), sessionId);
+        const chatLang: 'en' | 'ur' =
+          language === 'ur' || (opts?.fromVoice && preferUrduVoice) ? 'ur' : 'en';
+        const { response, session_id } = await sendChatbotMessage(
+          text.trim(),
+          sessionId,
+          chatLang,
+          { fromVoice: opts?.fromVoice }
+        );
         setSessionId(session_id);
         await saveChatbotSessionId(session_id);
 
@@ -148,16 +116,11 @@ export default function ChatbotScreen() {
         };
         setMessages((prev) => [...prev, botMessage]);
 
-        // Newly added: Speak bot response aloud (English TTS config)
+        const loc: VoiceLocale = language === 'ur' ? 'ur-PK' : 'en-US';
         try {
-          Tts.stop();
-        } catch {
-          // ignore
-        }
-        try {
-          Tts.speak(response);
+          await speakBotResponse(response, loc);
         } catch (e) {
-          console.warn('TTS error:', e);
+          console.warn('[chatbot] speakBotResponse (native TTS + backend fallback):', e);
         }
       } catch (e: any) {
         const msg =
@@ -165,11 +128,39 @@ export default function ChatbotScreen() {
           translate('networkError', language);
         Alert.alert(translate('error', language), msg);
       } finally {
-        setVoiceStatus('idle');
+        setIsAwaitingReply(false);
       }
     },
-    [sessionId, sessionReady, language]
+    [sessionId, sessionReady, language, preferUrduVoice]
   );
+
+  const submitVoiceTranscript = useCallback(
+    (text: string) => {
+      void sendMessage(text, { fromVoice: true });
+    },
+    [sendMessage]
+  );
+
+  const {
+    phase: voicePhase,
+    liveTranscript,
+    errorMessage: voiceErrorMessage,
+    toggleMic,
+    resetError: resetVoiceError,
+  } = useHybridVoice({
+    locale: voiceLocale,
+    onFinalText: submitVoiceTranscript,
+    canInteract: sessionReady && !isAwaitingReply,
+  });
+
+  useEffect(() => {
+    if (!voiceErrorMessage) return;
+    Alert.alert(
+      language === 'ur' ? 'آواز' : 'Voice',
+      voiceErrorMessage,
+      [{ text: 'OK', onPress: resetVoiceError }]
+    );
+  }, [voiceErrorMessage, language, resetVoiceError]);
 
   const handleNewChat = useCallback(async () => {
     try {
@@ -191,167 +182,12 @@ export default function ChatbotScreen() {
     ]);
   }, [sessionId, language]);
 
-  const requestMicPermission = useCallback(async (): Promise<boolean> => {
-    if (Platform.OS !== 'android') return true;
+  const isVoiceBusy =
+    voicePhase === 'listening' || voicePhase === 'recording' || voicePhase === 'processing';
 
-    const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
-      title: 'Microphone Permission',
-      message: 'We need access to your microphone to take voice input.',
-      buttonPositive: 'OK',
-      buttonNegative: 'Cancel',
-    });
-
-    // DEBUG: log permission result
-    console.log('[VOICE][DEBUG] RECORD_AUDIO permission result:', result);
-    return result === PermissionsAndroid.RESULTS.GRANTED;
-  }, []);
-
-  // FIX: centralize start logic; prevents overlapping starts and logs root cause
-  const startListening = useCallback(async () => {
-    if (isProcessing) return;
-    if (isListening) return;
-
-    // DEBUG: emulator note (cannot reliably detect without extra deps)
-    // If you are testing on an Android emulator, SpeechRecognizer may fail.
-    // Prefer testing on a real device.
-
-    const granted = await requestMicPermission();
-    if (!granted) {
-      Alert.alert('Microphone permission denied', 'Enable microphone access and try again.');
-      setVoiceStatus('idle');
-      return;
-    }
-
-    recognizedTextRef.current = '';
-    manualStopRef.current = false;
-
-    try {
-      // FIX: ensure prior session isn't still active
-      try {
-        await Voice.cancel();
-      } catch {
-        // ignore
-      }
-      try {
-        await Voice.stop();
-      } catch {
-        // ignore
-      }
-
-      setVoiceStatus('listening');
-      console.log('[VOICE][DEBUG] Voice.start(en-US) calling...');
-      await Voice.start('en-US'); // English only
-      console.log('[VOICE][DEBUG] Voice.start(en-US) returned successfully');
-    } catch (e: any) {
-      console.log('[VOICE][DEBUG] Voice.start failed:', e);
-      setVoiceStatus('idle');
-
-      const details =
-        e?.message ||
-        e?.toString?.() ||
-        'Unknown error';
-
-      Alert.alert(
-        'Voice error',
-        `Could not start voice recognition. Please try again.\n\nDetails: ${details}\n\nIf you're using Expo Go or an emulator, voice recognition may not work—try a real device + a native build.`
-      );
-    }
-  }, [isListening, isProcessing, requestMicPermission]);
-
-  // Newly added: Start/stop listening with real voice recognition
-  const handleVoiceInput = useCallback(async () => {
-    if (isProcessing) return;
-
-    // Stop if currently listening
-    if (isListening) {
-      manualStopRef.current = true;
-      try {
-        await Voice.stop();
-      } catch {
-        // ignore
-      }
-      setVoiceStatus('idle');
-      return;
-    }
-    // FIX: single entrypoint for starting
-    await startListening();
-  }, [isListening, isProcessing, startListening]);
-
-  // Newly added: Voice event wiring + cleanup
-  useEffect(() => {
-    Voice.onSpeechStart = () => {
-      // DEBUG
-      console.log('[VOICE][DEBUG] onSpeechStart');
-      setVoiceStatus('listening');
-    };
-
-    Voice.onSpeechResults = (event: any) => {
-      // DEBUG
-      console.log('[VOICE][DEBUG] onSpeechResults:', event?.value);
-      const text = event?.value?.[0];
-      if (typeof text === 'string' && text.trim()) {
-        recognizedTextRef.current = text.trim();
-      }
-    };
-
-    Voice.onSpeechEnd = () => {
-      // DEBUG
-      console.log('[VOICE][DEBUG] onSpeechEnd');
-      const manualStopped = manualStopRef.current;
-      manualStopRef.current = false;
-
-      const text = recognizedTextRef.current.trim();
-      recognizedTextRef.current = '';
-
-      // If the user stopped manually, don't auto-send.
-      if (manualStopped) {
-        setVoiceStatus('idle');
-        return;
-      }
-
-      if (!text) {
-        setVoiceStatus('idle');
-        Alert.alert('No speech detected', 'Please try again.');
-        return;
-      }
-
-      // Auto-send recognized speech through the same existing API flow.
-      sendMessage(text);
-    };
-
-    Voice.onSpeechError = (event: any) => {
-      // DEBUG
-      console.log('[VOICE][DEBUG] onSpeechError:', event);
-      recognizedTextRef.current = '';
-      manualStopRef.current = false;
-      setVoiceStatus('idle');
-
-      const message =
-        event?.error?.message ||
-        event?.error?.code ||
-        event?.error?.toString?.() ||
-        'Speech recognition error. Please try again.';
-
-      Alert.alert('Voice recognition error', message);
-    };
-
-    return () => {
-      // Cleanup listeners on unmount to avoid duplicate events
-      Voice.destroy()
-        .catch(() => {
-          // ignore
-        })
-        .finally(() => {
-          Voice.removeAllListeners();
-        });
-
-      try {
-        Tts.stop();
-      } catch {
-        // ignore
-      }
-    };
-  }, [sendMessage]);
+  const handleVoiceInput = useCallback(() => {
+    toggleMic();
+  }, [toggleMic]);
 
   const quickQuestions = [
     'How to treat wheat rust disease?',
@@ -384,6 +220,19 @@ export default function ChatbotScreen() {
           <RotateCcw color="#22C55E" size={20} />
         </TouchableOpacity>
       </View>
+
+      {language === 'en' ? (
+        <View style={styles.voiceLangRow}>
+          <Text style={styles.voiceLangLabel}>Urdu voice (mic)</Text>
+          <Switch
+            value={preferUrduVoice}
+            onValueChange={setPreferUrduVoice}
+            trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+            thumbColor={preferUrduVoice ? '#22C55E' : '#F3F4F6'}
+            accessibilityLabel="Use Urdu for microphone speech recognition"
+          />
+        </View>
+      ) : null}
 
       <ScrollView
         ref={scrollViewRef}
@@ -436,7 +285,7 @@ export default function ChatbotScreen() {
           </View>
         ))}
 
-        {isProcessing && (
+        {isAwaitingReply && (
           <View style={styles.typingIndicator}>
             <View style={styles.botIconWrap}>
               <Bot color="white" size={16} />
@@ -454,7 +303,7 @@ export default function ChatbotScreen() {
           </View>
         )}
 
-        {messages.length === 1 && !isProcessing && (
+        {messages.length === 1 && !isAwaitingReply && (
           <View style={styles.quickQuestionsContainer}>
             <Text style={styles.quickQuestionsTitle}>
               {language === 'ur' ? 'فوری سوالات:' : 'Quick questions:'}
@@ -486,15 +335,15 @@ export default function ChatbotScreen() {
             onChangeText={setInputText}
             multiline
             maxLength={500}
-            editable={!isProcessing}
+            editable={!isAwaitingReply}
           />
 
           <TouchableOpacity
-            style={[styles.voiceButton, isListening && styles.recordingButton]}
+            style={[styles.voiceButton, isVoiceBusy && styles.recordingButton]}
             onPress={handleVoiceInput}
             accessibilityLabel="Voice input"
           >
-            {isListening ? (
+            {isVoiceBusy ? (
               <MicOff color="white" size={20} />
             ) : (
               <Mic color="#6B7280" size={20} />
@@ -506,16 +355,27 @@ export default function ChatbotScreen() {
             onPress={() => {
               sendMessage(inputText);
             }}
-            disabled={!inputText.trim() || isProcessing || isListening}
+            disabled={!inputText.trim() || isAwaitingReply || isVoiceBusy}
           >
             <Send color="white" size={20} />
           </TouchableOpacity>
         </View>
 
-        {/* Newly added: Listening indicator */}
-        {isListening && (
+        {/* Hybrid voice: status + live/final transcript */}
+        {isVoiceBusy && (
           <View style={styles.listeningIndicator}>
-            <Text style={styles.listeningText}>Listening...</Text>
+            <Text style={styles.listeningText}>
+              {voicePhase === 'recording'
+                ? 'Recording… tap mic again to send'
+                : voicePhase === 'processing'
+                  ? 'Transcribing…'
+                  : 'Listening…'}
+            </Text>
+            {liveTranscript ? (
+              <Text style={styles.transcriptText} numberOfLines={3}>
+                {liveTranscript}
+              </Text>
+            ) : null}
           </View>
         )}
       </View>
@@ -566,6 +426,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  voiceLangRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  voiceLangLabel: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+    paddingRight: 12,
   },
   messagesContainer: {
     flex: 1,
@@ -738,6 +614,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#EF4444',
     fontWeight: '600',
+  },
+  transcriptText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#374151',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   sendButton: {
     width: 44,
