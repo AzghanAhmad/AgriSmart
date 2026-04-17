@@ -23,10 +23,29 @@ export function getApiBaseUrl(): string {
     return extraUrl;
   }
 
-  // Last-resort fallback
-  const fallback = 'http://192.168.100.15:5000';
-  console.log('📡 Using fallback backend URL:', fallback, `(Platform: ${Platform.OS})`);
-  return fallback;
+  if (__DEV__) {
+    if (Platform.OS === 'android') {
+      const url = 'http://10.0.2.2:5000';
+      console.warn(
+        '📡 API base (Android emulator default):',
+        url,
+        '— on a real phone set app.json extra.API_BASE_URL to your PC IP',
+      );
+      return url;
+    }
+    if (Platform.OS === 'ios') {
+      const url = 'http://localhost:5000';
+      console.log('📡 API base (iOS simulator default):', url);
+      return url;
+    }
+    const url = 'http://localhost:5000';
+    console.log('📡 API base (web/default):', url);
+    return url;
+  }
+
+  const lastResort = 'http://192.168.137.190:5000';
+  console.warn('📡 API base: set extra.API_BASE_URL for production; using', lastResort);
+  return lastResort;
 }
 
 /**
