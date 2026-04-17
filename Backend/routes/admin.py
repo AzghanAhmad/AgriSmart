@@ -1,3 +1,6 @@
+from collections import defaultdict
+from datetime import datetime, timedelta
+
 from flask import Blueprint, request, jsonify
 try:
     from ..db import SessionLocal
@@ -20,6 +23,246 @@ except ImportError:
     )
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
+
+
+def _parse_range(range_key):
+    normalized = (range_key or 'week').lower()
+    if normalized not in ('week', 'month'):
+        normalized = 'week'
+    days = 7 if normalized == 'week' else 30
+    today = datetime.utcnow().date()
+    dates = [today - timedelta(days=days - 1 - i) for i in range(days)]
+    labels = [d.strftime('%a') if normalized == 'week' else d.strftime('%d %b') for d in dates]
+    return normalized, dates, labels, datetime.combine(dates[0], datetime.min.time())
+
+
+def _series_from_dates(dates, counts_by_key, key):
+    return [int(counts_by_key.get(key, {}).get(d, 0)) for d in dates]
+
+
+@admin_bp.route('/dashboard/overview', methods=['GET'])
+def dashboard_overview():
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+
+        total_farmers = db.query(User).filter(User.role == 'farmer').count()
+        total_reports = db.query(Detection).count()
+        active_diseases = db.query(func.count(func.distinct(Detection.disease_name))).filter(
+            Detection.disease_name.isnot(None),
+            Detection.disease_name != 'Healthy Crop'
+        ).scalar() or 0
+        pending_alerts = db.query(OutbreakAlert).filter(OutbreakAlert.status == 'pending').count()
+        approved_alerts = db.query(OutbreakAlert).filter(OutbreakAlert.status == 'approved').count()
+
+        activities = []
+
+        latest_farmers = (
+            db.query(User)
+            .filter(User.role == 'farmer')
+            .order_by(User.created_at.desc())
+            .limit(4)
+            .all()
+        )
+        for farmer in latest_farmers:
+            activities.append({
+                'id': f"farmer-{farmer.user_id}",
+                'type': 'farmer_registered',
+                'title': farmer.name or 'Farmer',
+                'subtitle': farmer.location or farmer.email or '',
+                'timestamp': farmer.created_at.isoformat() if farmer.created_at else None,
+            })
+
+        latest_detections = (
+            db.query(Detection)
+            .order_by(Detection.timestamp.desc())
+            .limit(4)
+            .all()
+        )
+        for detection in latest_detections:
+            activities.append({
+                'id': f"detection-{detection.detection_id}",
+                'type': 'detection_reported',
+                'title': detection.disease_name or detection.disease_id or 'Detection',
+                'subtitle': f"Farmer {detection.farmer_id or 'N/A'} • {(detection.confidence_score or 0):.0f}%",
+                'timestamp': detection.timestamp.isoformat() if detection.timestamp else None,
+            })
+
+        latest_alerts = (
+            db.query(OutbreakAlert)
+            .order_by(OutbreakAlert.created_at.desc())
+            .limit(4)
+            .all()
+        )
+        for alert in latest_alerts:
+            activities.append({
+                'id': f"alert-{alert.alert_id}",
+                'type': 'alert_created' if alert.status == 'pending' else 'alert_approved',
+                'title': alert.disease_name or alert.disease_id or 'Outbreak Alert',
+                'subtitle': f"{alert.status.title()} • {alert.radius_km:.0f} km radius",
+                'timestamp': alert.created_at.isoformat() if alert.created_at else None,
+            })
+
+        activities.sort(key=lambda item: item.get('timestamp') or '', reverse=True)
+
+        return jsonify({
+            'stats': {
+                'totalFarmers': total_farmers,
+                'totalReports': total_reports,
+                'activeDiseases': int(active_diseases),
+                'pendingAlerts': pending_alerts,
+                'approvedAlerts': approved_alerts,
+            },
+            'activities': activities[:8],
+        })
+    except Exception as e:
+        print('❌ Error fetching dashboard overview:', str(e))
+        return jsonify({
+            'stats': {
+                'totalFarmers': 0,
+                'totalReports': 0,
+                'activeDiseases': 0,
+                'pendingAlerts': 0,
+                'approvedAlerts': 0,
+            },
+            'activities': [],
+        }), 500
+    finally:
+        db.close()
+
+
+@admin_bp.route('/dashboard/trends/registrations', methods=['GET'])
+def dashboard_registrations_trend():
+    db = SessionLocal()
+    try:
+        range_key, dates, labels, start_dt = _parse_range(request.args.get('range'))
+        farmers_by_day = defaultdict(int)
+        reports_by_day = defaultdict(int)
+
+        farmers = db.query(User).filter(
+            User.role == 'farmer',
+            User.created_at >= start_dt,
+        ).all()
+        for farmer in farmers:
+            if farmer.created_at:
+                farmers_by_day[farmer.created_at.date()] += 1
+
+        detections = db.query(Detection).filter(Detection.timestamp >= start_dt).all()
+        for detection in detections:
+            if detection.timestamp:
+                reports_by_day[detection.timestamp.date()] += 1
+
+        return jsonify({
+            'range': range_key,
+            'labels': labels,
+            'series': [
+                {
+                    'key': 'farmerRegistrations',
+                    'label': 'Farmer registrations',
+                    'color': '#14B8A6',
+                    'data': [farmers_by_day.get(d, 0) for d in dates],
+                },
+                {
+                    'key': 'diseaseReports',
+                    'label': 'Disease reports',
+                    'color': '#3B82F6',
+                    'data': [reports_by_day.get(d, 0) for d in dates],
+                },
+            ],
+        })
+    except Exception as e:
+        print('❌ Error fetching registration trend:', str(e))
+        return jsonify({'range': 'week', 'labels': [], 'series': []}), 500
+    finally:
+        db.close()
+
+
+@admin_bp.route('/dashboard/trends/crops', methods=['GET'])
+def dashboard_crop_trend():
+    db = SessionLocal()
+    try:
+        range_key, dates, labels, start_dt = _parse_range(request.args.get('range'))
+        counts_by_crop = defaultdict(lambda: defaultdict(int))
+
+        detections = db.query(Detection).filter(Detection.timestamp >= start_dt).all()
+        for detection in detections:
+            if not detection.timestamp:
+                continue
+            crop = (detection.crop_type or '').strip().lower()
+            if crop not in ('wheat', 'rice', 'cotton'):
+                continue
+            counts_by_crop[crop][detection.timestamp.date()] += 1
+
+        return jsonify({
+            'range': range_key,
+            'labels': labels,
+            'series': [
+                {
+                    'key': 'wheat',
+                    'label': 'Wheat',
+                    'color': '#22C55E',
+                    'data': _series_from_dates(dates, counts_by_crop, 'wheat'),
+                },
+                {
+                    'key': 'rice',
+                    'label': 'Rice',
+                    'color': '#3B82F6',
+                    'data': _series_from_dates(dates, counts_by_crop, 'rice'),
+                },
+                {
+                    'key': 'cotton',
+                    'label': 'Cotton',
+                    'color': '#F59E0B',
+                    'data': _series_from_dates(dates, counts_by_crop, 'cotton'),
+                },
+            ],
+        })
+    except Exception as e:
+        print('❌ Error fetching crop trend:', str(e))
+        return jsonify({'range': 'week', 'labels': [], 'series': []}), 500
+    finally:
+        db.close()
+
+
+@admin_bp.route('/dashboard/trends/alerts', methods=['GET'])
+def dashboard_alert_trend():
+    db = SessionLocal()
+    try:
+        range_key, dates, labels, start_dt = _parse_range(request.args.get('range'))
+        counts_by_status = defaultdict(lambda: defaultdict(int))
+
+        alerts = db.query(OutbreakAlert).filter(OutbreakAlert.created_at >= start_dt).all()
+        for alert in alerts:
+            if not alert.created_at:
+                continue
+            status = (alert.status or '').strip().lower()
+            if status not in ('pending', 'approved'):
+                continue
+            counts_by_status[status][alert.created_at.date()] += 1
+
+        return jsonify({
+            'range': range_key,
+            'labels': labels,
+            'series': [
+                {
+                    'key': 'pending',
+                    'label': 'Pending alerts',
+                    'color': '#EF4444',
+                    'data': _series_from_dates(dates, counts_by_status, 'pending'),
+                },
+                {
+                    'key': 'approved',
+                    'label': 'Approved alerts',
+                    'color': '#10B981',
+                    'data': _series_from_dates(dates, counts_by_status, 'approved'),
+                },
+            ],
+        })
+    except Exception as e:
+        print('❌ Error fetching alert trend:', str(e))
+        return jsonify({'range': 'week', 'labels': [], 'series': []}), 500
+    finally:
+        db.close()
 
 @admin_bp.route('/detections', methods=['GET'])
 def list_detections():

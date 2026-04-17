@@ -5,28 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="273974ea-6837-4c43-a13b-34a309a0393e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/farmer.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/farmer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Backend/routes/timelapse.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/routes/timelapse.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/heatmap.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/heatmap.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(admin)/settings.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(admin)/settings.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/disease-detection.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/disease-detection.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/heatmap.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/heatmap.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/profile.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/profile.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/schedule.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-upload.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/timelapse-view.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/timelapse-view.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/(farmer)/weather.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/app/auth/signup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/app/auth/signup.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/contexts/AppContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/project/contexts/AppContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/api.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/env.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/env.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/utils/translations.ts" beforeDir="false" afterPath="$PROJECT_DIR$/project/utils/translations.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

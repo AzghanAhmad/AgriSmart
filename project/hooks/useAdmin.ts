@@ -26,6 +26,40 @@ export interface OutbreakAlertItem {
   radiusKm: number;
 }
 
+export interface AdminDashboardStats {
+  totalFarmers: number;
+  totalReports: number;
+  activeDiseases: number;
+  pendingAlerts: number;
+  approvedAlerts: number;
+}
+
+export interface AdminActivityItem {
+  id: string;
+  type: 'farmer_registered' | 'detection_reported' | 'alert_created' | 'alert_approved';
+  title: string;
+  subtitle: string;
+  timestamp: string | null;
+}
+
+export interface AdminDashboardOverview {
+  stats: AdminDashboardStats;
+  activities: AdminActivityItem[];
+}
+
+export interface AdminTrendSeries {
+  key: string;
+  label: string;
+  color: string;
+  data: number[];
+}
+
+export interface AdminTrendPayload {
+  range: string;
+  labels: string[];
+  series: AdminTrendSeries[];
+}
+
 export function useAdminDetections(page: number = 1, pageSize: number = 10) {
   const [items, setItems] = useState<AdminDetectionItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -105,5 +139,67 @@ export function useOutbreakAlerts(status: string | null = 'pending') {
   );
 
   return { items, loading, error, refresh, approveAlert };
+}
+
+export function useAdminDashboardOverview() {
+  const [data, setData] = useState<AdminDashboardOverview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const payload = await apiGet<AdminDashboardOverview>('/api/admin/dashboard/overview');
+      setData(payload);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load dashboard overview');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { data, loading, error, refresh };
+}
+
+export function useAdminTrend(path: string, range: 'week' | 'month') {
+  const [data, setData] = useState<AdminTrendPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const payload = await apiGet<AdminTrendPayload>(
+          `/api/admin/dashboard/trends/${path}?range=${encodeURIComponent(range)}`
+        );
+        if (!cancelled) {
+          setData(payload);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.message || 'Failed to load trend');
+          setData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [path, range]);
+
+  return { data, loading, error };
 }
 

@@ -1,13 +1,13 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image } from 'react-native';
-import { Users, FileText, MapPin, TrendingUp, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, DollarSign } from 'lucide-react-native';
-import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
+import { Users, FileText, MapPin, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { translate } from '@/utils/translations';
-import { useAdminDetections, useOutbreakAlerts } from '@/hooks/useAdmin';
+import { useAdminDashboardOverview, useAdminDetections, useOutbreakAlerts, useAdminTrend } from '@/hooks/useAdmin';
 import { useRouter } from 'expo-router';
+import { TrendLineChart } from '@/components/TrendLineChart';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -16,6 +16,9 @@ export default function AdminDashboardScreen() {
   const { language } = useApp();
   const { colors: tc, isDark } = useTheme();
   const router = useRouter();
+  const [registrationRange, setRegistrationRange] = useState<'week' | 'month'>('week');
+  const [cropRange, setCropRange] = useState<'week' | 'month'>('week');
+  const [alertRange, setAlertRange] = useState<'week' | 'month'>('week');
 
   const adminGreeting = useCallback(() => {
     const hour = new Date().getHours();
@@ -24,139 +27,92 @@ export default function AdminDashboardScreen() {
     return translate('adminGoodEvening', language);
   }, [language]);
 
-  const chartConfig = useMemo(
-    () =>
-      isDark
-        ? {
-            backgroundColor: tc.chartBg,
-            backgroundGradientFrom: tc.chartBg,
-            backgroundGradientTo: tc.screen,
-            decimalPlaces: 0,
-            color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
-            labelColor: (opacity = 1) => `rgba(249, 250, 251, ${opacity})`,
-            style: { borderRadius: 16 },
-            propsForBackgroundLines: { stroke: tc.chartGrid, strokeWidth: 1 },
-          }
-        : {
-            backgroundColor: '#22C55E',
-            backgroundGradientFrom: '#22C55E',
-            backgroundGradientTo: '#16A34A',
-            decimalPlaces: 0,
-            color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-            labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-            style: { borderRadius: 16 },
-          },
-    [isDark, tc]
+  const { total, items, loading: detectionsLoading, error: detectionsError } = useAdminDetections(1, 10);
+  const { items: pendingAlerts, loading: alertsLoading, approveAlert, error: alertsError } = useOutbreakAlerts('pending');
+  const { data: overview, loading: overviewLoading } = useAdminDashboardOverview();
+  const registrationTrend = useAdminTrend('registrations', registrationRange);
+  const cropTrend = useAdminTrend('crops', cropRange);
+  const alertTrend = useAdminTrend('alerts', alertRange);
+
+  const activityMeta = useMemo(
+    () => ({
+      farmer_registered: {
+        icon: Users,
+        color: '#22C55E',
+        prefix: translate('adminActivityFarmerRegistered', language),
+      },
+      detection_reported: {
+        icon: AlertTriangle,
+        color: '#EF4444',
+        prefix: translate('adminActivityDetectionReported', language),
+      },
+      alert_created: {
+        icon: Clock,
+        color: '#F59E0B',
+        prefix: translate('adminActivityAlertCreated', language),
+      },
+      alert_approved: {
+        icon: CheckCircle,
+        color: '#10B981',
+        prefix: translate('adminActivityAlertApproved', language),
+      },
+    }),
+    [language]
   );
-  const { total, items, error: detectionsError } = useAdminDetections(1, 10);
-  const { items: pendingAlerts, approveAlert, error: alertsError } = useOutbreakAlerts('pending');
+
+  const formatCompact = useCallback((value: number) => {
+    return new Intl.NumberFormat(language === 'ur' ? 'ur-PK' : 'en-US', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(value);
+  }, [language]);
+
+  const formatActivityDate = useCallback((timestamp: string | null) => {
+    if (!timestamp) return '';
+    return new Date(timestamp).toLocaleString(language === 'ur' ? 'ur-PK' : 'en-US', {
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, [language]);
 
   const statsCards = useMemo(
     () => [
       {
         title: translate('adminStatTotalFarmers', language),
-        value: '2,847',
-        change: '+12%',
+        value: overviewLoading ? '...' : formatCompact(overview?.stats.totalFarmers || 0),
+        change: '',
         icon: Users,
         color: '#22C55E',
         bgColor: '#F0FDF4',
       },
       {
         title: translate('adminStatReportsSubmitted', language),
-        value: String(total || 0),
-        change: '+8%',
+        value: overviewLoading ? '...' : formatCompact(overview?.stats.totalReports || total || 0),
+        change: '',
         icon: FileText,
         color: '#3B82F6',
         bgColor: '#EFF6FF',
       },
       {
         title: translate('adminStatActiveDiseases', language),
-        value: '23',
-        change: '-5%',
+        value: overviewLoading ? '...' : String(overview?.stats.activeDiseases || 0),
+        change: '',
         icon: AlertTriangle,
         color: '#EF4444',
         bgColor: '#FEF2F2',
       },
       {
-        title: translate('adminStatSubsidiesApproved', language),
-        value: '₨2.4M',
-        change: '+15%',
-        icon: DollarSign,
+        title: translate('adminStatPendingAlerts', language),
+        value: overviewLoading ? '...' : String(overview?.stats.pendingAlerts || pendingAlerts.length || 0),
+        change: '',
+        icon: Clock,
         color: '#F59E0B',
         bgColor: '#FFFBEB',
       },
     ],
-    [total, language],
-  );
-
-  const farmerRegistrationData = useMemo(
-    () => ({
-      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-      datasets: [
-        {
-          data: [120, 145, 167, 198, 225, 284],
-          color: (opacity = 1) =>
-            isDark ? `rgba(34, 197, 94, ${opacity})` : `rgba(255, 255, 255, ${opacity})`,
-          strokeWidth: 2,
-        },
-      ],
-    }),
-    [isDark]
-  );
-
-  const cropDistributionData = useMemo(
-    () => [
-      { name: translate('cropWheat', language), population: 40, color: '#22C55E', legendFontColor: tc.text, legendFontSize: 12 },
-      { name: translate('cropRice', language), population: 25, color: '#3B82F6', legendFontColor: tc.text, legendFontSize: 12 },
-      { name: translate('cropCotton', language), population: 20, color: '#F59E0B', legendFontColor: tc.text, legendFontSize: 12 },
-      { name: translate('cropCorn', language), population: 15, color: '#EF4444', legendFontColor: tc.text, legendFontSize: 12 },
-    ],
-    [tc.text, language],
-  );
-
-  const diseaseReportsData = {
-    labels: ['Rust', 'Blast', 'Blight', 'Rot'],
-    datasets: [{
-      data: [45, 32, 28, 19],
-    }],
-  };
-
-  const recentActivities = useMemo(
-    () => [
-      {
-        id: '1',
-        type: 'farmer_registered',
-        message: translate('adminActivity1', language),
-        time: translate('adminActivity1Time', language),
-        icon: Users,
-        color: '#22C55E',
-      },
-      {
-        id: '2',
-        type: 'disease_reported',
-        message: translate('adminActivity2', language),
-        time: translate('adminActivity2Time', language),
-        icon: AlertTriangle,
-        color: '#EF4444',
-      },
-      {
-        id: '3',
-        type: 'subsidy_approved',
-        message: translate('adminActivity3', language),
-        time: translate('adminActivity3Time', language),
-        icon: CheckCircle,
-        color: '#10B981',
-      },
-      {
-        id: '4',
-        type: 'report_pending',
-        message: translate('adminActivity4', language),
-        time: translate('adminActivity4Time', language),
-        icon: Clock,
-        color: '#F59E0B',
-      },
-    ],
-    [language],
+    [formatCompact, language, overview?.stats, overviewLoading, pendingAlerts.length, total],
   );
 
   return (
@@ -171,7 +127,7 @@ export default function AdminDashboardScreen() {
           <TouchableOpacity style={[styles.notificationButton, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
             <AlertTriangle color="#EF4444" size={20} />
             <View style={styles.notificationBadge}>
-              <Text style={styles.badgeText}>3</Text>
+              <Text style={styles.badgeText}>{String(overview?.stats.pendingAlerts || pendingAlerts.length || 0)}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -187,9 +143,7 @@ export default function AdminDashboardScreen() {
                 <View style={[styles.statIcon, { backgroundColor: stat.bgColor }]}>
                   <IconComponent color={stat.color} size={24} />
                 </View>
-                <Text style={[styles.statChange, { 
-                  color: stat.change.startsWith('+') ? '#10B981' : '#EF4444' 
-                }]}>
+                <Text style={[styles.statChange, { color: tc.textMuted }]}>
                   {stat.change}
                 </Text>
               </View>
@@ -202,51 +156,42 @@ export default function AdminDashboardScreen() {
 
       {/* Charts Section */}
       <View style={styles.chartsSection}>
-        {/* Farmer Registration Trend */}
         <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.chartTitle, { color: tc.text }]}>{translate('adminChartFarmerReg', language)}</Text>
-          <LineChart
-            data={farmerRegistrationData}
-            width={screenWidth - 48}
-            height={220}
-            chartConfig={chartConfig}
-            bezier
-            style={{
-              marginVertical: 8,
-              borderRadius: 16,
-            }}
+          <TrendLineChart
+            title={translate('adminChartFarmerReg', language)}
+            range={registrationRange}
+            onRangeChange={setRegistrationRange}
+            labels={registrationTrend.data?.labels ?? []}
+            series={registrationTrend.data?.series ?? []}
+            loading={registrationTrend.loading}
+            error={registrationTrend.error}
+            emptyMessage={translate('adminNoTrendData', language)}
           />
         </View>
 
-        {/* Crop Distribution */}
         <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.chartTitle, { color: tc.text }]}>{translate('adminChartCropDist', language)}</Text>
-          <PieChart
-            data={cropDistributionData}
-            width={screenWidth - 48}
-            height={200}
-            chartConfig={chartConfig}
-            accessor="population"
-            backgroundColor="transparent"
-            paddingLeft="15"
-            absolute
+          <TrendLineChart
+            title={translate('adminChartCropTrend', language)}
+            range={cropRange}
+            onRangeChange={setCropRange}
+            labels={cropTrend.data?.labels ?? []}
+            series={cropTrend.data?.series ?? []}
+            loading={cropTrend.loading}
+            error={cropTrend.error}
+            emptyMessage={translate('adminNoTrendData', language)}
           />
         </View>
 
-        {/* Disease Reports */}
         <View style={[styles.chartCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.chartTitle, { color: tc.text }]}>{translate('adminChartDiseaseByType', language)}</Text>
-          <BarChart
-            data={diseaseReportsData}
-            width={screenWidth - 48}
-            height={220}
-            chartConfig={chartConfig}
-            yAxisLabel=""
-            yAxisSuffix=""
-            style={{
-              marginVertical: 8,
-              borderRadius: 16,
-            }}
+          <TrendLineChart
+            title={translate('adminChartAlertTrend', language)}
+            range={alertRange}
+            onRangeChange={setAlertRange}
+            labels={alertTrend.data?.labels ?? []}
+            series={alertTrend.data?.series ?? []}
+            loading={alertTrend.loading}
+            error={alertTrend.error}
+            emptyMessage={translate('adminNoTrendData', language)}
           />
         </View>
       </View>
@@ -255,20 +200,33 @@ export default function AdminDashboardScreen() {
       <View style={styles.activitiesSection}>
         <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('adminRecentActivities', language)}</Text>
         <View style={[styles.activitiesCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
-          {recentActivities.map((activity) => {
-            const IconComponent = activity.icon;
+          {(overview?.activities || []).map((activity) => {
+            const meta = activityMeta[activity.type];
+            const IconComponent = meta.icon;
             return (
               <View key={activity.id} style={[styles.activityItem, { borderBottomColor: tc.border }]}>
-                <View style={[styles.activityIcon, { backgroundColor: activity.color + '20' }]}>
-                  <IconComponent color={activity.color} size={16} />
+                <View style={[styles.activityIcon, { backgroundColor: meta.color + '20' }]}>
+                  <IconComponent color={meta.color} size={16} />
                 </View>
                 <View style={styles.activityContent}>
-                  <Text style={[styles.activityMessage, { color: tc.textSecondary }]}>{activity.message}</Text>
-                  <Text style={[styles.activityTime, { color: tc.textMuted }]}>{activity.time}</Text>
+                  <Text style={[styles.activityMessage, { color: tc.textSecondary }]}>
+                    {meta.prefix}: {activity.title}
+                  </Text>
+                  <Text style={[styles.activityTime, { color: tc.textMuted }]}>
+                    {activity.subtitle}
+                    {activity.subtitle && activity.timestamp ? ' • ' : ''}
+                    {formatActivityDate(activity.timestamp)}
+                  </Text>
                 </View>
               </View>
             );
           })}
+          {overviewLoading && (
+            <Text style={[styles.detectionEmpty, { color: tc.textMuted }]}>{translate('loading', language)}</Text>
+          )}
+          {!overviewLoading && (overview?.activities || []).length === 0 && (
+            <Text style={[styles.detectionEmpty, { color: tc.textMuted }]}>{translate('adminNoRecentActivities', language)}</Text>
+          )}
         </View>
       </View>
 
@@ -276,6 +234,9 @@ export default function AdminDashboardScreen() {
       <View style={styles.activitiesSection}>
         <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('adminRecentDetections', language)}</Text>
         <View style={[styles.activitiesCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          {detectionsLoading && (
+            <Text style={[styles.detectionEmpty, { color: tc.textMuted }]}>{translate('loading', language)}</Text>
+          )}
           {items.map((d) => (
             <View key={d.detectionId} style={styles.detectionItem}>
               <Image source={{ uri: d.imageUrl || '' }} style={[styles.detectionImage, { backgroundColor: tc.border }]} />
@@ -310,6 +271,9 @@ export default function AdminDashboardScreen() {
       <View style={styles.activitiesSection}>
         <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('adminOutbreakAlerts', language)}</Text>
         <View style={[styles.activitiesCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          {alertsLoading && (
+            <Text style={[styles.detectionEmpty, { color: tc.textMuted }]}>{translate('loading', language)}</Text>
+          )}
           {pendingAlerts.map((a) => (
             <View key={a.alertId} style={styles.alertItem}>
               <View style={styles.alertHeader}>
