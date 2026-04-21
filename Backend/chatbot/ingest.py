@@ -3,8 +3,18 @@ import sys
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PDF_DIR = os.path.join(_THIS_DIR, "pdfs")
-CHROMA_PATH = os.path.join(_THIS_DIR, "chroma_db")
+CHROMA_PATH = os.path.join(_THIS_DIR, "wheat_cotton_rice_db")
 COLLECTION_NAME = "agrismart_docs"
+
+# Advanced RAG defaults (token-based)
+CHUNK_SIZE_TOKENS = int(os.getenv("AGRISMART_CHUNK_SIZE_TOKENS", "500"))
+CHUNK_OVERLAP_TOKENS = int(os.getenv("AGRISMART_CHUNK_OVERLAP_TOKENS", "100"))
+
+# 768-d multilingual embeddings (matches the advanced spec)
+EMBEDDING_MODEL_NAME = os.getenv(
+    "AGRISMART_EMBEDDING_MODEL",
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+)
 
 def detect_crop_from_filename(filename: str) -> str:
     f = filename.lower()
@@ -60,13 +70,22 @@ def load_all_pdfs():
     return documents
 
 def split_documents(documents):
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=600,
-        chunk_overlap=120,
-        separators=["\n\n", "\n", ".", " ", ""]
-    )
+    # Token-based chunks (preferred over raw characters for RAG stability).
+    # Uses tiktoken encoder if available; falls back to char-based split if not.
+    try:
+        splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            chunk_size=CHUNK_SIZE_TOKENS,
+            chunk_overlap=CHUNK_OVERLAP_TOKENS,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+    except Exception:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=CHUNK_SIZE_TOKENS * 4,      # rough fallback ≈ 4 chars/token
+            chunk_overlap=CHUNK_OVERLAP_TOKENS * 4,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
     chunks = splitter.split_documents(documents)
     # Remove empty chunks
     chunks = [c for c in chunks if c.page_content.strip()]
@@ -83,7 +102,7 @@ def build_vectorstore(chunks):
     print("Please wait...\n")
 
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        model_name=EMBEDDING_MODEL_NAME,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True}
     )
@@ -119,7 +138,7 @@ def load_vectorstore():
     warnings.filterwarnings("ignore")
 
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        model_name=EMBEDDING_MODEL_NAME,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True}
     )

@@ -171,7 +171,10 @@ export default function TimeLapseUploadScreen() {
   const [datePickerIndex, setDatePickerIndex] = useState<number | null>(null);
   const [tempMonth, setTempMonth] = useState(0);
   const [tempYear, setTempYear] = useState(new Date().getFullYear());
-  
+  /** While creating a crop row on the server for the tapped type */
+  const [ensuringCropType, setEnsuringCropType] = useState<(typeof CROP_TYPES)[number] | null>(null);
+  const [cropsLoading, setCropsLoading] = useState(true);
+
   // Animation values
   const sparkleRotation = useSharedValue(0);
   const uploadProgress = useSharedValue(0);
@@ -205,11 +208,75 @@ export default function TimeLapseUploadScreen() {
     }
   }, []);
 
+  /** Ordered Wheat / Rice / Cotton rows for UI */
+  const buildThreeCrops = (list: Crop[]): Crop[] =>
+    CROP_TYPES.map((type) =>
+      list.find((c: Crop) => (c.crop_type || '').toLowerCase() === type)
+    ).filter(Boolean) as Crop[];
+
+  /**
+   * Tap always works: if the server row is missing (failed initial sync), create it then select.
+   */
+  const ensureAndSelectCrop = async (type: (typeof CROP_TYPES)[number]) => {
+    const existing = crops.find((c) => (c.crop_type || '').toLowerCase() === type);
+    if (existing) {
+      setSelectedCrop(existing);
+      return;
+    }
+
+    setEnsuringCropType(type);
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Login required', 'Please sign in again to use timelapse.');
+        return;
+      }
+
+      const createRes = await fetch(`${getApiBaseUrl()}/api/timelapse/crops`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ name: CROP_NAMES[type], crop_type: type }),
+      });
+      const raw = await createRes.text();
+      if (!createRes.ok) {
+        let msg = 'Could not create crop. Try again.';
+        try {
+          const j = JSON.parse(raw);
+          if (j.error) msg = String(j.error);
+        } catch {
+          /* ignore */
+        }
+        Alert.alert('Error', msg);
+        return;
+      }
+      const created: Crop = JSON.parse(raw) as Crop;
+      setCrops((prev) => {
+        const merged = [
+          ...prev.filter((c) => (c.crop_type || '').toLowerCase() !== type),
+          created,
+        ];
+        return buildThreeCrops(merged);
+      });
+      setSelectedCrop(created);
+    } catch (e: any) {
+      console.error('ensureAndSelectCrop', e);
+      Alert.alert('Error', e?.message || 'Network error');
+    } finally {
+      setEnsuringCropType(null);
+    }
+  };
+
   const loadCrops = async () => {
+    setCropsLoading(true);
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (!token) {
         console.error('No auth token found');
+        Alert.alert('Login required', 'Please sign in again to use timelapse.');
         return;
       }
 
@@ -223,7 +290,10 @@ export default function TimeLapseUploadScreen() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Failed to load crops:', response.status, errorText);
-        Alert.alert('Error', 'Failed to load crops. Please try again.');
+        Alert.alert(
+          'Could not load crops',
+          'You can still tap Wheat, Rice, or Cotton — we will create your crop on the server.',
+        );
         return;
       }
 
@@ -253,14 +323,15 @@ export default function TimeLapseUploadScreen() {
         }
       }
 
-      // Display exactly 3 crops in fixed order: Wheat, Rice, Cotton
-      const threeCrops: Crop[] = CROP_TYPES.map((type) =>
-        list.find((c: Crop) => (c.crop_type || '').toLowerCase() === type)
-      ).filter(Boolean) as Crop[];
-      setCrops(threeCrops);
+      setCrops(buildThreeCrops(list));
     } catch (error: any) {
       console.error('❌ Failed to load crops:', error);
-      Alert.alert('Error', `Failed to load crops: ${error.message || 'Network error'}`);
+      Alert.alert(
+        'Network error',
+        'Pull to refresh or tap a crop name — we will set it up when you tap.',
+      );
+    } finally {
+      setCropsLoading(false);
     }
   };
 
@@ -622,10 +693,16 @@ export default function TimeLapseUploadScreen() {
         {/* Three crops at top: Wheat, Rice, Cotton – user just selects one */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: tc.text }]}>Select Crop</Text>
+          <Text style={[styles.cropHint, { color: tc.textMuted }]}>
+            {cropsLoading
+              ? 'Loading your crops…'
+              : 'Tap Wheat, Rice, or Cotton (we create your crop on the server if needed).'}
+          </Text>
           <View style={styles.threeCropsRow}>
             {CROP_TYPES.map((type) => {
               const crop = crops.find((c) => (c.crop_type || '').toLowerCase() === type);
               const isSelected = selectedCrop?.crop_type?.toLowerCase() === type;
+              const busyHere = ensuringCropType === type;
               return (
                 <TouchableOpacity
                   key={type}
@@ -637,9 +714,9 @@ export default function TimeLapseUploadScreen() {
                     },
                     isSelected && styles.cropCardSelected,
                   ]}
-                  onPress={() => crop && setSelectedCrop(crop)}
+                  onPress={() => void ensureAndSelectCrop(type)}
                   activeOpacity={0.7}
-                  disabled={!crop}
+                  disabled={ensuringCropType !== null}
                 >
                   <View
                     style={[
@@ -647,6 +724,9 @@ export default function TimeLapseUploadScreen() {
                       isSelected && { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : colors.primaryBg },
                     ]}
                   >
+                    {busyHere ? (
+                      <ActivityIndicator color={colors.primary} />
+                    ) : null}
                     <Text
                       style={[
                         styles.cropName,
@@ -656,6 +736,9 @@ export default function TimeLapseUploadScreen() {
                     >
                       {CROP_NAMES[type]}
                     </Text>
+                    {!crop && !busyHere ? (
+                      <Text style={[styles.cropTapHint, { color: tc.textMuted }]}>Tap to set up</Text>
+                    ) : null}
                   </View>
                 </TouchableOpacity>
               );
@@ -1020,6 +1103,16 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xl,
     fontWeight: '600' as const,
     color: colors.text.primary,
+  },
+  cropHint: {
+    fontSize: typography.fontSize.sm,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  cropTapHint: {
+    fontSize: typography.fontSize.xs,
+    marginTop: 2,
+    textAlign: 'center',
   },
   createCropButton: {
     flexDirection: 'row',

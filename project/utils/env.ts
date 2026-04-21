@@ -1,32 +1,17 @@
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-type ExtraConfig = {
-  API_BASE_URL?: string;
-};
+// Single source of truth for the backend URL.
+// Android Emulator must use 10.0.2.2 to reach your laptop localhost.
+const API_BASE_URL = Platform.OS === 'android'
+  ? 'http://10.0.2.2:5000'
+  : 'http://127.0.0.1:5000';
 
 /**
  * Get the backend API URL - Always uses backend server's network IP
  */
 export function getApiBaseUrl(): string {
-  // FIX: prefer runtime env value so mobile + backend can be switched without code edits
-  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
-  if (envUrl) {
-    console.log('📡 Using API URL from EXPO_PUBLIC_API_BASE_URL:', envUrl, `(Platform: ${Platform.OS})`);
-    return envUrl;
-  }
-
-  // Fallback to app config extra value if provided
-  const extraUrl = Constants.expoConfig?.extra?.API_BASE_URL?.trim();
-  if (extraUrl) {
-    console.log('📡 Using API URL from app config extra:', extraUrl, `(Platform: ${Platform.OS})`);
-    return extraUrl;
-  }
-
-  // Last-resort fallback
-  const fallback = 'http://192.168.100.15:5000';
-  console.log('📡 Using fallback backend URL:', fallback, `(Platform: ${Platform.OS})`);
-  return fallback;
+  console.log('📡 Using API URL from env.ts constant:', API_BASE_URL, `(Platform: ${Platform.OS})`);
+  return API_BASE_URL;
 }
 
 /**
@@ -69,7 +54,7 @@ export async function testBackendConnection(): Promise<boolean> {
     console.error('🔧 Troubleshooting Steps:');
     console.error('   1. Start backend: cd Backend && python app.py');
     console.error('   2. Check backend shows "Running on http://0.0.0.0:5000"');
-    console.error('   3. Test in browser: http://192.168.100.15:5000/health');
+    console.error(`   3. Test in browser:  ${API_BASE_URL}/health`);
     console.error('   4. Verify IP unchanged: ipconfig | findstr IPv4');
     console.error('   5. Check Windows Firewall allows port 5000');
     console.error('   6. Ensure same WiFi network (if using physical device)');

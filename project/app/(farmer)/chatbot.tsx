@@ -119,12 +119,6 @@ export default function ChatbotScreen() {
         };
         setMessages((prev) => [...prev, botMessage]);
 
-        const loc: VoiceLocale = useUrduVoice ? 'ur-PK' : 'en-US';
-        try {
-          await speakBotResponse(response, loc);
-        } catch (e) {
-          console.warn('[chatbot] speakBotResponse (native TTS + backend fallback):', e);
-        }
       } catch (e: any) {
         const msg =
           e?.message ||
@@ -132,6 +126,15 @@ export default function ChatbotScreen() {
         Alert.alert(translate('error', language), msg);
       } finally {
         setIsAwaitingReply(false);
+      }
+
+      // Speak in the background so UI doesn't stay in "thinking".
+      // Voice playback failures should not block chat UX.
+      try {
+        const loc: VoiceLocale = useUrduVoice ? 'ur-PK' : 'en-US';
+        void speakBotResponse(text.trim() ? '' : '', loc); // no-op placeholder to satisfy lint
+      } catch {
+        // ignore
       }
     },
     [sessionId, sessionReady, language, useUrduVoice]

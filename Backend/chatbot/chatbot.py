@@ -18,6 +18,76 @@ _CHATBOT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_CHATBOT_DIR, ".env"))
 load_dotenv()
 
+# ── Grok (xAI) client helpers ──────────────────────────────────────────
+def _get_grok_client():
+    """
+    Uses OpenAI-compatible xAI Grok API if XAI_API_KEY is set.
+    Falls back to None (we'll degrade gracefully).
+    """
+    api_key = (os.getenv("XAI_API_KEY") or "").strip()
+    if not api_key:
+        return None
+    base_url = (os.getenv("XAI_BASE_URL") or "https://api.x.ai/v1").strip()
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None
+    return OpenAI(api_key=api_key, base_url=base_url)
+
+
+def _grok_model_name() -> str:
+    return (os.getenv("GROK_MODEL") or "grok-2-latest").strip()
+
+
+def _grok_chat_completion(client, messages, temperature: float = 0.0, max_tokens: int = 350):
+    return client.chat.completions.create(
+        model=_grok_model_name(),
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
+def _lc_messages_to_openai(messages: List[Any]) -> list[dict]:
+    """
+    Convert LangChain message objects to OpenAI-compatible dicts.
+    Unknown message types are treated as 'user' content.
+    """
+    out: list[dict] = []
+    for m in messages or []:
+        role = "user"
+        try:
+            # LangChain message classes
+            if isinstance(m, HumanMessage):
+                role = "user"
+            elif isinstance(m, AIMessage):
+                role = "assistant"
+            elif isinstance(m, SystemMessage):
+                role = "system"
+        except Exception:
+            role = "user"
+        content = getattr(m, "content", None)
+        if content is None:
+            content = str(m)
+        out.append({"role": role, "content": str(content)})
+    return out
+
+
+def _invoke_generation_model(system_text: str, lc_history_plus_user: List[Any], temperature: float, max_tokens: int) -> str:
+    """
+    Generation is done via Grok if configured; otherwise falls back to Groq (LangChain).
+    """
+    grok = _get_grok_client()
+    if grok is not None:
+        msgs = [{"role": "system", "content": system_text}] + _lc_messages_to_openai(lc_history_plus_user)
+        out = _grok_chat_completion(grok, msgs, temperature=temperature, max_tokens=max_tokens)
+        return (out.choices[0].message.content or "").strip()
+
+    # Fallback: Groq (existing behavior)
+    from langchain_core.messages import SystemMessage as SM
+    resp = llm.invoke([SM(content=system_text)] + lc_history_plus_user)
+    return (resp.content or "").strip()
+
 # Print Chroma context to console before each LLM call (set AGRISMART_PRINT_CONTEXT=0 to disable)
 def _should_print_context_to_console() -> bool:
     v = os.getenv("AGRISMART_PRINT_CONTEXT", "1").strip().lower()
@@ -39,7 +109,8 @@ print("Loading ChromaDB...")
 vectorstore = load_vectorstore()
 retriever = vectorstore.as_retriever(
     search_type="similarity",
-    search_kwargs={"k": 4}
+    # We'll retrieve a wider set, then rerank down to the final top-4.
+    search_kwargs={"k": int(os.getenv("AGRISMART_RETRIEVE_K", "12"))}
 )
 print("ChromaDB ready!")
 
@@ -48,11 +119,24 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
     print("WARNING: HF_TOKEN not set in .env (embeddings may still work for public models)")
 
+# Slightly lower temperature reduces degenerate repetition loops.
+# If answers look "incomplete", increase CHATBOT_MAX_TOKENS (default below).
+_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+try:
+    _CHATBOT_TEMP = float(os.getenv("CHATBOT_TEMPERATURE", "0.25"))
+except ValueError:
+    _CHATBOT_TEMP = 0.25
+try:
+    # 400 was frequently too small for "symptoms + treatment + prevention" answers.
+    _CHATBOT_MAX_TOKENS = int(os.getenv("CHATBOT_MAX_TOKENS", "700"))
+except ValueError:
+    _CHATBOT_MAX_TOKENS = 700
+
 llm = ChatGroq(
-    model="llama-3.1-8b-instant",   # free, fast, multilingual
+    model=_GROQ_MODEL,
     api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0.3,
-    max_tokens=512
+    temperature=_CHATBOT_TEMP,
+    max_tokens=_CHATBOT_MAX_TOKENS,
 )
 
 # ── Prompts ───────────────────────────────────────────────────────────
@@ -202,6 +286,37 @@ def _normalize_lang_hint(raw: str) -> str:
     return base
 
 
+def _trim_repetition_loops(text: str, min_repeat: int = 7) -> str:
+    """
+    LLMs sometimes degenerate into repeating the same short n-gram forever (e.g. 'ke pedon ke pedon ...').
+    If we detect many consecutive repeats of the same 2–4 word phrase, keep only the first occurrence
+    of that phrase and drop the tail.
+    """
+    if not text or not text.strip():
+        return text
+    words = text.split()
+    if len(words) < min_repeat * 2:
+        return text
+    for n in (2, 3, 4):
+        i = 0
+        while i + n * min_repeat <= len(words):
+            phrase = tuple(words[i : i + n])
+            run = 1
+            j = i + n
+            while j + n <= len(words) and tuple(words[j : j + n]) == phrase:
+                run += 1
+                j += n
+            if run >= min_repeat:
+                trimmed = " ".join(words[: i + n]).strip()
+                print(
+                    f"WARNING: trimmed repetition loop (n={n}, repeats={run}); "
+                    f"original_len={len(text)} trimmed_len={len(trimmed)}"
+                )
+                return trimmed
+            i += 1
+    return text
+
+
 # ═══════════════════════════════════════════════════════════
 # Multi-turn context (must be fed to the LLM, not only stored after the fact)
 # ═══════════════════════════════════════════════════════════
@@ -224,11 +339,12 @@ def detect_language_node(state: AgriState) -> AgriState:
     # Full Arabic block (Urdu/Persian script)
     if re.search(r"[\u0600-\u06FF]", query):
         lang = "urdu_script"
-    # Mic + Urdu UI: STT text is often short or oddly tokenized — trust session language
+    # Mic + Urdu UI: keep Urdu, but pick script vs roman based on actual characters.
+    # If STT returns Urdu script, the Arabic-block check above already caught it.
     elif from_voice and hint == "ur":
-        lang = "roman_urdu"
+        lang = "roman_urdu" if _looks_like_roman_urdu(query) else "urdu_script"
     elif hint == "ur":
-        lang = "roman_urdu"
+        lang = "roman_urdu" if _looks_like_roman_urdu(query) else "urdu_script"
     elif hint == "en":
         if _looks_like_roman_urdu(query):
             lang = "roman_urdu"
@@ -246,28 +362,111 @@ def detect_language_node(state: AgriState) -> AgriState:
 def retrieve_context_node(state: AgriState) -> AgriState:
     query = state["query"]
 
-    # Translate Roman Urdu → English for better ChromaDB search
-    search_query = query.lower()
-    for roman, english in ROMAN_TO_ENGLISH.items():
-        search_query = search_query.replace(roman, english)
+    # Stage 1 (pre-retrieval): rewrite/expand query with Grok (best-effort).
+    # If Grok isn't configured, we fall back to a lightweight Roman Urdu → English rewrite.
+    grok = _get_grok_client()
+    rewritten = ""
+    if grok is not None:
+        try:
+            sys_prompt = (
+                "You rewrite user questions for semantic search over agricultural PDFs.\n"
+                "Return ONLY a single rewritten query, no quotes, no extra text.\n"
+                "Rules:\n"
+                "- Keep original intent.\n"
+                "- Expand acronyms/short forms.\n"
+                "- Add missing context words (crop, disease/pest/fertilizer/irrigation, symptoms, treatment, prevention).\n"
+                "- If the user uses Urdu or Roman Urdu, include BOTH Urdu/Roman terms and English equivalents in the rewritten query.\n"
+            )
+            out = _grok_chat_completion(
+                grok,
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": query},
+                ],
+                temperature=0.2,
+                max_tokens=120,
+            )
+            rewritten = (out.choices[0].message.content or "").strip()
+        except Exception as e:
+            print(f"WARNING: Grok rewrite failed; falling back. err={e}")
 
-    print(f"Searching ChromaDB: {search_query[:80]}")
+    if not rewritten:
+        # Fallback rewrite: Roman Urdu → English hints for retrieval only.
+        rewritten = query.lower()
+        for roman, english in ROMAN_TO_ENGLISH.items():
+            rewritten = rewritten.replace(roman, english)
 
+    search_query = rewritten
+    print(f"Searching ChromaDB: {search_query[:120]}")
+
+    # Stage 2: retrieve (wide)
     try:
         docs = retriever.invoke(search_query)
-        if docs:
-            context = "\n\n---\n\n".join([
-                f"[{doc.metadata.get('source', 'Doc')} | Crop: {doc.metadata.get('crop', 'general')}]\n{doc.page_content}"
-                for doc in docs
-            ])
-            print(f"Retrieved {len(docs)} chunks")
-        else:
-            context = "No specific document found. Using general agricultural knowledge."
-            print("No chunks found")
     except Exception as e:
-        context = "Error retrieving context. Using general knowledge."
         print(f"Retrieval error: {e}")
+        docs = []
 
+    if not docs:
+        return {
+            **state,
+            "context": "No relevant PDF chunks were found in the knowledge base.",
+        }
+
+    # Stage 3: rerank with Grok (best-effort), then keep top-4 and merge into context.
+    final_k = int(os.getenv("AGRISMART_FINAL_K", "4"))
+    reranked = docs
+
+    if grok is not None:
+        try:
+            # Provide compact chunk candidates to Grok for scoring.
+            candidates = []
+            for i, d in enumerate(docs):
+                src = d.metadata.get("source", "Doc")
+                crop = d.metadata.get("crop", "general")
+                text = (d.page_content or "").strip()
+                if len(text) > 900:
+                    text = text[:900] + "…"
+                candidates.append({"id": i, "source": src, "crop": crop, "text": text})
+
+            sys_prompt = (
+                "You are a reranker for retrieval-augmented generation.\n"
+                "Given a user question and candidate PDF chunks, return JSON ONLY.\n"
+                "Output schema:\n"
+                "{ \"ranked_ids\": [int, ...] }\n"
+                "Rules:\n"
+                "- ranked_ids must list the best chunk ids from most relevant to least.\n"
+                "- Prefer chunks that directly answer the question.\n"
+                "- If two chunks are redundant, keep only the better one earlier.\n"
+            )
+            user_payload = {"question": query, "candidates": candidates, "top_k": final_k}
+            out = _grok_chat_completion(
+                grok,
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": str(user_payload)},
+                ],
+                temperature=0.0,
+                max_tokens=220,
+            )
+            raw = (out.choices[0].message.content or "").strip()
+            import json
+
+            data = json.loads(raw)
+            ranked_ids = data.get("ranked_ids") or []
+            ranked_ids = [i for i in ranked_ids if isinstance(i, int) and 0 <= i < len(docs)]
+            if ranked_ids:
+                reranked = [docs[i] for i in ranked_ids] + [d for j, d in enumerate(docs) if j not in set(ranked_ids)]
+        except Exception as e:
+            print(f"WARNING: Grok rerank failed; using similarity order. err={e}")
+
+    top = reranked[: max(1, final_k)]
+    context = "\n\n---\n\n".join(
+        [
+            f"[{doc.metadata.get('source', 'Doc')} | Crop: {doc.metadata.get('crop', 'general')}]\n{doc.page_content}"
+            for doc in top
+        ]
+    )
+    print(f"Retrieved {len(docs)} candidates; using top {len(top)} chunks")
     return {**state, "context": context}
 
 
@@ -283,10 +482,12 @@ Aap wheat (gandum), rice (chawal), aur cotton (kapas) ke expert hain.
 HAMESHA Roman Urdu mein jawab do — yaani Urdu words ko English letters mein likho.
 Simple, short aur kisan-friendly jawab do.
 Disease puchne par: symptoms, dawaai, aur bachao tino batao."""
+        system_msg += "\n\nZAROORI: Kabhi bhi ek hi chhoti phrase (2–4 alfaaz) ko baar baar repeat mat karo. Jawab complete ho jaye to ruk jao; ghair zaroori repetition mat karo."
 
     elif language == "urdu_script":
         system_msg = """آپ AgriSmart ہیں، پاکستانی کسانوں کے لیے ایک زرعی معاون۔
-گندم، چاول اور کپاس کے ماہر ہیں۔ اردو میں جواب دیں۔"""
+گندم، چاول اور کپاس کے ماہر ہیں۔ اردو میں جواب دیں۔
+ایک ہی مختصر جملے کو بار بار دہرائیں نہیں؛ جواب مکمل ہو جائے تو رک جائیں۔"""
 
     else:
         system_msg = """You are AgriSmart, an expert agricultural assistant for farmers in Pakistan.
@@ -295,11 +496,21 @@ Focus on wheat, rice, and cotton (local practices, seasons, and common problems)
 Answer only in clear, simple English. Use short sentences and bullet points when listing steps.
 Be practical: say what to do, roughly when, and what to watch for.
 For diseases or pests: symptoms first, then treatment or spray options, then prevention.
-If the farmer writes in Roman Urdu (Urdu in Latin letters), understand it and reply in English.
+If the farmer writes in Roman Urdu (Urdu in Latin letters), understand it and reply in Roman Urdu (same language style).
 Stay concise; avoid jargon unless you explain it in one line."""
+        system_msg += "\n\nNever repeat the same short phrase or sentence in a loop. When the answer is complete, stop."
+
+    # Advanced RAG restriction: answer ONLY from provided PDF context.
+    system_msg += (
+        "\n\nIMPORTANT GROUNDING RULES:\n"
+        "- You MUST answer ONLY using the PDF context below.\n"
+        "- If the answer is not explicitly supported by the context, say you don't have it in the PDFs and ask a clarifying question.\n"
+        "- Do NOT use general world knowledge, guesses, or training data.\n"
+        "- If the user asks something unrelated to agriculture, politely refuse and ask an agriculture-related question.\n"
+    )
 
     # Add context to system message
-    system_msg += f"\n\nContext from Agricultural Documents:\n{context}"
+    system_msg += f"\n\nPDF Context (only source you may use):\n{context}"
 
     if _should_print_context_to_console():
         print("\n" + "=" * 72)
@@ -309,12 +520,13 @@ Stay concise; avoid jargon unless you explain it in one line."""
         print("=" * 72 + "\n")
 
     try:
-        from langchain_core.messages import SystemMessage as SM
-        # Full chat history + current question so follow-ups like "from above" work
-        response = llm.invoke(
-            [SM(content=system_msg)] + _prior_messages_plus_current_user(state)
+        response_text = _invoke_generation_model(
+            system_text=system_msg,
+            lc_history_plus_user=_prior_messages_plus_current_user(state),
+            temperature=_CHATBOT_TEMP,
+            max_tokens=_CHATBOT_MAX_TOKENS,
         )
-        response_text = response.content.strip()
+        response_text = _trim_repetition_loops(response_text)
 
     except Exception as e:
         print(f"LLM Error: {e}")
@@ -346,21 +558,33 @@ def direct_response_node(state: AgriState) -> AgriState:
     query = state["query"]
 
     if lang == "roman_urdu":
-        system = "Aap AgriSmart hain, Pakistani kisan bhaion ke liye ek zari assistant. Roman Urdu mein friendly jawab do. Agar farming se related nahi hai toh politely farming ki taraf guide karo."
+        system = (
+            "Aap AgriSmart hain, Pakistani kisan bhaion ke liye ek zari assistant.\n"
+            "Roman Urdu mein short, friendly jawab do.\n"
+            "Agar sawal zaraat/farming se related NAHI hai, to politely refuse karo aur kaho ke main sirf zaraat se related sawalat ka jawab deta hun.\n"
+            "Phir user ko guide karo ke wheat/rice/cotton, disease, keere, khad, paani/abpashi, ya soil ke bare mein puchein."
+        )
     elif lang == "urdu_script":
-        system = "آپ AgriSmart ہیں۔ مختصر اور دوستانہ جواب دیں۔ زراعت کی طرف رہنمائی کریں۔"
+        system = (
+            "آپ AgriSmart ہیں۔ مختصر اور دوستانہ جواب دیں۔\n"
+            "اگر سوال زراعت سے متعلق نہیں ہے تو مؤدبانہ انکار کریں اور بتائیں کہ آپ صرف زراعت سے متعلق سوالات کے جواب دیتے ہیں۔\n"
+            "پھر صارف کو گندم/چاول/کپاس، بیماری، کیڑے، کھاد، آبپاشی، یا مٹی کے بارے میں سوال کرنے کو کہیں۔"
+        )
     else:
-        system = """You are AgriSmart, a friendly farming assistant for Pakistan.
+        system = """You are AgriSmart, a farming assistant for Pakistan.
 Reply only in clear English. Keep answers short.
-If the question is not about farming, politely steer the user toward crops, soil, water, pests, or fertilizer.
-If the user message is Roman Urdu, understand it and still answer in English."""
+If the question is not about agriculture, politely refuse and say you can only help with crops/soil/irrigation/pests/diseases/fertilizer.
+Then ask the user to rephrase their question in that scope.
+If the user message is Roman Urdu, understand it and answer in Roman Urdu (same language style)."""
 
     try:
-        from langchain_core.messages import SystemMessage as SM
-        response = llm.invoke(
-            [SM(content=system)] + _prior_messages_plus_current_user(state)
+        response_text = _invoke_generation_model(
+            system_text=system,
+            lc_history_plus_user=_prior_messages_plus_current_user(state),
+            temperature=_CHATBOT_TEMP,
+            max_tokens=_CHATBOT_MAX_TOKENS,
         )
-        response_text = response.content.strip()
+        response_text = _trim_repetition_loops(response_text)
     except Exception as e:
         print(f"LLM Error: {e}")
         response_text = "Hello! Main AgriSmart hun. Apni fasal ke baare mein kuch puchein!"

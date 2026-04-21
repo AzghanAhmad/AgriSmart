@@ -1,6 +1,7 @@
 langchain==0.3.7
 langchain-community==0.3.7
 langchain-huggingface==0.1.2
+langchain-text-splitters==0.3.2
 langgraph==0.2.45
 chromadb==0.5.18
 pymupdf==1.24.11
@@ -11,3 +12,5 @@ flask-cors==5.0.0
 psycopg2-binary==2.9.10
 python-dotenv==1.0.1
 huggingface-hub==0.26.2
+openai>=1.0.0
+tiktoken>=0.6.0

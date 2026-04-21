@@ -107,6 +107,21 @@ app.register_blueprint(yield_estimation_bp)  # Yield Estimation Module
 app.register_blueprint(chatbot_bp)  # LangGraph + Chroma + Groq assistant
 app.register_blueprint(voice_bp)  # Hybrid STT/TTS (Whisper / Vosk / pyttsx3 / gTTS)
 
+# Optional warm start: load chatbot + ChromaDB at boot so first user message is fast.
+# Set AGRISMART_PRELOAD_CHATBOT=1 to enable (recommended for demos on mobile).
+try:
+    preload = os.getenv("AGRISMART_PRELOAD_CHATBOT", "0").strip().lower() in ("1", "true", "yes", "on")
+    if preload:
+        print("🔥 Preloading chatbot (ChromaDB + graph)...")
+        try:
+            from .routes import chatbot_bp as _cb
+        except ImportError:
+            import routes.chatbot_bp as _cb
+        _cb._get_graph_bot()
+        print("✅ Chatbot preloaded")
+except Exception as e:
+    print(f"⚠️ Chatbot preload skipped: {e}")
+
 # ✅ Cache loaded models to avoid reloading every time
 loaded_models = {}
 

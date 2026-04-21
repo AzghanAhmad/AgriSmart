@@ -98,4 +98,56 @@ export async function apiPost<T = any>(path: string, body?: any, headers?: Recor
   return apiJson<T>(path, { method: 'POST', body, headers });
 }
 
+export async function apiPut<T = any>(path: string, body?: any, headers?: Record<string, string>): Promise<T> {
+  return apiJson<T>(path, { method: 'PUT', body, headers });
+}
 
+export async function apiPatch<T = any>(path: string, body?: any, headers?: Record<string, string>): Promise<T> {
+  return apiJson<T>(path, { method: 'PATCH', body, headers });
+}
+
+export async function apiDelete<T = any>(path: string, headers?: Record<string, string>): Promise<T> {
+  return apiJson<T>(path, { method: 'DELETE', headers });
+}
+
+/**
+ * Multipart profile photo upload (React Native: append { uri, name, type }).
+ */
+export async function apiUploadProfilePhoto(localUri: string): Promise<unknown> {
+  const base = getApiBaseUrl();
+  const fullUrl = `${base}/api/auth/profile-photo`;
+  const token = await AsyncStorage.getItem('authToken');
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const nameGuess = localUri.split(/[/\\]/).pop() || 'profile.jpg';
+  const ext = nameGuess.toLowerCase();
+  const mime = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+  const form = new FormData();
+  form.append('photo', { uri: localUri, name: nameGuess, type: mime } as unknown as Blob);
+
+  console.log(`🌐 API Request: POST ${fullUrl} (multipart)`);
+
+  const res = await fetch(fullUrl, { method: 'POST', headers, body: form });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: 'Invalid JSON response' };
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      AsyncStorage.removeItem('authToken').catch(() => {});
+      AsyncStorage.removeItem('user').catch(() => {});
+    }
+    const message = typeof data?.error === 'string' ? data.error : `Request failed (${res.status})`;
+    throw new Error(message);
+  }
+  if (data?.error) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'Request failed');
+  }
+  return data;
+}
