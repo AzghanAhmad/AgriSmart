@@ -42,6 +42,7 @@ ios/build/
 !.env.example
 !.env*.example
 .env.local
+Backend/chatbot/.env
 
 # Python
 __pycache__/
@@ -67,7 +68,7 @@ ENV/
 *.sqlite
 
 # Keep any intentional, versioned DBs by exception (add more if needed)
-!Backend/chatbot/chroma_db/chroma.sqlite3
+# Don't commit Chroma/SQLite artifacts (regenerate via ingest scripts)
 
 # Logs
 logs/
@@ -103,6 +104,20 @@ out/
 # NOTE: Do not add "*.bin" here — ChromaDB stores vector chunks as .bin files under chroma_db/
 
 # RAG data: chroma_db/ and Backend/chatbot/pdfs/ are tracked on purpose for this repo
+
+# --- AgriSmart chatbot (do commit code + datasets; ignore generated artifacts) ---
+Backend/chatbot/chroma_db/
+Backend/chatbot/wheat_cotton_rice_db/
+Backend/chatbot/**/chroma.sqlite3
+Backend/chatbot/**/*.bin
+Backend/chatbot/**/*.pkl
+Backend/chatbot/**/__pycache__/
+
+# Optional: if you don't want to commit PDFs, uncomment next line
+# Backend/chatbot/pdfs/
+
+# Voice/STT/TTS outputs (generated)
+Backend/static/voice/
 
 Backend/static/uploads/
 Backend/**/uploads/detections/
