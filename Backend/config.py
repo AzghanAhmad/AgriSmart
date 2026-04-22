@@ -34,3 +34,8 @@ def get_weather_api_key() -> str:
 def get_gemini_api_key() -> str:
     return os.getenv('GEMINI_API_KEY', '')
 
+
+def get_gemini_model() -> str:
+    """Model id for google.generativeai (e.g. gemini-1.5-flash). gemini-pro is retired."""
+    return os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
+

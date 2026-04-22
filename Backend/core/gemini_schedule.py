@@ -5,9 +5,9 @@ import json
 from typing import Dict, List, Optional
 
 try:
-    from ..config import get_gemini_api_key
+    from ..config import get_gemini_api_key, get_gemini_model
 except ImportError:
-    from config import get_gemini_api_key
+    from config import get_gemini_api_key, get_gemini_model
 
 
 def generate_schedule_with_gemini(
@@ -39,7 +39,7 @@ def generate_schedule_with_gemini(
         import google.generativeai as genai
         
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel(get_gemini_model())
         
         prompt = f"""Generate a personalized 7-day farming schedule for managing {disease} in {crop_type} crops in {location} location.
 
