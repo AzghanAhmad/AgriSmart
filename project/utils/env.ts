@@ -10,8 +10,43 @@ const API_BASE_URL = Platform.OS === 'android'
  * Get the backend API URL - Always uses backend server's network IP
  */
 export function getApiBaseUrl(): string {
-  console.log('📡 Using API URL from env.ts constant:', API_BASE_URL, `(Platform: ${Platform.OS})`);
-  return API_BASE_URL;
+  // FIX: prefer runtime env value so mobile + backend can be switched without code edits
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  if (envUrl) {
+    console.log('📡 Using API URL from EXPO_PUBLIC_API_BASE_URL:', envUrl, `(Platform: ${Platform.OS})`);
+    return envUrl;
+  }
+
+  // Fallback to app config extra value if provided
+  const extraUrl = Constants.expoConfig?.extra?.API_BASE_URL?.trim();
+  if (extraUrl) {
+    console.log('📡 Using API URL from app config extra:', extraUrl, `(Platform: ${Platform.OS})`);
+    return extraUrl;
+  }
+
+  if (__DEV__) {
+    if (Platform.OS === 'android') {
+      const url = 'http://10.0.2.2:5000';
+      console.warn(
+        '📡 API base (Android emulator default):',
+        url,
+        '— on a real phone set app.json extra.API_BASE_URL to your PC IP',
+      );
+      return url;
+    }
+    if (Platform.OS === 'ios') {
+      const url = 'http://localhost:5000';
+      console.log('📡 API base (iOS simulator default):', url);
+      return url;
+    }
+    const url = 'http://localhost:5000';
+    console.log('📡 API base (web/default):', url);
+    return url;
+  }
+
+  const lastResort = 'http://192.168.137.190:5000';
+  console.warn('📡 API base: set extra.API_BASE_URL for production; using', lastResort);
+  return lastResort;
 }
 
 /**
