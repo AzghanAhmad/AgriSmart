@@ -37,6 +37,12 @@ _ENGLISH_STT_HINT = frozenset(
     }
 )
 
+# Google Cloud Speech-to-Text fallback control:
+# - GOOGLE_STT_ENABLED=true/1/yes/on  => force enable
+# - GOOGLE_STT_ENABLED=false/0/no/off => force disable
+# - unset                             => auto-enable if credentials env is present
+_GOOGLE_STT_ENABLED_RAW = os.getenv('GOOGLE_STT_ENABLED', '').strip().lower()
+
 # Lazy-loaded Whisper model (global, loaded once)
 _whisper_model = None
 
@@ -83,6 +89,70 @@ def _stt_debug(msg: str) -> None:
         current_app.logger.info(msg)
     except RuntimeError:
         logging.getLogger(__name__).info(msg)
+
+
+def _is_google_stt_enabled() -> bool:
+    if _GOOGLE_STT_ENABLED_RAW in ('1', 'true', 'yes', 'on'):
+        return True
+    if _GOOGLE_STT_ENABLED_RAW in ('0', 'false', 'no', 'off'):
+        return False
+    # Auto mode: enable when credentials path is present.
+    creds = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '').strip()
+    return bool(creds)
+
+
+def _google_language_code(whisper_lang: str) -> str:
+    # Prefer regional variants Google models are tuned for
+    if whisper_lang == 'ur':
+        return os.getenv('GOOGLE_STT_URDU_CODE', 'ur-PK').strip() or 'ur-PK'
+    return os.getenv('GOOGLE_STT_ENGLISH_CODE', 'en-US').strip() or 'en-US'
+
+
+def _google_stt_transcribe(wav_path: str, whisper_lang: str) -> str | None:
+    """
+    Google Cloud Speech-to-Text fallback.
+    Requires env GOOGLE_APPLICATION_CREDENTIALS (service account JSON) or ADC.
+    """
+    if not _is_google_stt_enabled():
+        _stt_debug(
+            'Google STT skipped: disabled (set GOOGLE_STT_ENABLED=true or provide '
+            'GOOGLE_APPLICATION_CREDENTIALS for auto-enable)'
+        )
+        return None
+    try:
+        from google.cloud import speech  # type: ignore
+    except Exception as e:
+        current_app.logger.warning('Google STT not available (missing dependency): %s', e)
+        return None
+
+    try:
+        with open(wav_path, 'rb') as f:
+            content = f.read()
+
+        client = speech.SpeechClient()
+        audio = speech.RecognitionAudio(content=content)
+        config = speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=16000,
+            language_code=_google_language_code(whisper_lang),
+            enable_automatic_punctuation=True,
+            # Keep it stable; avoid creative decoding
+            use_enhanced=True,
+        )
+
+        _stt_debug(f'Google STT call: language_code={config.language_code!r} bytes={len(content)}')
+        response = client.recognize(config=config, audio=audio)
+        texts: list[str] = []
+        for r in response.results:
+            alt = r.alternatives[0].transcript if r.alternatives else ''
+            if alt:
+                texts.append(alt)
+        out = ' '.join(texts).strip()
+        _stt_debug(f'Google STT Output: {out!r}')
+        return out or None
+    except Exception as e:
+        current_app.logger.warning('Google STT failed: %s', e)
+        return None
 
 
 def _normalize_urdu_text(text: str) -> str:
@@ -179,12 +249,77 @@ def _whisper_load():
         return None
 
 
+def _whisper_quality(result: dict) -> dict:
+    """
+    Extract lightweight quality signals from Whisper output.
+    - avg_logprob: higher (closer to 0) is better
+    - no_speech_prob: higher means likely silence
+    - compression_ratio: very high can indicate hallucination/repetition
+    """
+    segs = result.get('segments') or []
+    if not isinstance(segs, list):
+        segs = []
+
+    avg_logprobs: list[float] = []
+    no_speech_probs: list[float] = []
+    compression_ratios: list[float] = []
+    for s in segs:
+        if not isinstance(s, dict):
+            continue
+        v = s.get('avg_logprob')
+        if isinstance(v, (int, float)):
+            avg_logprobs.append(float(v))
+        v = s.get('no_speech_prob')
+        if isinstance(v, (int, float)):
+            no_speech_probs.append(float(v))
+        v = s.get('compression_ratio')
+        if isinstance(v, (int, float)):
+            compression_ratios.append(float(v))
+
+    def mean(xs: list[float]) -> float | None:
+        return (sum(xs) / len(xs)) if xs else None
+
+    return {
+        'segments': len(segs),
+        'avg_logprob_mean': mean(avg_logprobs),
+        'no_speech_prob_mean': mean(no_speech_probs),
+        'compression_ratio_mean': mean(compression_ratios),
+    }
+
+
+def _should_retry_whisper(text: str, whisper_lang: str, quality: dict) -> bool:
+    """Decide retry based on Urdu validation + Whisper quality signals."""
+    if not text or len(text.strip()) < 3:
+        return True
+
+    if whisper_lang != 'ur':
+        return False
+
+    if not _is_mostly_urdu(text) or _output_looks_english_heavy(text):
+        return True
+
+    # Use Whisper quality signals when present.
+    # Conservative thresholds (avoid unnecessary retries).
+    avg_lp = quality.get('avg_logprob_mean')
+    no_sp = quality.get('no_speech_prob_mean')
+    comp = quality.get('compression_ratio_mean')
+
+    if isinstance(no_sp, (int, float)) and no_sp >= 0.85:
+        return True
+    if isinstance(avg_lp, (int, float)) and avg_lp <= -1.25:
+        return True
+    if isinstance(comp, (int, float)) and comp >= 3.0:
+        return True
+
+    return False
+
+
 def _transcribe_whisper(
     path: str,
     whisper_lang: str = 'ur',
     *,
     temperature: float = 0.0,
-) -> str:
+) -> tuple[str, dict]:
     model = _whisper_load()
     if model is None:
         raise RuntimeError('whisper_unavailable')
@@ -216,7 +351,9 @@ def _transcribe_whisper(
     detected = result.get('language')
     _stt_debug(f'Whisper detected language: {detected!r}')
     _stt_debug(f'Raw Whisper Output: {text!r}')
-    return text
+    q = _whisper_quality(result if isinstance(result, dict) else {})
+    _stt_debug(f'Whisper quality: {q}')
+    return text, q
 
 
 def _vosk_load():
@@ -269,19 +406,24 @@ def _transcribe_vosk_wav(path: str) -> str | None:
 
 
 def _ffmpeg_to_wav_mono16k(src: str) -> str | None:
-    """Decode any ffmpeg-supported input to 16 kHz mono PCM WAV for Whisper."""
+    """Decode input to 16 kHz mono PCM WAV and normalize volume."""
     _ensure_ffmpeg_on_path()
     if not shutil.which('ffmpeg'):
         return None
     fd, out = tempfile.mkstemp(suffix='.wav')
     os.close(fd)
     try:
+        # `loudnorm` is a good single-pass normalizer for noisy phone recordings.
+        # We keep it simple (no 2-pass) to limit latency.
+        afilter = os.getenv('VOICE_FFMPEG_AF', '').strip() or 'loudnorm=I=-16:TP=-1.5:LRA=11'
         subprocess.run(
             [
                 'ffmpeg',
                 '-y',
                 '-i',
                 src,
+                '-af',
+                afilter,
                 '-ar',
                 '16000',
                 '-ac',
@@ -303,6 +445,17 @@ def _ffmpeg_to_wav_mono16k(src: str) -> str | None:
     except OSError:
         pass
     return None
+
+
+def preprocess_audio(input_path: str) -> str | None:
+    """
+    Preprocess for STT:
+    - decode any input to 16kHz mono PCM WAV
+    - normalize volume (via ffmpeg filter)
+
+    Returns a temp wav path (caller must delete) or None if preprocessing unavailable.
+    """
+    return _ffmpeg_to_wav_mono16k(input_path)
 
 
 def _ensure_voice_dir() -> str:  # FIX: single output directory for generated audio
@@ -356,78 +509,68 @@ def stt():
                 ),
             }), 503
 
-        # Audio preprocessing: 16 kHz mono WAV + basic normalization via ffmpeg.
-        wav_path = _ffmpeg_to_wav_mono16k(tmp_path)
+        # Audio preprocessing: 16 kHz mono WAV + volume normalization via ffmpeg.
+        wav_path = preprocess_audio(tmp_path)
         path_for_stt = wav_path or tmp_path
         if wav_path:
             current_app.logger.info('STT: using ffmpeg-normalized wav (%s bytes)', os.path.getsize(wav_path))
 
         text = ''
-        whisper_lang = 'en'
-        if has_whisper:
-            try:
-                raw_lang = (language or '').strip()
-                whisper_lang = _normalize_stt_language(raw_lang)
-                _stt_debug(f'Detected language param (raw): {raw_lang!r} → whisper: {whisper_lang!r}')
-                # Primary decode: deterministic, low temperature
-                text = _transcribe_whisper(path_for_stt, whisper_lang, temperature=0.0)
-            except RuntimeError as e:
-                code = str(e)
-                if code == 'ffmpeg_missing':
+        raw_lang = (language or '').strip()
+        whisper_lang = _normalize_stt_language(raw_lang)
+        _stt_debug(f'Detected language param (raw): {raw_lang!r} → whisper: {whisper_lang!r}')
+
+        # Policy:
+        # - Urdu voice: Google Cloud STT as primary, Whisper as backup
+        # - English voice: Whisper as primary, Google as fallback
+        if whisper_lang == 'ur':
+            # 1) Google primary for Urdu
+            google_text = _google_stt_transcribe(path_for_stt, 'ur')
+            if google_text:
+                text = _postprocess_urdu(_normalize_urdu_text(google_text))
+                ratio = _urdu_ratio(text)
+                _stt_debug(f'Google Urdu validation: ratio={ratio:.3f} mostly_urdu={_is_mostly_urdu(text)}')
+                if _is_mostly_urdu(text) and not _output_looks_english_heavy(text):
+                    return jsonify({'text': text})
+
+            # 2) Whisper backup for Urdu (only when Google is unavailable/low quality)
+            q: dict = {}
+            if has_whisper:
+                try:
+                    text, q = _transcribe_whisper(path_for_stt, 'ur', temperature=0.0)
+                except RuntimeError as e:
+                    code = str(e)
+                    if code == 'ffmpeg_missing':
+                        return jsonify({
+                            'error': 'ffmpeg_missing',
+                            'hint': (
+                                'pip install imageio-ffmpeg or add ffmpeg to PATH '
+                                '(https://ffmpeg.org/download.html).'
+                            ),
+                        }), 503
+                    text = ''
+                except FileNotFoundError as e:
+                    current_app.logger.exception('Whisper STT (ffmpeg not found): %s', e)
                     return jsonify({
                         'error': 'ffmpeg_missing',
-                        'hint': (
-                            'pip install imageio-ffmpeg or add ffmpeg to PATH '
-                            '(https://ffmpeg.org/download.html).'
-                        ),
+                        'hint': 'ffmpeg executable not found. pip install imageio-ffmpeg and restart the server.',
                     }), 503
-                if code == 'whisper_unavailable':
+                except Exception:
+                    current_app.logger.exception('Whisper STT error')
                     text = ''
-                else:
-                    text = ''
-            except FileNotFoundError as e:
-                current_app.logger.exception('Whisper STT (ffmpeg not found): %s', e)
-                return jsonify({
-                    'error': 'ffmpeg_missing',
-                    'hint': 'ffmpeg executable not found. pip install imageio-ffmpeg and restart the server.',
-                }), 503
-            except Exception:
-                current_app.logger.exception('Whisper STT error')
-                text = ''
 
-        if not text and has_vosk:
-            vosk_try = path_for_stt if path_for_stt.endswith('.wav') else tmp_path
-            vosk_text = _transcribe_vosk_wav(vosk_try)
-            if vosk_text:
-                text = vosk_text
-
-        # Urdu-specific validation, retry, and post-correction
-        if whisper_lang == 'ur':
             text = _normalize_urdu_text(text)
-            ratio = _urdu_ratio(text)
-            _stt_debug(f'STT Urdu validation: ratio={ratio:.3f} mostly_urdu={_is_mostly_urdu(text)}')
-
-            needs_retry = False
-            if not text or len(text) < 3:
-                needs_retry = True
-            elif not _is_mostly_urdu(text) or _output_looks_english_heavy(text):
-                needs_retry = True
-
+            needs_retry = _should_retry_whisper(text, 'ur', q)
             if needs_retry and has_whisper:
-                _stt_debug('STT Urdu: primary decode low quality — retrying with relaxed temperature=0.2')
+                _stt_debug('STT Urdu backup: retrying Whisper with temperature=0.2')
                 try:
-                    alt = _transcribe_whisper(path_for_stt, 'ur', temperature=0.2)
+                    alt, _alt_q = _transcribe_whisper(path_for_stt, 'ur', temperature=0.2)
                     alt = _normalize_urdu_text(alt)
-                    alt_ratio = _urdu_ratio(alt)
-                    _stt_debug(
-                        f'STT Urdu retry validation: ratio={alt_ratio:.3f} mostly_urdu={_is_mostly_urdu(alt)}'
-                    )
                     if alt and _is_mostly_urdu(alt) and not _output_looks_english_heavy(alt):
                         text = alt
-                        ratio = alt_ratio
                         needs_retry = False
-                except Exception as e:  # pragma: no cover - defensive logging only
-                    current_app.logger.warning('Whisper Urdu retry failed: %s', e)
+                except Exception as e:  # pragma: no cover
+                    current_app.logger.warning('Whisper Urdu backup retry failed: %s', e)
 
             if needs_retry:
                 return jsonify(
@@ -438,11 +581,40 @@ def stt():
                     }
                 )
 
-            # Final Urdu-specific post-correction
             text = _postprocess_urdu(text)
         else:
-            # For non-Urdu, just trim and collapse whitespace; no script validation.
+            # English: Whisper primary
+            q: dict = {}
+            if has_whisper:
+                try:
+                    text, q = _transcribe_whisper(path_for_stt, 'en', temperature=0.0)
+                except RuntimeError as e:
+                    code = str(e)
+                    if code == 'ffmpeg_missing':
+                        return jsonify({
+                            'error': 'ffmpeg_missing',
+                            'hint': (
+                                'pip install imageio-ffmpeg or add ffmpeg to PATH '
+                                '(https://ffmpeg.org/download.html).'
+                            ),
+                        }), 503
+                    text = ''
+                except FileNotFoundError as e:
+                    current_app.logger.exception('Whisper STT (ffmpeg not found): %s', e)
+                    return jsonify({
+                        'error': 'ffmpeg_missing',
+                        'hint': 'ffmpeg executable not found. pip install imageio-ffmpeg and restart the server.',
+                    }), 503
+                except Exception:
+                    current_app.logger.exception('Whisper STT error')
+                    text = ''
+
             text = _WS_COLLAPSE_RE.sub(' ', (text or '').strip())
+            # English fallback to Google if Whisper failed
+            if not text or len(text) < 2:
+                google_text = _google_stt_transcribe(path_for_stt, 'en')
+                if google_text:
+                    text = _WS_COLLAPSE_RE.sub(' ', google_text.strip())
 
         return jsonify({'text': text})
     except Exception as e:

@@ -40,7 +40,7 @@
       "usesCleartextTraffic": true
     },
     "extra": {
-      "API_BASE_URL": " http://192.168.0.120:5000"
+      "API_BASE_URL": " http://192.168.100.15:5000"
     }
   }
 }
