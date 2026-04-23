@@ -111,6 +111,19 @@ function classifyMicStartError(e: any): HybridVoiceErrorCode {
   return 'mic_failed';
 }
 
+function classifyNativeVoiceError(event: any): HybridVoiceErrorCode {
+  const code = String(event?.error?.code || event?.code || '').toLowerCase();
+  const msg = String(event?.error?.message || event?.message || '').toLowerCase();
+  if (code.includes('permission') || msg.includes('permission') || msg.includes('denied') || msg.includes('not authorized')) {
+    return 'mic_permission_denied';
+  }
+  // Android SpeechRecognizer common busy code: ERROR_RECOGNIZER_BUSY
+  if (code.includes('busy') || msg.includes('busy') || msg.includes('in use') || msg.includes('audiofocus')) {
+    return 'mic_busy';
+  }
+  return 'native_voice_failed';
+}
+
 /** // DEBUG: lazy native module handles (avoid crashing when not linked) */
 function getVoiceModule(): any {
   try {
@@ -318,6 +331,23 @@ async function ensureRecordPermission(): Promise<boolean> {
   } catch (e) {
     console.log('[voiceService][DEBUG] Audio.requestPermissionsAsync failed:', e);
     return false;
+  }
+}
+
+async function probeMicrophoneAvailable(): Promise<void> {
+  // Best-effort: attempt to start/stop a short recording.
+  // If another app (Meet/Zoom) holds the mic, this will fail immediately.
+  if (Platform.OS === 'web') return;
+  const r = new Audio.Recording();
+  try {
+    await r.prepareToRecordAsync(STT_RECORDING_OPTIONS);
+    await r.startAsync();
+  } finally {
+    try {
+      await r.stopAndUnloadAsync();
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -562,6 +592,25 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
       return;
     }
 
+    // Pre-check: if mic is busy (Meet/Zoom), show warning and DO NOT start voice flow.
+    try {
+      await probeMicrophoneAvailable();
+    } catch (e: any) {
+      const code = classifyMicStartError(e);
+      setErrorCode(code);
+      if (code === 'mic_busy') {
+        setErrorMessage(
+          'Microphone is being used by another app (e.g., Google Meet). To switch it back, mute/leave the meeting and try again.'
+        );
+      } else if (code === 'mic_permission_denied') {
+        setErrorMessage('Microphone permission denied.');
+      } else {
+        setErrorMessage(e?.message || 'Could not access microphone. Please try again.');
+      }
+      setPhase('error');
+      return;
+    }
+
     await stopPlaybackAndPrepareMic();
 
     if (USE_RECORDING_FIRST) {
@@ -650,6 +699,7 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
       if (usingRecorderRef.current) return;
       manualStopRef.current = false;
       recognizedTextRef.current = '';
+      setErrorCode(classifyNativeVoiceError(event));
       setErrorMessage(
         event?.error?.message || event?.error?.code?.toString?.() || 'Speech recognition error.'
       );

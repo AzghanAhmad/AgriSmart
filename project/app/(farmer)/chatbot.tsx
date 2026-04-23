@@ -22,6 +22,7 @@ import {
   clearStoredChatbotSessionId,
   sendChatbotMessage,
   resetChatbotServerSession,
+  warmupChatbot,
 } from '@/services/chatbotService';
 
 interface Message {
@@ -46,6 +47,8 @@ export default function ChatbotScreen() {
   const [isAwaitingReply, setIsAwaitingReply] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const [isWarmingUp, setIsWarmingUp] = useState(false);
+  const [warmupError, setWarmupError] = useState<string | null>(null);
   /** Explicit mic mode: ON => Urdu STT, OFF => English STT. */
   const [useUrduVoice, setUseUrduVoice] = useState(language === 'ur');
   const scrollViewRef = useRef<ScrollView>(null);
@@ -59,6 +62,18 @@ export default function ChatbotScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setSessionReady(false);
+      setIsWarmingUp(true);
+      setWarmupError(null);
+      try {
+        // Warm-up backend (loads ChromaDB + graph) so first user query is instant.
+        await warmupChatbot();
+      } catch (e: any) {
+        // Keep input locked until warmup succeeds (per requirement).
+        const msg = e?.message || translate('networkError', language);
+        if (!cancelled) setWarmupError(msg);
+      }
+
       const stored = await getStoredChatbotSessionId();
       if (!cancelled) {
         setSessionId(stored);
@@ -71,11 +86,26 @@ export default function ChatbotScreen() {
           },
         ]);
         setSessionReady(true);
+        setIsWarmingUp(false);
       }
     })();
     return () => {
       cancelled = true;
     };
+  }, [language]);
+
+  const retryWarmup = useCallback(async () => {
+    setSessionReady(false);
+    setIsWarmingUp(true);
+    setWarmupError(null);
+    try {
+      await warmupChatbot();
+      setSessionReady(true);
+    } catch (e: any) {
+      setWarmupError(e?.message || translate('networkError', language));
+    } finally {
+      setIsWarmingUp(false);
+    }
   }, [language]);
 
   useEffect(() => {
@@ -169,8 +199,8 @@ export default function ChatbotScreen() {
       Alert.alert(
         title,
         language === 'ur'
-          ? 'آپ کا مائیکروفون کسی اور ایپ (مثلاً Google Meet) میں استعمال ہو رہا ہے۔ مائیک کو AgriSmart پر سوئچ کریں یا میٹنگ کی مائیک اجازت بند کر کے دوبارہ کوشش کریں۔'
-          : 'Your microphone is being used by another app (e.g., Google Meet). Switch the mic to AgriSmart (or leave the meeting) and try again.',
+          ? 'آپ کا مائیکروفون کسی اور ایپ (مثلاً Google Meet) میں استعمال ہو رہا ہے۔ اسے AgriSmart پر لانے کے لیے:\n\n1) Google Meet میں جائیں اور مائیک آف کریں (Mute) یا میٹنگ چھوڑ دیں\n2) واپس AgriSmart میں آئیں اور مائیک بٹن دبائیں\n3) اگر پھر بھی مسئلہ ہو تو Meet کو مکمل بند کریں (Recent apps سے swipe) اور دوبارہ کوشش کریں'
+          : 'Your microphone is being used by another app (e.g., Google Meet). To switch it back to AgriSmart:\n\n1) Open Google Meet and mute the mic or leave the meeting\n2) Return to AgriSmart and tap the mic button\n3) If it still fails, fully close Meet (from Recent apps) and try again',
         [
           {
             text: language === 'ur' ? 'سیٹنگز کھولیں' : 'Open Settings',
@@ -231,9 +261,34 @@ export default function ChatbotScreen() {
   const isVoiceBusy =
     voicePhase === 'listening' || voicePhase === 'recording' || voicePhase === 'processing';
 
+  const lastVoiceErrorCodeRef = useRef<typeof voiceErrorCode>(null);
+  useEffect(() => {
+    lastVoiceErrorCodeRef.current = voiceErrorCode ?? null;
+  }, [voiceErrorCode]);
+
   const handleVoiceInput = useCallback(() => {
+    // When the mic is busy (e.g., Google Meet holds it), we can't force-switch it.
+    // So we show guidance EVERY time the user taps the mic until it works.
+    const lastCode = lastVoiceErrorCodeRef.current;
+    if (!isVoiceBusy && lastCode === 'mic_busy' && Platform.OS !== 'web') {
+      Alert.alert(
+        language === 'ur' ? 'مائیکروفون مصروف ہے' : 'Microphone is busy',
+        language === 'ur'
+          ? 'آپ کا مائیکروفون کسی اور ایپ میں استعمال ہو رہا ہے۔ اسے AgriSmart پر لانے کے لیے:\n\n1) Google Meet میں جائیں اور مائیک آف کریں (Mute) یا میٹنگ چھوڑ دیں\n2) واپس AgriSmart میں آئیں اور مائیک بٹن دوبارہ دبائیں\n3) اگر پھر بھی مسئلہ ہو تو Meet کو مکمل بند کریں (Recent apps سے swipe) اور دوبارہ کوشش کریں'
+          : 'Your microphone is being used by another app. To switch it back to AgriSmart:\n\n1) Open Google Meet and mute the mic or leave the meeting\n2) Return to AgriSmart and tap the mic again\n3) If it still fails, fully close Meet (from Recent apps) and try again',
+        [
+          { text: language === 'ur' ? 'ٹھیک ہے' : 'OK', style: 'cancel' },
+          {
+            text: language === 'ur' ? 'دوبارہ کوشش' : 'Try again',
+            onPress: () => toggleMic(),
+          },
+        ]
+      );
+      return;
+    }
+
     toggleMic();
-  }, [toggleMic]);
+  }, [isVoiceBusy, language, toggleMic]);
 
   const quickQuestions = [
     'How to treat wheat rust disease?',
@@ -269,7 +324,13 @@ export default function ChatbotScreen() {
 
       <View style={styles.voiceLangRow}>
         <Text style={styles.voiceLangLabel}>
-          {useUrduVoice ? 'Urdu voice mode' : 'English voice mode'}
+          {useUrduVoice
+            ? language === 'ur'
+              ? 'انگریزی پر سوئچ کریں'
+              : 'Switch to English'
+            : language === 'ur'
+              ? 'اردو پر سوئچ کریں'
+              : 'Switch to Urdu'}
         </Text>
         <Switch
           value={useUrduVoice}
@@ -285,6 +346,38 @@ export default function ChatbotScreen() {
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
       >
+        {!sessionReady && (
+          <View style={styles.warmupBox}>
+            <Text style={styles.warmupTitle}>
+              {language === 'ur' ? 'علمی ڈیٹا لوڈ ہو رہا ہے…' : 'Loading knowledge base…'}
+            </Text>
+            <Text style={styles.warmupSub}>
+              {language === 'ur'
+                ? 'براہِ کرم انتظار کریں۔ ڈیٹا لوڈ ہونے تک آپ سوال نہیں پوچھ سکتے۔'
+                : 'Please wait. You can’t send messages until the knowledge base is ready.'}
+            </Text>
+            {warmupError ? (
+              <>
+                <Text style={styles.warmupError}>
+                  {language === 'ur' ? 'خرابی:' : 'Error:'} {warmupError}
+                </Text>
+                <TouchableOpacity style={styles.warmupRetryBtn} onPress={retryWarmup}>
+                  <Text style={styles.warmupRetryText}>
+                    {language === 'ur' ? 'دوبارہ کوشش کریں' : 'Retry'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.warmupSub}>
+                {isWarmingUp
+                  ? language === 'ur'
+                    ? 'لوڈ ہو رہا ہے…'
+                    : 'Warming up…'
+                  : ''}
+              </Text>
+            )}
+          </View>
+        )}
         {messages.map((message) => (
           <View
             key={message.id}
@@ -359,6 +452,7 @@ export default function ChatbotScreen() {
                 key={index}
                 style={styles.quickQuestionButton}
                 onPress={() => sendMessage(question)}
+                disabled={!sessionReady}
               >
                 <Text style={styles.quickQuestionText}>{question}</Text>
               </TouchableOpacity>
@@ -381,13 +475,14 @@ export default function ChatbotScreen() {
             onChangeText={setInputText}
             multiline
             maxLength={500}
-            editable={!isAwaitingReply}
+            editable={!isAwaitingReply && sessionReady}
           />
 
           <TouchableOpacity
             style={[styles.voiceButton, isVoiceBusy && styles.recordingButton]}
             onPress={handleVoiceInput}
             accessibilityLabel="Voice input"
+            disabled={!sessionReady}
           >
             {isVoiceBusy ? (
               <MicOff color="white" size={20} />
@@ -401,7 +496,7 @@ export default function ChatbotScreen() {
             onPress={() => {
               sendMessage(inputText);
             }}
-            disabled={!inputText.trim() || isAwaitingReply || isVoiceBusy}
+            disabled={!sessionReady || !inputText.trim() || isAwaitingReply || isVoiceBusy}
           >
             <Send color="white" size={20} />
           </TouchableOpacity>
@@ -617,6 +712,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#22C55E',
     fontWeight: '500',
+  },
+  warmupBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  warmupTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  warmupSub: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  warmupError: {
+    marginTop: 10,
+    fontSize: 13,
+    color: '#B91C1C',
+  },
+  warmupRetryBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: '#22C55E',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  warmupRetryText: {
+    color: 'white',
+    fontWeight: '800',
+    fontSize: 13,
   },
   inputContainer: {
     padding: 16,
