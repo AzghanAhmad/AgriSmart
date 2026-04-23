@@ -68,8 +68,48 @@ export type HybridVoicePhase = 'idle' | 'listening' | 'processing' | 'recording'
 export type HybridVoiceState = {
   phase: HybridVoicePhase;
   liveTranscript: string;
+  errorCode: HybridVoiceErrorCode | null;
   errorMessage: string | null;
 };
+
+export type HybridVoiceErrorCode =
+  | 'mic_permission_denied'
+  | 'mic_busy'
+  | 'mic_failed'
+  | 'recording_too_short'
+  | 'no_speech_detected'
+  | 'stt_failed'
+  | 'native_voice_failed';
+
+function classifyMicStartError(e: any): HybridVoiceErrorCode {
+  const msg = String(e?.message || e?.toString?.() || '').toLowerCase();
+  // Permission-ish errors
+  if (
+    msg.includes('permission') ||
+    msg.includes('not authorized') ||
+    msg.includes('denied') ||
+    msg.includes('eacces')
+  ) {
+    return 'mic_permission_denied';
+  }
+  // Mic is already in use / cannot start recorder
+  if (
+    msg.includes('busy') ||
+    msg.includes('in use') ||
+    msg.includes('audiofocus') ||
+    msg.includes('audio record') ||
+    msg.includes('audiorecord') ||
+    msg.includes('could not start') ||
+    msg.includes('start failed') ||
+    msg.includes('avaudio') ||
+    msg.includes('session') ||
+    msg.includes('cannot start') ||
+    msg.includes('resource')
+  ) {
+    return 'mic_busy';
+  }
+  return 'mic_failed';
+}
 
 /** // DEBUG: lazy native module handles (avoid crashing when not linked) */
 function getVoiceModule(): any {
@@ -296,6 +336,7 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
   const { locale, onFinalText, canInteract } = options;
   const [phase, setPhase] = useState<HybridVoicePhase>('idle');
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [errorCode, setErrorCode] = useState<HybridVoiceErrorCode | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const recognizedTextRef = useRef('');
@@ -345,6 +386,7 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
       }
       const durationMs = statusBeforeStop.durationMillis ?? 0;
       if (durationMs < 450) {
+        setErrorCode('recording_too_short');
         setErrorMessage('Recording too short. Tap mic, speak, then tap again to send.');
         setPhase('error');
         return;
@@ -355,11 +397,13 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
         setPhase('idle');
         onFinalTextRef.current(text);
       } else {
+        setErrorCode('no_speech_detected');
         setErrorMessage('No speech detected (backend).');
         setPhase('error');
       }
     } catch (e: any) {
       console.log('[voiceService][DEBUG] Backend STT failed:', e);
+      setErrorCode('stt_failed');
       setErrorMessage(e?.message || 'Backend speech recognition failed.');
       setPhase('error');
     } finally {
@@ -408,10 +452,20 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
       }, FALLBACK_MAX_MS);
     } catch (e: any) {
       console.log('[voiceService][DEBUG] expo-av startRecording failed:', e);
-      setErrorMessage(
-        e?.message ||
-          'Could not start microphone recording. Install Whisper backend and ensure mic permission.'
-      );
+      const code = classifyMicStartError(e);
+      setErrorCode(code);
+      if (code === 'mic_permission_denied') {
+        setErrorMessage('Microphone permission denied.');
+      } else if (code === 'mic_busy') {
+        setErrorMessage(
+          'Microphone is being used by another app (e.g., Google Meet). Switch the mic to AgriSmart and try again.'
+        );
+      } else {
+        setErrorMessage(
+          e?.message ||
+            'Could not start microphone recording. Please check mic permission and try again.'
+        );
+      }
       setPhase('error');
       usingRecorderRef.current = false;
       recorderRef.current = null;
@@ -502,6 +556,7 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
 
     const granted = await ensureRecordPermission();
     if (!granted) {
+      setErrorCode('mic_permission_denied');
       setErrorMessage('Microphone permission denied.');
       setPhase('error');
       return;
@@ -622,11 +677,15 @@ export function useHybridVoice(options: UseHybridVoiceOptions): HybridVoiceState
     };
   }, [clearFallbackTimer, clearVoiceListenTimeout]);
 
-  const resetError = useCallback(() => setErrorMessage(null), []);
+  const resetError = useCallback(() => {
+    setErrorMessage(null);
+    setErrorCode(null);
+  }, []);
 
   return {
     phase,
     liveTranscript,
+    errorCode,
     errorMessage,
     toggleMic,
     resetError,

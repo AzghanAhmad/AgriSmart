@@ -11,6 +11,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { Send, Mic, MicOff, Bot, User, RotateCcw } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
@@ -150,6 +151,7 @@ export default function ChatbotScreen() {
   const {
     phase: voicePhase,
     liveTranscript,
+    errorCode: voiceErrorCode,
     errorMessage: voiceErrorMessage,
     toggleMic,
     resetError: resetVoiceError,
@@ -161,12 +163,50 @@ export default function ChatbotScreen() {
 
   useEffect(() => {
     if (!voiceErrorMessage) return;
-    Alert.alert(
-      language === 'ur' ? 'آواز' : 'Voice',
-      voiceErrorMessage,
-      [{ text: 'OK', onPress: resetVoiceError }]
-    );
-  }, [voiceErrorMessage, language, resetVoiceError]);
+    const title = language === 'ur' ? 'مائیکروفون' : 'Microphone';
+
+    if (voiceErrorCode === 'mic_busy') {
+      Alert.alert(
+        title,
+        language === 'ur'
+          ? 'آپ کا مائیکروفون کسی اور ایپ (مثلاً Google Meet) میں استعمال ہو رہا ہے۔ مائیک کو AgriSmart پر سوئچ کریں یا میٹنگ کی مائیک اجازت بند کر کے دوبارہ کوشش کریں۔'
+          : 'Your microphone is being used by another app (e.g., Google Meet). Switch the mic to AgriSmart (or leave the meeting) and try again.',
+        [
+          {
+            text: language === 'ur' ? 'سیٹنگز کھولیں' : 'Open Settings',
+            onPress: () => {
+              resetVoiceError();
+              Linking.openSettings().catch(() => {});
+            },
+          },
+          { text: 'OK', onPress: resetVoiceError },
+        ]
+      );
+      return;
+    }
+
+    if (voiceErrorCode === 'mic_permission_denied') {
+      Alert.alert(
+        title,
+        language === 'ur'
+          ? 'مائیکروفون کی اجازت بند ہے۔ سیٹنگز میں جا کر Microphone اجازت ON کریں، پھر دوبارہ کوشش کریں۔'
+          : 'Microphone permission is off. Open Settings, enable microphone permission, then try again.',
+        [
+          {
+            text: language === 'ur' ? 'سیٹنگز کھولیں' : 'Open Settings',
+            onPress: () => {
+              resetVoiceError();
+              Linking.openSettings().catch(() => {});
+            },
+          },
+          { text: 'OK', onPress: resetVoiceError },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(title, voiceErrorMessage, [{ text: 'OK', onPress: resetVoiceError }]);
+  }, [voiceErrorCode, voiceErrorMessage, language, resetVoiceError]);
 
   const handleNewChat = useCallback(async () => {
     try {

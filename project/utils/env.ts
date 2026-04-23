@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // Single source of truth for the backend URL.
 // Android Emulator must use 10.0.2.2 to reach your laptop localhost.
@@ -44,7 +45,7 @@ export function getApiBaseUrl(): string {
     return url;
   }
 
-  const lastResort = 'http://192.168.137.190:5000';
+  const lastResort = 'http://192.168.1.3:5000';
   console.warn('📡 API base: set extra.API_BASE_URL for production; using', lastResort);
   return lastResort;
 }
