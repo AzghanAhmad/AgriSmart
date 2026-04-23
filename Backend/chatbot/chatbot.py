@@ -333,29 +333,22 @@ def _prior_messages_plus_current_user(state: AgriState) -> List[Any]:
 
 def detect_language_node(state: AgriState) -> AgriState:
     query = state["query"]
-    hint = _normalize_lang_hint(state.get("language_hint") or "")
-    from_voice = bool(state.get("from_voice"))
-
-    # Full Arabic block (Urdu/Persian script)
+    # STRICT RULE (per product requirement):
+    # - If user types Urdu script → reply in Urdu script only.
+    # - If user types Roman Urdu → reply in Roman Urdu only.
+    # - Otherwise → reply in English only.
+    #
+    # We intentionally do NOT force language from UI hint. The reply language must follow the user's message.
     if re.search(r"[\u0600-\u06FF]", query):
         lang = "urdu_script"
-    # Mic + Urdu UI: keep Urdu, but pick script vs roman based on actual characters.
-    # If STT returns Urdu script, the Arabic-block check above already caught it.
-    elif from_voice and hint == "ur":
-        lang = "roman_urdu" if _looks_like_roman_urdu(query) else "urdu_script"
-    elif hint == "ur":
-        lang = "roman_urdu" if _looks_like_roman_urdu(query) else "urdu_script"
-    elif hint == "en":
-        if _looks_like_roman_urdu(query):
-            lang = "roman_urdu"
-        else:
-            lang = "english"
     elif _looks_like_roman_urdu(query):
         lang = "roman_urdu"
     else:
         lang = "english"
 
-    print(f"Language detected: {lang} (hint={hint!r}, from_voice={from_voice})")
+    hint = _normalize_lang_hint(state.get("language_hint") or "")
+    from_voice = bool(state.get("from_voice"))
+    print(f"Language detected (strict): {lang} (hint={hint!r}, from_voice={from_voice})")
     return {**state, "language": lang}
 
 
@@ -496,7 +489,6 @@ Focus on wheat, rice, and cotton (local practices, seasons, and common problems)
 Answer only in clear, simple English. Use short sentences and bullet points when listing steps.
 Be practical: say what to do, roughly when, and what to watch for.
 For diseases or pests: symptoms first, then treatment or spray options, then prevention.
-If the farmer writes in Roman Urdu (Urdu in Latin letters), understand it and reply in Roman Urdu (same language style).
 Stay concise; avoid jargon unless you explain it in one line."""
         system_msg += "\n\nNever repeat the same short phrase or sentence in a loop. When the answer is complete, stop."
 
@@ -575,7 +567,7 @@ def direct_response_node(state: AgriState) -> AgriState:
 Reply only in clear English. Keep answers short.
 If the question is not about agriculture, politely refuse and say you can only help with crops/soil/irrigation/pests/diseases/fertilizer.
 Then ask the user to rephrase their question in that scope.
-If the user message is Roman Urdu, understand it and answer in Roman Urdu (same language style)."""
+"""
 
     try:
         response_text = _invoke_generation_model(

@@ -45,7 +45,7 @@ export function getApiBaseUrl(): string {
     return url;
   }
 
-  const lastResort = 'http://192.168.1.3:5000';
+  const lastResort = 'http://192.168.1.13:5000';
   console.warn('📡 API base: set extra.API_BASE_URL for production; using', lastResort);
   return lastResort;
 }
