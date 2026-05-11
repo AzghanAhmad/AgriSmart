@@ -1,10 +1,10 @@
 from flask import Flask, request, jsonify, Response, send_file, make_response
 from flask_cors import CORS
 from werkzeug.utils import safe_join
-from PIL import Image
-import io
 import os
-import datetime
+import logging
+import requests
+from sqlalchemy import text
 try:
     from .db import Base, engine
     from .schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401 — register tables
@@ -18,10 +18,19 @@ try:
     from .routes.chatbot_bp import chatbot_bp
     from .routes.voice_bp import voice_bp
     from .modules.yield_estimation import yield_estimation_bp
-    from .core.yolo import get_model_for_crop
-    from .config import get_allowed_origins, get_upload_root, get_secret_key
+    from .services.yolo_client import predict_from_filestorage
+    from .config import (
+        get_allowed_origins,
+        get_upload_root,
+        get_secret_key,
+        get_chatbot_service_url,
+        get_enable_local_chatbot_fallback,
+        get_enable_local_yolo_fallback,
+        get_internal_http_timeout,
+    )
     from .core.seed_guidance import seed_guidance_if_needed
     from .core.seed_schedules import seed_schedules_if_needed
+    from common.logging_utils import configure_logging
 except ImportError:
     # Fallback for running as a script: python Backend/app.py
     from db import Base, engine
@@ -36,12 +45,23 @@ except ImportError:
     from routes.chatbot_bp import chatbot_bp
     from routes.voice_bp import voice_bp
     from modules.yield_estimation import yield_estimation_bp
-    from core.yolo import get_model_for_crop
-    from config import get_allowed_origins, get_upload_root, get_secret_key
+    from services.yolo_client import predict_from_filestorage
+    from config import (
+        get_allowed_origins,
+        get_upload_root,
+        get_secret_key,
+        get_chatbot_service_url,
+        get_enable_local_chatbot_fallback,
+        get_enable_local_yolo_fallback,
+        get_internal_http_timeout,
+    )
     from core.seed_guidance import seed_guidance_if_needed
     from core.seed_schedules import seed_schedules_if_needed
+    from common.logging_utils import configure_logging
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
+logger = configure_logging("backend")
+logger.info("Backend service starting")
 # Timelapse JSON uploads send multiple base64 images; allow a generous body size
 app.config['MAX_CONTENT_LENGTH'] = 48 * 1024 * 1024
 # Configure CORS via env; default to permissive in dev
@@ -59,6 +79,32 @@ if not os.path.isabs(uploads_root):
 os.makedirs(uploads_root, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = uploads_root
 app.config['SECRET_KEY'] = get_secret_key()
+chatbot_service_url = get_chatbot_service_url().rstrip("/")
+internal_http_timeout = get_internal_http_timeout()
+enable_local_yolo_fallback = get_enable_local_yolo_fallback()
+enable_local_chatbot_fallback = get_enable_local_chatbot_fallback()
+logger.info(
+    "Execution mode | yolo_fallback=%s | chatbot_fallback=%s",
+    "enabled" if enable_local_yolo_fallback else "disabled",
+    "enabled" if enable_local_chatbot_fallback else "disabled",
+)
+logger.info(
+    "Service endpoints | yolo=%s | chatbot=%s",
+    os.getenv("YOLO_SERVICE_URL", "").strip() or "<not-set>",
+    chatbot_service_url or "<not-set>",
+)
+if enable_local_yolo_fallback:
+    try:
+        try:
+            from .core.yolo import validate_dvc_model_paths  # type: ignore
+        except ImportError:
+            from core.yolo import validate_dvc_model_paths  # type: ignore
+
+        missing_models = validate_dvc_model_paths()
+        if missing_models:
+            logger.warning("Local YOLO models are missing under MODEL_DIR; local fallback may fail.")
+    except Exception as exc:
+        logger.warning("Skipping local YOLO model validation (strict mode). err=%s", exc)
 
 # Initialize DB
 with app.app_context():
@@ -112,38 +158,14 @@ app.register_blueprint(voice_bp)  # Hybrid STT/TTS (Whisper / Vosk / pyttsx3 / g
 try:
     preload = os.getenv("AGRISMART_PRELOAD_CHATBOT", "0").strip().lower() in ("1", "true", "yes", "on")
     if preload:
-        print("🔥 Preloading chatbot (ChromaDB + graph)...")
-        try:
-            from .routes import chatbot_bp as _cb
-        except ImportError:
-            import routes.chatbot_bp as _cb
-        _cb._get_graph_bot()
-        print("✅ Chatbot preloaded")
+        if chatbot_service_url:
+            logger.info("Preloading external chatbot service")
+            requests.get(f"{chatbot_service_url}/warmup", timeout=internal_http_timeout)
+            logger.info("External chatbot service warmup requested")
+        else:
+            logger.info("CHATBOT_SERVICE_URL not set; skipping external chatbot warmup")
 except Exception as e:
-    print(f"⚠️ Chatbot preload skipped: {e}")
-
-# ✅ Cache loaded models to avoid reloading every time
-loaded_models = {}
-
-def get_model_for_crop(crop_type: str):
-    """Load and return YOLOv11 model for the given crop type."""
-    crop_type = crop_type.lower()
-    if crop_type not in ['wheat', 'rice', 'cotton']:
-        raise ValueError(f"Invalid crop type: {crop_type}")
-
-    if crop_type in loaded_models:
-        return loaded_models[crop_type]
-
-    model_path = os.path.join("models", crop_type, "best.pt")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model not found for {crop_type} at {model_path}")
-
-    print(f"⚙️ Loading model for {crop_type} from {model_path} ...")
-    model = YOLO(model_path)
-    loaded_models[crop_type] = model
-    print(f"✅ {crop_type.capitalize()} model loaded and cached.")
-    return model
-
+    logger.warning("Chatbot preload skipped: %s", e)
 
 @app.route('/')
 def home():
@@ -175,6 +197,11 @@ def health():
     
     return jsonify({
         "status": "healthy",
+        "service": "backend",
+        "execution_mode": {
+            "local_yolo_fallback": enable_local_yolo_fallback,
+            "local_chatbot_fallback": enable_local_chatbot_fallback,
+        },
         "server": {
             "hostname": hostname,
             "ip": local_ip,
@@ -185,15 +212,79 @@ def health():
     })
 
 
+@app.route('/health/dependencies')
+def dependency_health():
+    deps = {
+        "database": {"status": "unknown"},
+        "yolo_service": {"status": "unknown"},
+        "chatbot_service": {"status": "unknown"},
+    }
+
+    # Database check
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        deps["database"] = {"status": "healthy"}
+    except Exception as exc:
+        deps["database"] = {"status": "unhealthy", "error": str(exc)}
+
+    # YOLO service check
+    yolo_url = os.getenv("YOLO_SERVICE_URL", "").strip().rstrip("/")
+    if yolo_url:
+        try:
+            live_resp = requests.get(f"{yolo_url}/health", timeout=internal_http_timeout)
+            ready_resp = requests.get(f"{yolo_url}/ready", timeout=internal_http_timeout)
+            ready_payload = ready_resp.json() if ready_resp.headers.get("content-type", "").startswith("application/json") else {}
+            deps["yolo_service"] = {
+                "liveness": "healthy" if live_resp.status_code < 400 else "unhealthy",
+                "readiness": ready_payload.get("status", "unhealthy"),
+                "status": "healthy" if (live_resp.status_code < 400 and ready_resp.status_code < 400) else "unhealthy",
+            }
+            if ready_payload.get("error"):
+                deps["yolo_service"]["error"] = ready_payload.get("error")
+        except Exception as exc:
+            deps["yolo_service"] = {"status": "unhealthy", "error": str(exc)}
+    else:
+        deps["yolo_service"] = {
+            "status": "fallback-local" if enable_local_yolo_fallback else "unavailable",
+        }
+
+    # Chatbot service check
+    if chatbot_service_url:
+        try:
+            live_resp = requests.get(f"{chatbot_service_url}/health", timeout=internal_http_timeout)
+            ready_resp = requests.get(f"{chatbot_service_url}/ready", timeout=internal_http_timeout)
+            ready_payload = ready_resp.json() if ready_resp.headers.get("content-type", "").startswith("application/json") else {}
+            deps["chatbot_service"] = {
+                "liveness": "healthy" if live_resp.status_code < 400 else "unhealthy",
+                "readiness": ready_payload.get("status", "unhealthy"),
+                "status": "healthy" if (live_resp.status_code < 400 and ready_resp.status_code < 400) else "unhealthy",
+            }
+            if ready_payload.get("error"):
+                deps["chatbot_service"]["error"] = ready_payload.get("error")
+        except Exception as exc:
+            deps["chatbot_service"] = {"status": "unhealthy", "error": str(exc)}
+    else:
+        deps["chatbot_service"] = {
+            "status": "fallback-local" if enable_local_chatbot_fallback else "unavailable",
+        }
+
+    overall = "healthy"
+    if any(v.get("status") in ("unhealthy", "unavailable") for v in deps.values()):
+        overall = "degraded"
+
+    return jsonify({
+        "status": overall,
+        "service": "backend",
+        "dependencies": deps,
+    }), (200 if overall == "healthy" else 503)
+
+
 @app.route('/predict', methods=['POST'])
 @app.route('/predict/<path_crop>', methods=['POST'])
 def predict(path_crop: str | None = None):
     try:
-        print("\n📥 Incoming POST /predict")
-        print("🔹 Form keys:", list(request.form.keys()))
-        print("🔹 Args:", dict(request.args))
-        print("🔹 Headers crop:", request.headers.get('X-Crop-Type'))
-        print("🔹 File keys:", list(request.files.keys()))
+        logger.info("Incoming POST /predict")
 
         # Attempt to resolve crop type from multiple sources for robustness with different clients
         crop_type = None
@@ -219,77 +310,28 @@ def predict(path_crop: str | None = None):
 
         # Validate file
         if 'file' not in request.files:
-            print("❌ Missing file field")
+            logger.warning("Missing file field in /predict")
             return jsonify({'error': 'Missing file field (expected key: file)'}), 400
         if not crop_type:
-            print("❌ Missing cropType (form/query/json/header/path)")
+            logger.warning("Missing cropType in /predict")
             return jsonify({'error': 'Missing cropType (provide via form field, query, JSON, header X-Crop-Type, or URL /predict/<crop>)'}), 400
 
         crop_type = str(crop_type).lower().strip()
         file = request.files['file']
 
-        print(f"✅ Received crop type: {crop_type}")
+        logger.info("Received crop type: %s", crop_type)
 
-        # Load corresponding model
-        model = get_model_for_crop(crop_type)
+        response_payload, error_payload, status_code = predict_from_filestorage(file, crop_type)
+        if error_payload:
+            if status_code >= 500:
+                logger.error("Predict failed with server error")
+            else:
+                logger.warning("Predict failed with client error")
+            return jsonify(error_payload), status_code
+        return jsonify(response_payload), status_code
 
-        # Read image from request
-        image_bytes = file.read()
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-
-        print(f"🔍 Running inference on {crop_type} image...")
-        results = model.predict(image)
-        detections = results[0]
-
-        # Extract predictions
-        prediction_list = []
-        for box in detections.boxes:
-            cls_id = int(box.cls)
-            conf = float(box.conf)
-            label = detections.names[cls_id]
-            prediction_list.append({
-                'label': label,
-                'confidence': round(conf * 100, 2)
-            })
-
-        # Handle case: no detections
-        if not prediction_list:
-            response = {
-                'cropType': crop_type,
-                'disease': 'Healthy Crop',
-                'confidence': 100,
-                'severity': 'Low',
-                'treatment': 'No visible disease detected. Maintain proper irrigation and fertilizer balance.',
-                'symptoms': ['Leaves appear normal', 'No fungal or pest activity detected'],
-                'prevention': ['Continue routine crop monitoring', 'Use disease-resistant seeds'],
-                'timestamp': datetime.datetime.now().isoformat()
-            }
-            print("🌱 Healthy crop detected.")
-        else:
-            top_pred = prediction_list[0]
-            severity = 'High' if top_pred['confidence'] > 80 else 'Medium'
-
-            response = {
-                'cropType': crop_type,
-                'disease': top_pred['label'],
-                'confidence': top_pred['confidence'],
-                'severity': severity,
-                'treatment': 'Apply recommended pesticide/fungicide as per NARC or FAO guidelines.',
-                'symptoms': ['Lesions or discoloration detected on leaves', 'Possible fungal or bacterial infection'],
-                'prevention': ['Use resistant crop variety', 'Avoid overwatering', 'Ensure balanced fertilization'],
-                'timestamp': datetime.datetime.now().isoformat()
-            }
-
-            print(f"✅ Detected {top_pred['label']} ({top_pred['confidence']}%) on {crop_type} crop.")
-
-        return jsonify(response)
-
-    except (ValueError, FileNotFoundError) as e:
-        # Bad request or model missing
-        print("❌ Client Error:", str(e))
-        return jsonify({'error': str(e)}), 400
     except Exception as e:
-        print("❌ Server Error:", str(e))
+        logger.exception("Predict route error: %s", str(e))
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -310,7 +352,7 @@ def serve_static(filename):
         file_path = safe_join(app.static_folder, filename)
         
         if not file_path or not os.path.exists(file_path):
-            print(f"⚠️ Static file not found: {filename} (path: {file_path})")
+            logger.warning("Static file not found: %s", filename)
             return jsonify({'error': 'File not found'}), 404
         
         # Get file size for logging
@@ -341,11 +383,11 @@ def serve_static(filename):
         response.headers['Cache-Control'] = 'public, max-age=3600'
         response.headers['Accept-Ranges'] = 'bytes'
         
-        print(f"📤 Serving static file: {filename} ({file_size} bytes, {mime_type})")
+        logger.info("Serving static file: %s (%s bytes)", filename, file_size)
         return response
         
     except Exception as e:
-        print(f"❌ Error serving static file {filename}: {e}")
+        logger.exception("Error serving static file %s: %s", filename, e)
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500

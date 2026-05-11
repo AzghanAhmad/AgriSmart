@@ -1,7 +1,31 @@
 import os
+import logging
 from ultralytics import YOLO
+try:
+  from ..config import get_backend_model_root
+except ImportError:
+  from config import get_backend_model_root
 
 _loaded_models: dict[str, YOLO] = {}
+logger = logging.getLogger(__name__)
+
+def expected_model_path(crop_type: str) -> str:
+  model_root = os.path.abspath(get_backend_model_root())
+  model_path = os.path.join(model_root, crop_type, "best.pt")
+  return os.path.normpath(model_path)
+
+def validate_dvc_model_paths(required_crops=None) -> list[str]:
+  crops = required_crops or ["wheat", "rice", "cotton"]
+  missing = []
+  for crop in crops:
+    model_path = expected_model_path(crop)
+    if not os.path.exists(model_path):
+      missing.append(model_path)
+  if missing:
+    logger.error("DVC-managed model files missing: %s", missing)
+  else:
+    logger.info("All DVC-managed local model files are present under MODEL_DIR")
+  return missing
 
 def get_model_for_crop(crop_type: str) -> YOLO:
   """
@@ -15,19 +39,13 @@ def get_model_for_crop(crop_type: str) -> YOLO:
   if ct in _loaded_models:
     return _loaded_models[ct]
 
-  # Get absolute path to models directory (relative to this file's location)
-  # This ensures models are found regardless of working directory
-  current_dir = os.path.dirname(os.path.abspath(__file__))  # Backend/core/
-  backend_dir = os.path.dirname(current_dir)  # Backend/
-  model_path = os.path.join(backend_dir, "models", ct, "best.pt")
-  
-  # Normalize path for cross-platform compatibility
-  model_path = os.path.normpath(model_path)
+  model_root = os.path.abspath(get_backend_model_root())
+  model_path = expected_model_path(ct)
   
   if not os.path.exists(model_path):
     raise FileNotFoundError(
       f"Model not found for {ct} at {model_path}\n"
-      f"Expected location: Backend/models/{ct}/best.pt"
+      f"Expected location: {model_root}/{ct}/best.pt"
     )
 
   print(f"⚙️ Loading model for {ct} from {model_path} ...")

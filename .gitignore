@@ -133,3 +133,4 @@ project/.expo/
 assets/*.map
 
 Backend/ffmpeg_shim/ffmpeg.exe
+/models

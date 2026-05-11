@@ -8,6 +8,7 @@ import uuid
 import datetime
 import io
 import base64
+import logging
 import numpy as np
 from flask import Blueprint, request, jsonify, current_app
 from PIL import Image
@@ -20,18 +21,19 @@ try:
     from ..db import SessionLocal
     from ..models import TimelapseEntry, Crop
     from ..schemas.user import User
-    from ..core.yolo import get_model_for_crop
+    from ..services.yolo_client import UpstreamServiceError, UpstreamUnavailableError, predict_from_bytes
     from ..config import get_weather_api_key
     from ..preprocess.preprocess_for_wheat import WheatImagePreprocessor
 except ImportError:
     from db import SessionLocal
     from models import TimelapseEntry, Crop
     from schemas.user import User
-    from core.yolo import get_model_for_crop
+    from services.yolo_client import UpstreamServiceError, UpstreamUnavailableError, predict_from_bytes
     from config import get_weather_api_key
     from preprocess.preprocess_for_wheat import WheatImagePreprocessor
 
 timelapse_bp = Blueprint('timelapse', __name__, url_prefix='/api/timelapse')
+logger = logging.getLogger(__name__)
 
 # Treatment suggestions mapping
 TREATMENT_SUGGESTIONS = {
@@ -112,76 +114,46 @@ def detect_disease_with_yolo(image_bytes: bytes, crop_type: str, preprocessed_im
         preprocessed_image: Optional preprocessed numpy array (BGR format)
     """
     try:
-        # Load YOLO model for crop type
-        model = get_model_for_crop(crop_type)
-        
-        # Use preprocessed image if provided, otherwise convert bytes to PIL Image
+        # Use preprocessed image if provided, otherwise keep original bytes
         if preprocessed_image is not None:
-            # Convert BGR numpy array to RGB PIL Image for YOLO
-            image_rgb = cv2.cvtColor(preprocessed_image, cv2.COLOR_BGR2RGB)
-            image = Image.fromarray(image_rgb)
+            _, encoded_img = cv2.imencode('.jpg', preprocessed_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            inference_bytes = encoded_img.tobytes()
         else:
-            # Convert bytes to PIL Image
-            image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        
-        # Run prediction with lower confidence threshold to get all predictions
-        # This ensures we get actual confidence values, not hardcoded ones
-        results = model.predict(image, conf=0.01)  # Very low threshold to get all predictions
-        detections = results[0]
-        
-        # Extract top prediction with actual confidence
-        if len(detections.boxes) > 0:
-            top_box = detections.boxes[0]
-            cls_id = int(top_box.cls)
-            confidence = float(top_box.conf)  # Actual confidence from model
-            disease_name = detections.names[cls_id]
-            
-            print(f"🔍 YOLO Detection: disease={disease_name}, confidence={confidence:.4f}, class_id={cls_id}")
-            
-            # Check if detected class is "healthy" or similar
-            disease_lower = disease_name.lower()
-            is_healthy = any(term in disease_lower for term in ['healthy', 'normal', 'good', 'no disease'])
-            
-            # Map confidence to severity score (0-3)
-            if is_healthy:
-                # For healthy crops, use the actual confidence from model
-                severity_score = 0
-                severity = 'None'
-            elif confidence > 0.8:
-                severity_score = 3  # Severe
-                severity = 'Severe'
-            elif confidence > 0.5:
-                severity_score = 2  # Moderate
-                severity = 'Moderate'
-            elif confidence > 0.2:
-                severity_score = 1  # Mild
-                severity = 'Mild'
-            else:
-                severity_score = 0  # None
-                severity = 'None'
-            
-            return {
-                'disease': disease_name,
-                'confidence': confidence,  # Actual confidence from YOLO (not hardcoded)
-                'severity': severity,
-                'severity_score': severity_score
-            }
+            inference_bytes = image_bytes
+
+        prediction = predict_from_bytes(image_bytes=inference_bytes, crop_type=crop_type)
+        disease_name = prediction.get('disease', 'Healthy Crop')
+        confidence_pct = float(prediction.get('confidence', 0) or 0)
+        confidence = max(0.0, min(1.0, confidence_pct / 100.0))
+
+        disease_lower = disease_name.lower()
+        is_healthy = any(term in disease_lower for term in ['healthy', 'normal', 'good', 'no disease'])
+        if is_healthy:
+            severity_score = 0
+            severity = 'None'
+        elif confidence > 0.8:
+            severity_score = 3
+            severity = 'Severe'
+        elif confidence > 0.5:
+            severity_score = 2
+            severity = 'Moderate'
+        elif confidence > 0.2:
+            severity_score = 1
+            severity = 'Mild'
         else:
-            # No detections at all - this could mean healthy crop or model uncertainty
-            # Use a moderate confidence value (0.5) to indicate "likely healthy but uncertain"
-            # This is more realistic than hardcoding 1.0 or 0.0
-            print("⚠️ No detections found - model indicates healthy crop with moderate confidence")
-            return {
-                'disease': 'Healthy Crop',
-                'confidence': 0.5,  # Moderate confidence - indicates likely healthy but not certain
-                'severity': 'None',
-                'severity_score': 0
-            }
+            severity_score = 0
+            severity = 'None'
+
+        return {
+            'disease': disease_name,
+            'confidence': confidence,
+            'severity': severity,
+            'severity_score': severity_score
+        }
     except Exception as e:
-        print(f"❌ Disease detection error: {e}")
-        import traceback
-        traceback.print_exc()
-        # Return low confidence on error, not hardcoded 0.0
+        if isinstance(e, UpstreamUnavailableError):
+            raise
+        logger.exception("Disease detection error: %s", e)
         return {
             'disease': None,
             'confidence': 0.05,  # Very low confidence indicates error/uncertainty
@@ -369,16 +341,26 @@ def upload_timelapse():
                         traceback.print_exc()
                 
                 # Run AI disease detection with preprocessed image if available
-                if preprocessed_image is not None:
-                    detection = detect_disease_with_yolo(image_bytes, crop.crop_type, preprocessed_image)
-                else:
-                    # Fallback: resize image for processing (224x224 for model)
-                    img = Image.open(io.BytesIO(image_bytes))
-                    img_resized = img.resize((224, 224), Image.Resampling.LANCZOS)
-                    img_bytes_io = io.BytesIO()
-                    img_resized.save(img_bytes_io, format='JPEG', quality=95)
-                    img_bytes_resized = img_bytes_io.getvalue()
-                    detection = detect_disease_with_yolo(img_bytes_resized, crop.crop_type)
+                try:
+                    if preprocessed_image is not None:
+                        detection = detect_disease_with_yolo(image_bytes, crop.crop_type, preprocessed_image)
+                    else:
+                        # Fallback: resize image for processing (224x224 for model)
+                        img = Image.open(io.BytesIO(image_bytes))
+                        img_resized = img.resize((224, 224), Image.Resampling.LANCZOS)
+                        img_bytes_io = io.BytesIO()
+                        img_resized.save(img_bytes_io, format='JPEG', quality=95)
+                        img_bytes_resized = img_bytes_io.getvalue()
+                        detection = detect_disease_with_yolo(img_bytes_resized, crop.crop_type)
+                except UpstreamServiceError as svc_exc:
+                    return jsonify(svc_exc.payload), svc_exc.status_code
+                except UpstreamUnavailableError:
+                    return jsonify({
+                        "status": "degraded",
+                        "service": "backend",
+                        "upstream": "yolo-service",
+                        "error": "yolo-service unavailable",
+                    }), 503
                 
                 print(f"🔍 Detection result: disease={detection.get('disease')}, confidence={detection.get('confidence'):.2f}, severity={detection.get('severity')}")
                 
