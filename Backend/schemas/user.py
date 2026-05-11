@@ -29,5 +29,7 @@ class User(Base):
     farm_crop_types = Column(Integer, nullable=True)
     farm_health_score = Column(Float, nullable=True)
     farm_monthly_revenue = Column(Float, nullable=True)
+    restricted_until = Column(DateTime, nullable=True)
+    restriction_reason = Column(String(255), nullable=True)
 
 

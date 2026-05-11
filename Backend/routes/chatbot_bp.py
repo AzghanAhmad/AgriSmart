@@ -127,13 +127,22 @@ def _rows_to_message_dicts(rows):
     return payload
 
 
-def _chatbot_service_chat(message: str, session_id: str, language_hint: str, from_voice: bool, prior_messages=None):
+def _chatbot_service_chat(
+    message: str,
+    session_id: str,
+    language_hint: str,
+    from_voice: bool,
+    prior_messages=None,
+    reply_language: str = "",
+):
     body = {
         "message": message,
         "session_id": session_id,
         "language_hint": language_hint,
         "from_voice": from_voice,
     }
+    if reply_language:
+        body["reply_language"] = reply_language
     if prior_messages is not None:
         body["prior_messages"] = prior_messages
     return requests.post(
@@ -300,6 +309,16 @@ def chat():
         _fv = data.get("fromVoice")
     from_voice = _bool_from_json(_fv)
 
+    reply_language = (
+        data.get("reply_language")
+        or data.get("replyLanguage")
+        or ""
+    )
+    if isinstance(reply_language, str):
+        reply_language = reply_language.strip()
+    else:
+        reply_language = ""
+
     # —— DB-backed thread (logged-in farmer, ChatGPT-style) ——
     if uid and conversation_id:
         db = SessionLocal()
@@ -330,6 +349,7 @@ def chat():
                         language_hint=language_hint,
                         from_voice=from_voice,
                         prior_messages=_rows_to_message_dicts(window_rows),
+                        reply_language=reply_language,
                     )
                     data = upstream.json()
                     if upstream.status_code >= 400:
@@ -341,12 +361,24 @@ def chat():
                         return _strict_chatbot_unavailable_response()
                     logger.warning("Triggering local chatbot fallback for conversation flow")
                     bot = _get_graph_bot()
-                    response_text = bot.chat_with_prior(window, message)
+                    response_text = bot.chat_with_prior(
+                        window,
+                        message,
+                        language_hint=language_hint,
+                        from_voice=from_voice,
+                        reply_language=reply_language,
+                    )
             else:
                 if not ENABLE_LOCAL_CHATBOT_FALLBACK:
                     return _strict_chatbot_unavailable_response()
                 bot = _get_graph_bot()
-                response_text = bot.chat_with_prior(window, message)
+                response_text = bot.chat_with_prior(
+                    window,
+                    message,
+                    language_hint=language_hint,
+                    from_voice=from_voice,
+                    reply_language=reply_language,
+                )
             if response_text is None:
                 response_text = ""
             elif not isinstance(response_text, str):
@@ -396,6 +428,7 @@ def chat():
                     session_id=session_id,
                     language_hint=language_hint,
                     from_voice=from_voice,
+                    reply_language=reply_language,
                 )
                 data = upstream.json()
                 if upstream.status_code >= 400:
@@ -407,12 +440,22 @@ def chat():
                     return _strict_chatbot_unavailable_response()
                 logger.warning("Triggering local chatbot fallback for legacy session flow")
                 bot = _get_bot_for_session(session_id)
-                response_text = bot.chat(message, language_hint, from_voice)
+                response_text = bot.chat(
+                    message,
+                    language_hint,
+                    from_voice,
+                    reply_language=reply_language,
+                )
         else:
             if not ENABLE_LOCAL_CHATBOT_FALLBACK:
                 return _strict_chatbot_unavailable_response()
             bot = _get_bot_for_session(session_id)
-            response_text = bot.chat(message, language_hint, from_voice)
+            response_text = bot.chat(
+                message,
+                language_hint,
+                from_voice,
+                reply_language=reply_language,
+            )
         if response_text is None:
             response_text = ""
         elif not isinstance(response_text, str):

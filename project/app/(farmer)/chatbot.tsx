@@ -23,6 +23,9 @@ import {
   sendChatbotMessage,
   resetChatbotServerSession,
   warmupChatbot,
+  getStoredReplyLanguage,
+  saveReplyLanguage,
+  type ChatbotReplyLanguage,
 } from '@/services/chatbotService';
 
 interface Message {
@@ -51,6 +54,8 @@ export default function ChatbotScreen() {
   const [warmupError, setWarmupError] = useState<string | null>(null);
   /** Explicit mic mode: ON => Urdu STT, OFF => English STT. */
   const [useUrduVoice, setUseUrduVoice] = useState(language === 'ur');
+  /** Assistant reply language (independent of app UI language). */
+  const [replyLanguage, setReplyLanguage] = useState<ChatbotReplyLanguage>('en');
   const scrollViewRef = useRef<ScrollView>(null);
 
   const voiceLocale: VoiceLocale = useUrduVoice ? 'ur-PK' : 'en-US';
@@ -74,8 +79,12 @@ export default function ChatbotScreen() {
         if (!cancelled) setWarmupError(msg);
       }
 
-      const stored = await getStoredChatbotSessionId();
+      const [stored, storedReplyLang] = await Promise.all([
+        getStoredChatbotSessionId(),
+        getStoredReplyLanguage(),
+      ]);
       if (!cancelled) {
+        setReplyLanguage(storedReplyLang);
         setSessionId(stored);
         setMessages([
           {
@@ -137,7 +146,7 @@ export default function ChatbotScreen() {
           text.trim(),
           sessionId,
           chatLang,
-          { fromVoice: opts?.fromVoice }
+          { fromVoice: opts?.fromVoice, replyLanguage }
         );
         setSessionId(session_id);
         await saveChatbotSessionId(session_id);
@@ -168,8 +177,13 @@ export default function ChatbotScreen() {
         // ignore
       }
     },
-    [sessionId, sessionReady, language, useUrduVoice]
+    [sessionId, sessionReady, language, useUrduVoice, replyLanguage]
   );
+
+  const setReplyLanguagePersisted = useCallback((mode: ChatbotReplyLanguage) => {
+    setReplyLanguage(mode);
+    void saveReplyLanguage(mode);
+  }, []);
 
   const submitVoiceTranscript = useCallback(
     (text: string) => {
@@ -339,6 +353,38 @@ export default function ChatbotScreen() {
           thumbColor={useUrduVoice ? '#22C55E' : '#F3F4F6'}
           accessibilityLabel="Toggle Urdu microphone speech recognition"
         />
+      </View>
+
+      <View style={styles.replyLangSection}>
+        <Text style={styles.replyLangSectionTitle}>
+          {language === 'ur' ? 'جواب کی زبان' : 'Reply language'}
+        </Text>
+        <View style={styles.replyLangChips}>
+          {(
+            [
+              { mode: 'en' as const, label: 'English' },
+              { mode: 'urdu_script' as const, label: 'اردو' },
+            ] as const
+          ).map(({ mode, label }) => {
+            const active = replyLanguage === mode;
+            return (
+              <TouchableOpacity
+                key={mode}
+                style={[styles.replyLangChip, active && styles.replyLangChipActive]}
+                onPress={() => setReplyLanguagePersisted(mode)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={
+                  mode === 'en' ? 'Reply in English' : 'Reply in Urdu script'
+                }
+              >
+                <Text style={[styles.replyLangChipText, active && styles.replyLangChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       <ScrollView
@@ -577,6 +623,45 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+  },
+  replyLangSection: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  replyLangSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  replyLangChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  replyLangChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  replyLangChipActive: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#22C55E',
+  },
+  replyLangChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  replyLangChipTextActive: {
+    color: '#166534',
   },
   voiceLangLabel: {
     fontSize: 14,

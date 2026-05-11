@@ -28,11 +28,13 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
     console.log(`✅ API Response: ${res.status} ${res.statusText}`);
     
     const text = await res.text();
-    let data: any;
-    try { 
-      data = text ? JSON.parse(text) : {}; 
-    } catch { 
-      data = { error: 'Invalid JSON response' }; 
+    let data: any = {};
+    let isJson = false;
+    try {
+      data = text ? JSON.parse(text) : {};
+      isJson = true;
+    } catch {
+      isJson = false;
     }
     
     if (!res.ok) {
@@ -42,10 +44,19 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
         AsyncStorage.removeItem('authToken').catch(() => {});
         AsyncStorage.removeItem('user').catch(() => {});
       }
-      const message = typeof data?.error === 'string' ? data.error : `Request failed (${res.status})`;
+      const plainText = (text || '').trim();
+      const fallback = plainText ? plainText.slice(0, 240) : `Request failed (${res.status})`;
+      const message = typeof data?.error === 'string' ? data.error : fallback;
       throw new Error(message);
     }
-    
+
+    if (!isJson) {
+      const plainText = (text || '').trim();
+      throw new Error(
+        `Server returned non-JSON response from ${fullUrl}${plainText ? `: ${plainText.slice(0, 240)}` : ''}`
+      );
+    }
+
     if (data?.error) {
       const message = typeof data?.error === 'string' ? data.error : `Request failed`;
       throw new Error(message);

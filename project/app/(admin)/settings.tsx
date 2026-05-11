@@ -9,6 +9,8 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { 
   User, 
@@ -30,22 +32,44 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { translate } from '@/utils/translations';
+import { useAdminReports } from '@/hooks/useAdmin';
+import { apiGet, apiPost } from '@/utils/api';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+
+type AdminSettingsState = {
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  smsNotifications: boolean;
+  dataBackup: boolean;
+  autoReports: boolean;
+  systemMaintenance: boolean;
+  debugMode: boolean;
+};
+
+const DEFAULT_SETTINGS: AdminSettingsState = {
+  emailNotifications: true,
+  pushNotifications: true,
+  smsNotifications: false,
+  dataBackup: true,
+  autoReports: true,
+  systemMaintenance: false,
+  debugMode: false,
+};
 
 export default function SettingsScreen() {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, changePassword } = useAuth();
   const { language, setLanguage } = useApp();
   const { colors: tc, isDark, setDarkMode } = useTheme();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 390;
+  const contentWidth = Math.min(width - 24, 860);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(true);
   
-  const [settings, setSettings] = useState({
-    emailNotifications: true,
-    pushNotifications: true,
-    smsNotifications: false,
-    dataBackup: true,
-    autoReports: true,
-    systemMaintenance: false,
-    debugMode: false,
-  });
+  const [settings, setSettings] = useState<AdminSettingsState>(DEFAULT_SETTINGS);
 
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
@@ -70,8 +94,40 @@ export default function SettingsScreen() {
     confirmPassword: '',
   });
 
-  const handleSettingChange = (key: string, value: boolean) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
+  const { items: reportItems, total: totalReports } = useAdminReports(1, 250, 'all', '');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setSettingsLoading(true);
+        const resp = await apiGet<{ settings: Partial<AdminSettingsState> }>('/api/admin/system-settings');
+        if (resp?.settings) {
+          setSettings((prev) => ({ ...prev, ...resp.settings }));
+        }
+      } catch {
+        // Keep defaults if settings endpoint fails.
+      } finally {
+        setSettingsLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSettingChange = (key: keyof AdminSettingsState, value: boolean) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    void (async () => {
+      try {
+        const resp = await apiPost<{ settings?: Partial<AdminSettingsState> }>('/api/admin/system-settings', {
+          settings: { [key]: value },
+        });
+        if (resp?.settings) {
+          setSettings((prev) => ({ ...prev, ...resp.settings }));
+        }
+      } catch (e: unknown) {
+        setSettings((prev) => ({ ...prev, [key]: !value }));
+        const msg = e instanceof Error ? e.message : 'Failed to update setting';
+        Alert.alert('Update Failed', msg);
+      }
+    })();
   };
 
   const handleSaveProfile = async () => {
@@ -95,17 +151,35 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
+    if (!passwordData.currentPassword.trim()) {
+      Alert.alert(translate('error', language), translate('enterCurrentPassword', language));
+      return;
+    }
+    if (passwordData.newPassword.trim().length < 8) {
+      Alert.alert(translate('error', language), translate('min8Chars', language));
+      return;
+    }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       Alert.alert(translate('error', language), translate('newPasswordsNoMatch', language));
       return;
     }
-    Alert.alert(translate('success', language), translate('passwordChangedSuccess', language));
-    setPasswordData({
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    });
+    setChangingPassword(true);
+    try {
+      await changePassword(passwordData.currentPassword, passwordData.newPassword);
+      Alert.alert(translate('success', language), translate('passwordChangedSuccess', language));
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      setShowPasswordSection(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : translate('updateFailedTitle', language);
+      Alert.alert(translate('updateFailedTitle', language), msg);
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const handleLogout = () => {
@@ -115,12 +189,116 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const handleBackupData = () => {
-    Alert.alert(translate('dataBackupAlertTitle', language), translate('dataBackupAlertMsg', language));
+  const formatDate = (value: string | null | undefined) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toISOString();
   };
 
-  const handleExportReports = () => {
-    Alert.alert(translate('exportReportsAlertTitle', language), translate('exportReportsAlertMsg', language));
+  const writeAndShareFile = async (filename: string, content: string, mimeType: string, title: string) => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Not Supported', 'File export is supported on Android/iOS.');
+      return;
+    }
+    const baseDirectory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
+    if (!baseDirectory) {
+      throw new Error('Export storage is unavailable on this device');
+    }
+    const uri = `${baseDirectory}${filename}`;
+    const utf8Encoding = (FileSystem as any).EncodingType?.UTF8 ?? 'utf8';
+    await FileSystem.writeAsStringAsync(uri, content, { encoding: utf8Encoding as any });
+
+    const canShare = await Sharing.isAvailableAsync();
+    if (!canShare) {
+      Alert.alert('Saved', `File saved at: ${uri}`);
+      return;
+    }
+
+    await Sharing.shareAsync(uri, {
+      mimeType,
+      dialogTitle: title,
+    });
+  };
+
+  const handleBackupData = async () => {
+    setIsProcessingAction(true);
+    try {
+      const backupData = {
+        exportedAt: new Date().toISOString(),
+        adminId: user?.id ?? null,
+        profile: {
+          name: profileData.name,
+          email: profileData.email,
+          phone: profileData.phone,
+          location: profileData.location,
+        },
+        preferences: settings,
+        reportSnapshot: {
+          totalReports,
+          loadedReports: reportItems.length,
+          items: reportItems,
+        },
+      };
+      const filename = `agri-smart-admin-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      await writeAndShareFile(filename, JSON.stringify(backupData, null, 2), 'application/json', 'Backup Admin Data');
+      Alert.alert(translate('success', language), translate('dataBackupAlertMsg', language));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to backup data';
+      Alert.alert('Backup Failed', msg);
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleExportReports = async () => {
+    setIsProcessingAction(true);
+    try {
+      if (!reportItems.length) {
+        Alert.alert('No Data', 'There are no reports to export right now.');
+        return;
+      }
+
+      const escapeCsv = (value: unknown) => {
+        const raw = String(value ?? '');
+        if (raw.includes('"') || raw.includes(',') || raw.includes('\n')) {
+          return `"${raw.replace(/"/g, '""')}"`;
+        }
+        return raw;
+      };
+
+      const headers = [
+        'Detection ID',
+        'Farmer Name',
+        'Disease',
+        'Crop Type',
+        'Location',
+        'Status',
+        'Confidence',
+        'Submitted At',
+        'Reviewed At',
+      ];
+
+      const lines = reportItems.map((report) => ([
+        report.detectionId,
+        report.farmerName,
+        report.diseaseName,
+        report.cropType,
+        report.location,
+        report.status,
+        `${report.confidence}%`,
+        formatDate(report.submittedAt),
+        formatDate(report.reviewedAt),
+      ].map(escapeCsv).join(',')));
+      const csv = [headers.join(','), ...lines].join('\n');
+      const filename = `admin-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+      await writeAndShareFile(filename, csv, 'text/csv', 'Export Disease Reports');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unable to export reports';
+      Alert.alert('Export Failed', msg);
+    } finally {
+      setIsProcessingAction(false);
+    }
   };
 
   const settingsGroups = useMemo(
@@ -192,7 +370,13 @@ export default function SettingsScreen() {
   const ph = tc.textMuted;
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: tc.screen }]} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: tc.screen }]}
+      contentContainerStyle={[styles.content, { alignItems: 'center' }]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={[styles.screenInner, { width: contentWidth }]}>
       <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         <Text style={[styles.title, { color: tc.text }]}>{translate('adminSettingsTitle', language)}</Text>
         <View style={styles.headerSubtitle}>
@@ -201,7 +385,7 @@ export default function SettingsScreen() {
       </View>
 
       {/* Profile Section */}
-      <View style={styles.section}>
+      <View style={[styles.section, isCompact && styles.sectionCompact]}>
         <View style={styles.sectionHeader}>
           <User color="#22C55E" size={20} />
           <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('profileInformation', language)}</Text>
@@ -270,7 +454,7 @@ export default function SettingsScreen() {
       </View>
 
       {/* Password Section */}
-      <View style={styles.section}>
+      <View style={[styles.section, isCompact && styles.sectionCompact]}>
         <TouchableOpacity 
           style={styles.sectionHeader}
           onPress={() => setShowPasswordSection(!showPasswordSection)}
@@ -322,16 +506,22 @@ export default function SettingsScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.changePasswordButton} onPress={handleChangePassword}>
-              <Shield color="white" size={16} />
-              <Text style={styles.changePasswordButtonText}>{translate('changePassword', language)}</Text>
+            <TouchableOpacity
+              style={[styles.changePasswordButton, changingPassword && { opacity: 0.75 }]}
+              onPress={() => void handleChangePassword()}
+              disabled={changingPassword}
+            >
+              {changingPassword ? <ActivityIndicator color="white" size="small" /> : <Shield color="white" size={16} />}
+              <Text style={styles.changePasswordButtonText}>
+                {changingPassword ? translate('saving', language) : translate('changePassword', language)}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
       {/* Language Section */}
-      <View style={styles.section}>
+      <View style={[styles.section, isCompact && styles.sectionCompact]}>
         <View style={styles.sectionHeader}>
           <Globe color="#F59E0B" size={20} />
           <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('languageRegion', language)}</Text>
@@ -358,7 +548,7 @@ export default function SettingsScreen() {
       </View>
 
       {/* Appearance */}
-      <View style={styles.section}>
+      <View style={[styles.section, isCompact && styles.sectionCompact]}>
         <View style={styles.sectionHeader}>
           <Moon color="#8B5CF6" size={20} />
           <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('appearance', language)}</Text>
@@ -385,7 +575,7 @@ export default function SettingsScreen() {
       {settingsGroups.map((group, groupIndex) => {
         const GroupIcon = group.icon;
         return (
-          <View key={groupIndex} style={styles.section}>
+          <View key={groupIndex} style={[styles.section, isCompact && styles.sectionCompact]}>
             <View style={styles.sectionHeader}>
               <GroupIcon color={tc.textMuted} size={20} />
               <Text style={[styles.sectionTitle, { color: tc.text }]}>{group.title}</Text>
@@ -405,7 +595,8 @@ export default function SettingsScreen() {
                   </View>
                   <Switch
                     value={item.value}
-                    onValueChange={(value) => handleSettingChange(item.key, value)}
+                    onValueChange={(value) => handleSettingChange(item.key as keyof AdminSettingsState, value)}
+                    disabled={settingsLoading}
                     trackColor={{ false: tc.border, true: '#22C55E' }}
                     thumbColor="#FFFFFF"
                   />
@@ -417,18 +608,26 @@ export default function SettingsScreen() {
       })}
 
       {/* System Actions */}
-      <View style={styles.section}>
+      <View style={[styles.section, isCompact && styles.sectionCompact]}>
         <View style={styles.sectionHeader}>
           <Database color="#8B5CF6" size={20} />
           <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('systemActions', language)}</Text>
         </View>
         <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tc.screenSecondary }]} onPress={handleBackupData}>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: tc.screenSecondary }, isProcessingAction && { opacity: 0.7 }]}
+            onPress={() => void handleBackupData()}
+            disabled={isProcessingAction}
+          >
             <Database color="#22C55E" size={16} />
             <Text style={[styles.actionButtonText, { color: tc.textSecondary }]}>{translate('backupSystemData', language)}</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tc.screenSecondary }]} onPress={handleExportReports}>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: tc.screenSecondary }, isProcessingAction && { opacity: 0.7 }]}
+            onPress={() => void handleExportReports()}
+            disabled={isProcessingAction}
+          >
             <Mail color="#3B82F6" size={16} />
             <Text style={[styles.actionButtonText, { color: tc.textSecondary }]}>{translate('exportSystemReports', language)}</Text>
           </TouchableOpacity>
@@ -437,7 +636,7 @@ export default function SettingsScreen() {
       </View>
 
       {/* Logout Section */}
-      <View style={styles.section}>
+      <View style={[styles.section, isCompact && styles.sectionCompact]}>
         <View style={[styles.sectionContent, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <LogOut color="white" size={16} />
@@ -451,6 +650,7 @@ export default function SettingsScreen() {
         <Text style={[styles.versionText, { color: tc.textMuted }]}>{translate('adminVersionLine', language)}</Text>
         <Text style={[styles.buildText, { color: tc.textMuted }]}>{translate('adminBuildLine', language)}</Text>
       </View>
+      </View>
     </ScrollView>
   );
 }
@@ -462,6 +662,10 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
+    paddingBottom: 24,
+  },
+  screenInner: {
+    width: '100%',
   },
   header: {
     backgroundColor: 'white',
@@ -485,6 +689,9 @@ const styles = StyleSheet.create({
   section: {
     margin: 16,
     marginBottom: 0,
+  },
+  sectionCompact: {
+    marginHorizontal: 10,
   },
   sectionHeader: {
     flexDirection: 'row',

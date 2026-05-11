@@ -138,6 +138,18 @@ def run_migrations(engine):
                     conn.execute(text('ALTER TABLE "Users" ADD COLUMN farm_monthly_revenue REAL'))
                     conn.commit()
                     print("    ✅ Added 'farm_monthly_revenue' column to Users")
+
+                if not column_exists(inspector, 'Users', 'restricted_until'):
+                    print("    ➕ Adding 'restricted_until' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN restricted_until DATETIME'))
+                    conn.commit()
+                    print("    ✅ Added 'restricted_until' column to Users")
+
+                if not column_exists(inspector, 'Users', 'restriction_reason'):
+                    print("    ➕ Adding 'restriction_reason' column...")
+                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN restriction_reason VARCHAR(255)'))
+                    conn.commit()
+                    print("    ✅ Added 'restriction_reason' column to Users")
             
             # Check if OutbreakAlerts table exists
             if not table_exists(inspector, 'OutbreakAlerts'):
@@ -163,6 +175,64 @@ def run_migrations(engine):
                     conn.execute(text('ALTER TABLE "OutbreakAlerts" ADD COLUMN disease_name VARCHAR(120)'))
                     conn.commit()
                     print("    ✅ Added 'disease_name' column to OutbreakAlerts")
+
+            # Subsidy programs (admin + farmer)
+            if not table_exists(inspector, 'SubsidyPrograms'):
+                print("  🔍 Creating SubsidyPrograms table...")
+                conn.execute(text("""
+                    CREATE TABLE "SubsidyPrograms" (
+                        subsidy_id VARCHAR(50) PRIMARY KEY,
+                        parent_subsidy_id VARCHAR(50),
+                        title VARCHAR(180) NOT NULL,
+                        description TEXT,
+                        amount REAL NOT NULL DEFAULT 0,
+                        max_amount REAL,
+                        eligibility_criteria TEXT,
+                        application_deadline DATETIME,
+                        status VARCHAR(20) NOT NULL DEFAULT 'active',
+                        total_applicants INTEGER NOT NULL DEFAULT 0,
+                        approved_applicants INTEGER NOT NULL DEFAULT 0,
+                        total_disbursed REAL NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                print("  ✅ Created 'SubsidyPrograms' table")
+            else:
+                if not column_exists(inspector, 'SubsidyPrograms', 'parent_subsidy_id'):
+                    print("    ➕ Adding 'parent_subsidy_id' column to SubsidyPrograms...")
+                    conn.execute(text('ALTER TABLE "SubsidyPrograms" ADD COLUMN parent_subsidy_id VARCHAR(50)'))
+                    conn.commit()
+                    print("    ✅ Added 'parent_subsidy_id' column to SubsidyPrograms")
+
+            if not table_exists(inspector, 'SubsidyApplications'):
+                print("  🔍 Creating SubsidyApplications table...")
+                conn.execute(text("""
+                    CREATE TABLE "SubsidyApplications" (
+                        application_id VARCHAR(50) PRIMARY KEY,
+                        subsidy_id VARCHAR(50) NOT NULL,
+                        farmer_id VARCHAR(50) NOT NULL,
+                        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        apply_note TEXT,
+                        decision_note TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        decided_at DATETIME
+                    )
+                """))
+                conn.commit()
+                print("  ✅ Created 'SubsidyApplications' table")
+
+            if not table_exists(inspector, 'SystemSettings'):
+                print("  🔍 Creating SystemSettings table...")
+                conn.execute(text("""
+                    CREATE TABLE "SystemSettings" (
+                        key VARCHAR(100) PRIMARY KEY,
+                        value TEXT,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+                print("  ✅ Created 'SystemSettings' table")
 
             # Chatbot conversation persistence (ChatGPT-style threads)
             if not table_exists(inspector, 'chat_conversations'):

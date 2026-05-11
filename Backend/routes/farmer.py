@@ -11,6 +11,8 @@ import io
 try:
     from ..db import SessionLocal
     from ..schemas.detection import Detection, OutbreakAlert
+    from ..schemas.subsidy_application import SubsidyApplication
+    from ..schemas.subsidy import SubsidyProgram
     from ..schemas.guidance import DiseaseGuidance
     from ..services.yolo_client import UpstreamServiceError, UpstreamUnavailableError, predict_from_bytes
     from ..core.outbreak_config import (
@@ -22,6 +24,8 @@ except ImportError:
     # Fallback when running as a script: python Backend/app.py
     from db import SessionLocal
     from schemas.detection import Detection, OutbreakAlert
+    from schemas.subsidy_application import SubsidyApplication
+    from schemas.subsidy import SubsidyProgram
     from schemas.guidance import DiseaseGuidance
     from services.yolo_client import UpstreamServiceError, UpstreamUnavailableError, predict_from_bytes
     from core.outbreak_config import (
@@ -32,6 +36,33 @@ except ImportError:
 
 farmer_bp = Blueprint('farmer', __name__, url_prefix='/api/farmer')
 logger = logging.getLogger(__name__)
+
+
+def _serialize_subsidy_item(row):
+    import json as _json
+    criteria = []
+    try:
+        if row.eligibility_criteria:
+            parsed = _json.loads(row.eligibility_criteria)
+            if isinstance(parsed, list):
+                criteria = [str(v).strip() for v in parsed if str(v).strip()]
+    except Exception:
+        criteria = []
+    return {
+        'id': row.subsidy_id,
+        'parentSubsidyId': row.parent_subsidy_id,
+        'title': row.title,
+        'description': row.description or '',
+        'amount': float(row.amount or 0),
+        'maxAmount': float(row.max_amount or row.amount or 0),
+        'eligibilityCriteria': criteria,
+        'applicationDeadline': row.application_deadline.isoformat() if row.application_deadline else None,
+        'status': (row.status or 'active').lower(),
+        'totalApplicants': int(row.total_applicants or 0),
+        'approvedApplicants': int(row.approved_applicants or 0),
+        'totalDisbursed': float(row.total_disbursed or 0),
+        'createdAt': row.created_at.isoformat() if row.created_at else None,
+    }
 
 @farmer_bp.route('/detections', methods=['POST'])
 def create_detection():
@@ -688,6 +719,137 @@ def farmer_profile_stats():
     except Exception as e:
         print('❌ Error fetching profile stats:', str(e))
         return jsonify({'error': 'Failed to fetch profile stats', 'details': str(e)}), 500
+    finally:
+        db.close()
+
+
+@farmer_bp.route('/subsidies/available', methods=['GET'])
+def available_subsidies():
+    """List active subsidy programs for farmers, including nested sub-subsidies."""
+    db = SessionLocal()
+    try:
+        now = datetime.datetime.utcnow()
+        rows = db.query(SubsidyProgram).filter(SubsidyProgram.status == 'active').order_by(SubsidyProgram.created_at.desc()).all()
+        items = [_serialize_subsidy_item(r) for r in rows if (r.application_deadline is None or r.application_deadline >= now)]
+
+        by_parent = {}
+        top = []
+        for item in items:
+            if item.get('parentSubsidyId'):
+                by_parent.setdefault(item['parentSubsidyId'], []).append(item)
+            else:
+                top.append(item)
+
+        for item in items:
+            item['subSubsidies'] = by_parent.get(item['id'], [])
+
+        return jsonify({
+            'total': len(top),
+            'items': top,
+        })
+    except Exception as e:
+        print('❌ Error fetching available subsidies:', str(e))
+        return jsonify({'error': 'Failed to fetch available subsidies', 'details': str(e)}), 500
+    finally:
+        db.close()
+
+
+@farmer_bp.route('/subsidies/<subsidy_id>/apply', methods=['POST'])
+def apply_for_subsidy(subsidy_id):
+    try:
+        from ..routes.auth import get_auth_user
+    except ImportError:
+        from routes.auth import get_auth_user
+
+    auth_user, err = get_auth_user()
+    if err:
+        return err
+    if getattr(auth_user, 'role', None) != 'farmer':
+        return jsonify({'error': 'Only farmers can apply for subsidies'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    apply_note = (payload.get('applyNote') or '').strip() or None
+
+    db = SessionLocal()
+    try:
+        subsidy = db.query(SubsidyProgram).filter(SubsidyProgram.subsidy_id == subsidy_id).first()
+        if not subsidy:
+            return jsonify({'error': 'Subsidy not found'}), 404
+        if (subsidy.status or '').lower() != 'active':
+            return jsonify({'error': 'This subsidy is not active'}), 400
+        if subsidy.application_deadline and subsidy.application_deadline < datetime.datetime.utcnow():
+            return jsonify({'error': 'This subsidy deadline has passed'}), 400
+
+        existing_pending = db.query(SubsidyApplication).filter(
+            SubsidyApplication.subsidy_id == subsidy_id,
+            SubsidyApplication.farmer_id == auth_user.user_id,
+            SubsidyApplication.status == 'pending',
+        ).first()
+        if existing_pending:
+            return jsonify({'error': 'You already have a pending request for this subsidy'}), 400
+
+        row = SubsidyApplication(
+            application_id=str(uuid.uuid4()),
+            subsidy_id=subsidy_id,
+            farmer_id=auth_user.user_id,
+            status='pending',
+            apply_note=apply_note,
+        )
+        db.add(row)
+        subsidy.total_applicants = int(getattr(subsidy, 'total_applicants', 0) or 0) + 1
+        db.commit()
+        return jsonify({'success': True, 'applicationId': row.application_id, 'status': 'pending'}), 201
+    except Exception as e:
+        db.rollback()
+        print('❌ Error applying for subsidy:', str(e))
+        return jsonify({'error': 'Failed to submit subsidy request', 'details': str(e)}), 500
+    finally:
+        db.close()
+
+
+@farmer_bp.route('/subsidy-applications', methods=['GET'])
+def my_subsidy_applications():
+    try:
+        from ..routes.auth import get_auth_user
+    except ImportError:
+        from routes.auth import get_auth_user
+
+    auth_user, err = get_auth_user()
+    if err:
+        return err
+    if getattr(auth_user, 'role', None) != 'farmer':
+        return jsonify({'error': 'Only farmers can access this endpoint'}), 403
+
+    db = SessionLocal()
+    try:
+        rows = db.query(SubsidyApplication).filter(
+            SubsidyApplication.farmer_id == auth_user.user_id
+        ).order_by(SubsidyApplication.created_at.desc()).all()
+
+        subsidy_ids = list({r.subsidy_id for r in rows if r.subsidy_id})
+        subsidy_map = {}
+        if subsidy_ids:
+            subsidies = db.query(SubsidyProgram).filter(SubsidyProgram.subsidy_id.in_(subsidy_ids)).all()
+            subsidy_map = {s.subsidy_id: s for s in subsidies}
+
+        items = []
+        for r in rows:
+            subsidy = subsidy_map.get(r.subsidy_id)
+            items.append({
+                'applicationId': r.application_id,
+                'subsidyId': r.subsidy_id,
+                'subsidyTitle': subsidy.title if subsidy else 'Unknown subsidy',
+                'status': (r.status or 'pending').lower(),
+                'applyNote': r.apply_note,
+                'decisionNote': r.decision_note,
+                'createdAt': r.created_at.isoformat() if r.created_at else None,
+                'decidedAt': r.decided_at.isoformat() if r.decided_at else None,
+            })
+
+        return jsonify({'total': len(items), 'items': items})
+    except Exception as e:
+        print('❌ Error fetching farmer subsidy applications:', str(e))
+        return jsonify({'error': 'Failed to fetch subsidy application status', 'details': str(e)}), 500
     finally:
         db.close()
 

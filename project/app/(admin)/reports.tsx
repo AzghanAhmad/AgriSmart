@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,91 +7,23 @@ import {
   StyleSheet,
   TextInput,
   Image,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
-import { Search, Filter, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, Eye, MapPin, Calendar } from 'lucide-react-native';
+import { Search, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, Eye, MapPin, Calendar } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-
-interface DiseaseReport {
-  id: string;
-  farmerId: string;
-  farmerName: string;
-  diseaseName: string;
-  cropType: string;
-  location: string;
-  severity: 'low' | 'medium' | 'high';
-  status: 'pending' | 'reviewed' | 'resolved';
-  imageUrl: string;
-  description: string;
-  submittedAt: string;
-  reviewedAt?: string;
-  confidence: number;
-}
+import { useAdminReports } from '@/hooks/useAdmin';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 export default function ReportsScreen() {
   const { colors: tc } = useTheme();
+  const { width } = useWindowDimensions();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
-
-  const mockReports: DiseaseReport[] = [
-    {
-      id: '1',
-      farmerId: '1',
-      farmerName: 'Ahmad Khan',
-      diseaseName: 'Wheat Rust',
-      cropType: 'Wheat',
-      location: 'Punjab, Lahore',
-      severity: 'high',
-      status: 'pending',
-      imageUrl: 'https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg',
-      description: 'Orange-brown pustules observed on wheat leaves. Spread noticed in approximately 30% of the field.',
-      submittedAt: '2024-01-15T10:30:00Z',
-      confidence: 87
-    },
-    {
-      id: '2',
-      farmerId: '2',
-      farmerName: 'Muhammad Ali',
-      diseaseName: 'Cotton Bollworm',
-      cropType: 'Cotton',
-      location: 'Sindh, Karachi',
-      severity: 'medium',
-      status: 'reviewed',
-      imageUrl: 'https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg',
-      description: 'Larvae feeding damage observed on cotton bolls. Estimated 15% crop damage.',
-      submittedAt: '2024-01-14T14:20:00Z',
-      reviewedAt: '2024-01-15T09:00:00Z',
-      confidence: 92
-    },
-    {
-      id: '3',
-      farmerId: '3',
-      farmerName: 'Fatima Bibi',
-      diseaseName: 'Rice Blast',
-      cropType: 'Rice',
-      location: 'Punjab, Multan',
-      severity: 'low',
-      status: 'resolved',
-      imageUrl: 'https://images.pexels.com/photos/2589457/pexels-photo-2589457.jpeg',
-      description: 'Small lesions on rice leaves. Early detection allowed for prompt treatment.',
-      submittedAt: '2024-01-12T08:45:00Z',
-      reviewedAt: '2024-01-13T11:30:00Z',
-      confidence: 78
-    },
-    {
-      id: '4',
-      farmerId: '4',
-      farmerName: 'Hassan Sheikh',
-      diseaseName: 'Corn Smut',
-      cropType: 'Corn',
-      location: 'KPK, Peshawar',
-      severity: 'medium',
-      status: 'pending',
-      imageUrl: 'https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg',
-      description: 'Galls formation on corn ears and tassels. Affecting approximately 20% of the field.',
-      submittedAt: '2024-01-13T16:15:00Z',
-      confidence: 85
-    }
-  ];
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'pending' | 'reviewed' | 'resolved'>('all');
+  const { items, total, loading, error, updateStatus, refresh } = useAdminReports(1, 50, selectedFilter, searchQuery);
 
   const filters = [
     { id: 'all', label: 'All Reports' },
@@ -99,15 +31,6 @@ export default function ReportsScreen() {
     { id: 'reviewed', label: 'Reviewed' },
     { id: 'resolved', label: 'Resolved' }
   ];
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'high': return '#EF4444';
-      case 'medium': return '#F59E0B';
-      case 'low': return '#22C55E';
-      default: return '#6B7280';
-    }
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -136,20 +59,19 @@ export default function ReportsScreen() {
     }
   };
 
-  const filteredReports = mockReports.filter(report => {
-    const matchesSearch = report.diseaseName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         report.farmerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         report.cropType.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || report.status === selectedFilter;
-    return matchesSearch && matchesFilter;
-  });
+  const statsData = useMemo(() => {
+    const pending = items.filter((r) => r.status === 'pending').length;
+    const reviewed = items.filter((r) => r.status === 'reviewed').length;
+    const resolved = items.filter((r) => r.status === 'resolved').length;
+    return [
+      { label: 'Total Reports', value: String(total), color: '#22C55E' },
+      { label: 'Pending', value: String(pending), color: '#F59E0B' },
+      { label: 'Reviewed', value: String(reviewed), color: '#3B82F6' },
+      { label: 'Resolved', value: String(resolved), color: '#10B981' },
+    ];
+  }, [items, total]);
 
-  const statsData = [
-    { label: 'Total Reports', value: mockReports.length.toString(), color: '#22C55E' },
-    { label: 'Pending', value: mockReports.filter(r => r.status === 'pending').length.toString(), color: '#F59E0B' },
-    { label: 'Reviewed', value: mockReports.filter(r => r.status === 'reviewed').length.toString(), color: '#3B82F6' },
-    { label: 'Resolved', value: mockReports.filter(r => r.status === 'resolved').length.toString(), color: '#10B981' }
-  ];
+  const statCardWidth = width < 380 ? 120 : 140;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -161,19 +83,98 @@ export default function ReportsScreen() {
     });
   };
 
+  const handleExport = async () => {
+    try {
+      if (!items.length) {
+        Alert.alert('No Data', 'There are no reports to export right now.');
+        return;
+      }
+
+      const escapeCsv = (value: unknown) => {
+        const raw = String(value ?? '');
+        if (raw.includes('"') || raw.includes(',') || raw.includes('\n')) {
+          return `"${raw.replace(/"/g, '""')}"`;
+        }
+        return raw;
+      };
+
+      const headers = [
+        'Detection ID',
+        'Farmer ID',
+        'Farmer Name',
+        'Disease',
+        'Crop Type',
+        'Location',
+        'Status',
+        'Confidence',
+        'Submitted At',
+        'Reviewed At',
+      ];
+
+      const lines = items.map((report) => ([
+        report.detectionId,
+        report.farmerId,
+        report.farmerName,
+        report.diseaseName,
+        report.cropType,
+        report.location,
+        report.status,
+        `${report.confidence}%`,
+        report.submittedAt ? formatDate(report.submittedAt) : '',
+        report.reviewedAt ? formatDate(report.reviewedAt) : '',
+      ].map(escapeCsv).join(',')));
+
+      const csv = [headers.join(','), ...lines].join('\n');
+      const filename = `admin-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+
+      if (Platform.OS === 'web') {
+        Alert.alert('Export', 'CSV export sharing is supported on Android/iOS.');
+        return;
+      }
+
+      const baseDirectory = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
+      if (!baseDirectory) {
+        throw new Error('Export storage is unavailable on this device');
+      }
+
+      const uri = `${baseDirectory}${filename}`;
+      const utf8Encoding = (FileSystem as any).EncodingType?.UTF8 ?? 'utf8';
+      await FileSystem.writeAsStringAsync(uri, csv, { encoding: utf8Encoding as any });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert('Export Saved', `CSV saved at: ${uri}`);
+        return;
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'Export Disease Reports',
+        UTI: 'public.comma-separated-values-text',
+      });
+    } catch (e: any) {
+      Alert.alert('Export Failed', e?.message || 'Unable to export reports');
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: tc.screen }]}>
       <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         <Text style={[styles.title, { color: tc.text }]}>Disease Reports</Text>
-        <TouchableOpacity style={styles.exportButton}>
+        <TouchableOpacity style={styles.exportButton} onPress={handleExport}>
           <Text style={styles.exportButtonText}>Export</Text>
         </TouchableOpacity>
       </View>
 
       {/* Stats */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.statsScroll, { backgroundColor: tc.headerBg }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={[styles.statsScroll, { backgroundColor: tc.headerBg }]}
+        contentContainerStyle={styles.statsRow}
+      >
         {statsData.map((stat, index) => (
-          <View key={index} style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
+          <View key={index} style={[styles.statCard, { width: statCardWidth, backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
             <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
             <Text style={[styles.statLabel, { color: tc.textMuted }]}>{stat.label}</Text>
           </View>
@@ -218,17 +219,18 @@ export default function ReportsScreen() {
 
       {/* Reports List */}
       <ScrollView style={[styles.reportsList, { backgroundColor: tc.screen }]} contentContainerStyle={styles.reportsContent}>
-        {filteredReports.map((report) => {
+        {loading && (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color="#22C55E" />
+          </View>
+        )}
+        {!loading && items.map((report) => {
           const StatusIcon = getStatusIcon(report.status);
           return (
             <TouchableOpacity key={report.id} style={[styles.reportCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
               <View style={styles.reportHeader}>
                 <View style={styles.reportImage}>
-                  <Image source={{ uri: report.imageUrl }} style={styles.cropImage} />
-                  <View style={[
-                    styles.severityIndicator,
-                    { backgroundColor: getSeverityColor(report.severity) }
-                  ]} />
+                  <Image source={{ uri: report.imageUrl || '' }} style={styles.cropImage} />
                 </View>
                 
                 <View style={styles.reportInfo}>
@@ -270,31 +272,56 @@ export default function ReportsScreen() {
                   <Text style={[styles.detailValue, { color: tc.text }]}>{report.cropType}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={[styles.detailLabel, { color: tc.textMuted }]}>Severity:</Text>
-                  <View style={styles.severityBadge}>
-                    <View style={[
-                      styles.severityDot,
-                      { backgroundColor: getSeverityColor(report.severity) }
-                    ]} />
-                    <Text style={[
-                      styles.severityText,
-                      { color: getSeverityColor(report.severity) }
-                    ]}>
-                      {report.severity.charAt(0).toUpperCase() + report.severity.slice(1)}
-                    </Text>
-                  </View>
+                  <Text style={[styles.detailLabel, { color: tc.textMuted }]}>Farmer:</Text>
+                  <Text style={[styles.detailValue, { color: tc.text }]}>{report.farmerName}</Text>
                 </View>
               </View>
 
-              <Text style={[styles.description, { color: tc.textSecondary }]}>{report.description}</Text>
+              <Text style={[styles.description, { color: tc.textSecondary }]}>
+                Detection ID: {report.detectionId}
+              </Text>
 
               {report.status === 'pending' && (
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity style={styles.reviewButton}>
+                  <TouchableOpacity
+                    style={styles.reviewButton}
+                    onPress={async () => {
+                      try {
+                        await updateStatus(report.id, 'reviewed');
+                      } catch (e: any) {
+                        Alert.alert('Error', e?.message || 'Failed to update report');
+                      }
+                    }}
+                  >
                     <Text style={styles.reviewButtonText}>Review Report</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.viewDetailsButton, { backgroundColor: tc.inputBg }]}>
+                  <TouchableOpacity
+                    style={[styles.viewDetailsButton, { backgroundColor: tc.inputBg }]}
+                    onPress={async () => {
+                      try {
+                        await updateStatus(report.id, 'resolved');
+                      } catch (e: any) {
+                        Alert.alert('Error', e?.message || 'Failed to update report');
+                      }
+                    }}
+                  >
                     <Eye color={tc.textMuted} size={16} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {report.status === 'reviewed' && (
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity
+                    style={styles.reviewButton}
+                    onPress={async () => {
+                      try {
+                        await updateStatus(report.id, 'resolved');
+                      } catch (e: any) {
+                        Alert.alert('Error', e?.message || 'Failed to resolve report');
+                      }
+                    }}
+                  >
+                    <Text style={styles.reviewButtonText}>Mark Resolved</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -308,13 +335,21 @@ export default function ReportsScreen() {
           );
         })}
 
-        {filteredReports.length === 0 && (
+        {!loading && items.length === 0 && (
           <View style={styles.emptyState}>
             <AlertTriangle color={tc.textMuted} size={48} />
             <Text style={[styles.emptyTitle, { color: tc.text }]}>No reports found</Text>
             <Text style={[styles.emptyText, { color: tc.textMuted }]}>
               {searchQuery ? 'Try adjusting your search terms' : 'No reports match the selected filter'}
             </Text>
+          </View>
+        )}
+        {!!error && (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: '#DC2626' }]}>{error}</Text>
+            <TouchableOpacity style={styles.reviewButton} onPress={refresh}>
+              <Text style={styles.reviewButtonText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -331,14 +366,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     paddingTop: 60,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#111827',
   },
@@ -354,17 +390,29 @@ const styles = StyleSheet.create({
   },
   statsScroll: {
     backgroundColor: 'white',
-    paddingVertical: 16,
+    maxHeight: 92,
+    paddingVertical: 8,
+    flexGrow: 0,
+  },
+  statsRow: {
+    alignItems: 'center',
+    paddingRight: 8,
   },
   statCard: {
-    paddingHorizontal: 16,
+    width: 140,
+    height: 72,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     alignItems: 'center',
+    justifyContent: 'center',
     marginLeft: 16,
+    borderRadius: 12,
+    alignSelf: 'center',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   statLabel: {
     fontSize: 12,
@@ -442,16 +490,6 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 8,
   },
-  severityIndicator: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: 'white',
-  },
   reportInfo: {
     flex: 1,
   },
@@ -500,8 +538,7 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   reportDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 6,
     marginBottom: 8,
     paddingBottom: 8,
     borderBottomWidth: 1,
@@ -521,20 +558,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#111827',
     fontWeight: '600',
-  },
-  severityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  severityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  severityText: {
-    fontSize: 12,
-    fontWeight: '500',
   },
   description: {
     fontSize: 14,
@@ -587,5 +610,9 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  loadingWrap: {
+    paddingVertical: 36,
+    alignItems: 'center',
   },
 });

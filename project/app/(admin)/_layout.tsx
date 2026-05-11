@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { ChartBar as BarChart3, Users, MapPin, Settings, Briefcase, Database } from 'lucide-react-native';
+import { ChartBar as BarChart3, Users, MapPin, Settings, Briefcase } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
 import { translate } from '@/utils/translations';
@@ -49,13 +49,6 @@ export default function AdminTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="data"
-        options={{
-          title: translate('tabAdminData', language),
-          tabBarIcon: ({ size, color }) => <Database size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="settings"
         options={{
           title: translate('tabAdminSettings', language),
@@ -64,6 +57,12 @@ export default function AdminTabLayout() {
       />
       <Tabs.Screen
         name="heatmap"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="data"
         options={{
           href: null,
         }}

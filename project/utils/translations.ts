@@ -90,7 +90,6 @@ export const translations = {
     tabAdminFarmers: 'Farmers',
     tabAdminReports: 'Reports',
     tabAdminSubsidies: 'Subsidies',
-    tabAdminData: 'Data',
     tabAdminSettings: 'Settings',
 
     // Language UI
@@ -252,6 +251,7 @@ export const translations = {
     securitySupport: 'Security & Support',
     privacySettingsNav: 'Privacy Settings',
     helpSupportNav: 'Help & Support',
+    viewAvailableSubsidiesNav: 'View Available Subsidies',
     logoutNav: 'Logout',
     farmerBadge: '🌾 Farmer',
     adminBadge: '👨‍💼 Administrator',
@@ -549,7 +549,6 @@ export const translations = {
     tabAdminFarmers: 'کسان',
     tabAdminReports: 'رپورٹس',
     tabAdminSubsidies: 'سبسڈی',
-    tabAdminData: 'ڈیٹا',
     tabAdminSettings: 'ترتیبات',
 
     // Language UI
@@ -711,6 +710,7 @@ export const translations = {
     securitySupport: 'سیکیورٹی اور معاونت',
     privacySettingsNav: 'رازداری کی ترتیبات',
     helpSupportNav: 'مدد اور تعاون',
+    viewAvailableSubsidiesNav: 'دستیاب سبسڈی دیکھیں',
     logoutNav: 'لاگ آؤٹ',
     farmerBadge: '🌾 کسان',
     adminBadge: '👨‍💼 منتظم',

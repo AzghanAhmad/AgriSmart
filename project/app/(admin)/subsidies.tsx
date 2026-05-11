@@ -1,120 +1,36 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  TextInput,
-  Alert,
-} from 'react-native';
-import { Search, Plus, DollarSign, Calendar, Users, CircleCheck as CheckCircle, Clock, CreditCard as Edit3, Trash2, CircleAlert as AlertCircle } from 'lucide-react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { Search, Plus, DollarSign, Calendar, Users, CircleCheck as CheckCircle, Clock, CircleAlert as AlertCircle, Trash2, GitBranchPlus } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { AdminSubsidyItem, useAdminSubsidies, useAdminSubsidyApplications } from '@/hooks/useAdmin';
 
-interface SubsidyProgram {
-  id: string;
-  title: string;
-  description: string;
-  amount: number;
-  maxAmount: number;
-  eligibilityCriteria: string[];
-  applicationDeadline: string;
-  status: 'active' | 'paused' | 'expired';
-  totalApplicants: number;
-  approvedApplicants: number;
-  totalDisbursed: number;
-  createdAt: string;
-}
+type SubsidyStatus = 'all' | 'active' | 'paused' | 'expired';
 
 export default function SubsidiesScreen() {
   const { colors: tc } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedFilter, setSelectedFilter] = useState<SubsidyStatus>('all');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [eligibilityText, setEligibilityText] = useState('');
+  const [parentSubsidyId, setParentSubsidyId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const { items, allItems, total, loading, error, createSubsidy, deleteSubsidy, updateSubsidyStatus } = useAdminSubsidies(selectedFilter, searchQuery);
+  const { items: pendingApps, loading: appsLoading, error: appsError, decide: decideApplication } = useAdminSubsidyApplications('pending');
 
-  const mockPrograms: SubsidyProgram[] = [
-    {
-      id: '1',
-      title: 'Kisan Card Financial Support',
-      description: 'Financial assistance program for small-scale farmers to support crop cultivation and modern farming techniques.',
-      amount: 50000,
-      maxAmount: 100000,
-      eligibilityCriteria: [
-        'Land ownership less than 5 acres',
-        'Annual income below PKR 200,000',
-        'Pakistani citizenship required',
-        'No previous subsidy in last 2 years'
-      ],
-      applicationDeadline: '2024-03-31',
-      status: 'active',
-      totalApplicants: 1250,
-      approvedApplicants: 785,
-      totalDisbursed: 39250000,
-      createdAt: '2024-01-01'
-    },
-    {
-      id: '2',
-      title: 'Organic Farming Initiative Grant',
-      description: 'Supporting farmers transitioning to organic farming practices with equipment and training subsidies.',
-      amount: 75000,
-      maxAmount: 150000,
-      eligibilityCriteria: [
-        'Certified organic farming course completion',
-        'Minimum 2 years farming experience',
-        'Commitment to organic practices for 3 years',
-        'Farm size between 2-20 acres'
-      ],
-      applicationDeadline: '2024-06-30',
-      status: 'active',
-      totalApplicants: 340,
-      approvedApplicants: 245,
-      totalDisbursed: 18375000,
-      createdAt: '2024-01-15'
-    },
-    {
-      id: '3',
-      title: 'Wheat Production Incentive',
-      description: 'Special incentive program for wheat farmers to increase production and improve food security.',
-      amount: 30000,
-      maxAmount: 80000,
-      eligibilityCriteria: [
-        'Primary crop must be wheat',
-        'Minimum 3 acres wheat cultivation',
-        'Use of approved seed varieties',
-        'Participation in government training programs'
-      ],
-      applicationDeadline: '2024-02-28',
-      status: 'paused',
-      totalApplicants: 892,
-      approvedApplicants: 567,
-      totalDisbursed: 17010000,
-      createdAt: '2023-11-01'
-    },
-    {
-      id: '4',
-      title: 'Youth Farmer Startup Scheme',
-      description: 'Supporting young entrepreneurs in agriculture with startup capital and mentorship programs.',
-      amount: 100000,
-      maxAmount: 200000,
-      eligibilityCriteria: [
-        'Age between 18-35 years',
-        'Agriculture degree or diploma',
-        'Business plan submission',
-        'Land lease agreement for minimum 3 years'
-      ],
-      applicationDeadline: '2023-12-31',
-      status: 'expired',
-      totalApplicants: 156,
-      approvedApplicants: 89,
-      totalDisbursed: 8900000,
-      createdAt: '2023-10-01'
-    }
-  ];
+  const topLevelSubsidies = useMemo(
+    () => allItems.filter((item) => !item.parentSubsidyId),
+    [allItems]
+  );
 
   const filters = [
     { id: 'all', label: 'All Programs' },
     { id: 'active', label: 'Active' },
     { id: 'paused', label: 'Paused' },
-    { id: 'expired', label: 'Expired' }
+    { id: 'expired', label: 'Expired' },
   ];
 
   const getStatusColor = (status: string) => {
@@ -144,61 +60,160 @@ export default function SubsidiesScreen() {
     }
   };
 
-  const filteredPrograms = mockPrograms.filter(program => {
-    const matchesSearch = program.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         program.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || program.status === selectedFilter;
-    return matchesSearch && matchesFilter;
-  });
-
-  const totalStats = {
-    totalPrograms: mockPrograms.length,
-    activePrograms: mockPrograms.filter(p => p.status === 'active').length,
-    totalApplicants: mockPrograms.reduce((sum, p) => sum + p.totalApplicants, 0),
-    totalDisbursed: mockPrograms.reduce((sum, p) => sum + p.totalDisbursed, 0)
-  };
-
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-PK', {
       style: 'currency',
       currency: 'PKR',
       minimumFractionDigits: 0,
-    }).format(amount);
+    }).format(value || 0);
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+  const clearForm = () => {
+    setTitle('');
+    setDescription('');
+    setAmount('');
+    setMaxAmount('');
+    setDeadline('');
+    setEligibilityText('');
+    setParentSubsidyId('');
   };
 
-  const handleEdit = (programId: string) => {
-    Alert.alert('Edit Program', `Edit program ${programId} functionality would be implemented here.`);
+  const submitCreate = async () => {
+    const titleValue = title.trim();
+    const amountValue = Number(amount);
+    if (!titleValue) {
+      Alert.alert('Validation', 'Title is required.');
+      return;
+    }
+    if (!Number.isFinite(amountValue) || amountValue < 0) {
+      Alert.alert('Validation', 'Amount must be a valid non-negative number.');
+      return;
+    }
+    const maxAmountValue = maxAmount.trim() ? Number(maxAmount) : amountValue;
+    if (!Number.isFinite(maxAmountValue) || maxAmountValue < 0) {
+      Alert.alert('Validation', 'Maximum amount must be a valid non-negative number.');
+      return;
+    }
+
+    try {
+      setCreating(true);
+      await createSubsidy({
+        title: titleValue,
+        description: description.trim(),
+        amount: amountValue,
+        maxAmount: maxAmountValue,
+        applicationDeadline: deadline.trim() || null,
+        eligibilityCriteria: eligibilityText,
+        parentSubsidyId: parentSubsidyId.trim() || null,
+      });
+      clearForm();
+      Alert.alert('Success', 'Subsidy has been created.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to create subsidy');
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleDelete = (programId: string) => {
+  const handleDelete = (subsidy: AdminSubsidyItem) => {
     Alert.alert(
-      'Delete Program',
-      'Are you sure you want to delete this subsidy program? This action cannot be undone.',
+      'Delete Subsidy',
+      `Delete "${subsidy.title}"? Any sub-subsidies under it will also be removed.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => console.log('Deleted:', programId) }
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteSubsidy(subsidy.id);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Failed to delete subsidy');
+            }
+          },
+        },
       ]
     );
   };
 
-  const handleToggleStatus = (programId: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'paused' : 'active';
-    Alert.alert(
-      `${newStatus === 'active' ? 'Activate' : 'Pause'} Program`,
-      `Are you sure you want to ${newStatus === 'active' ? 'activate' : 'pause'} this program?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', onPress: () => console.log('Status changed:', programId, newStatus) }
-      ]
+  const renderSubsidyCard = (subsidy: AdminSubsidyItem, nested: boolean = false) => {
+    const StatusIcon = getStatusIcon(subsidy.status);
+    const nextStatus = subsidy.status === 'active' ? 'paused' : 'active';
+    return (
+      <View
+        key={subsidy.id}
+        style={[
+          styles.programCard,
+          { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 },
+          nested && styles.subCard,
+        ]}
+      >
+        <View style={styles.programHeader}>
+          <View style={styles.programInfo}>
+            <Text style={[styles.programTitle, { color: tc.text }]}>{subsidy.title}</Text>
+            <Text style={[styles.metaId, { color: tc.textMuted }]}>ID: {subsidy.id}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusBgColor(subsidy.status), borderColor: getStatusColor(subsidy.status) }]}>
+              <StatusIcon color={getStatusColor(subsidy.status)} size={12} />
+              <Text style={[styles.statusText, { color: getStatusColor(subsidy.status) }]}>{subsidy.status}</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tc.inputBg }]} onPress={() => handleDelete(subsidy)}>
+            <Trash2 color="#EF4444" size={16} />
+          </TouchableOpacity>
+        </View>
+
+        {!!subsidy.description && <Text style={[styles.programDescription, { color: tc.textSecondary }]}>{subsidy.description}</Text>}
+        <View style={styles.detailRow}>
+          <DollarSign color="#22C55E" size={16} />
+          <Text style={[styles.detailText, { color: tc.textSecondary }]}>
+            {formatCurrency(subsidy.amount)} to {formatCurrency(subsidy.maxAmount)}
+          </Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Calendar color="#F59E0B" size={16} />
+          <Text style={[styles.detailText, { color: tc.textSecondary }]}>
+            Deadline: {subsidy.applicationDeadline ? new Date(subsidy.applicationDeadline).toLocaleDateString() : 'Open'}
+          </Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Users color="#3B82F6" size={16} />
+          <Text style={[styles.detailText, { color: tc.textSecondary }]}>
+            {subsidy.approvedApplicants}/{subsidy.totalApplicants} approved
+          </Text>
+        </View>
+        {!!subsidy.eligibilityCriteria?.length && (
+          <View style={[styles.criteriaSection, { backgroundColor: tc.screenSecondary }]}>
+            {subsidy.eligibilityCriteria.slice(0, 3).map((line, index) => (
+              <Text key={`${subsidy.id}-${index}`} style={[styles.criteriaText, { color: tc.textMuted }]}>• {line}</Text>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={[styles.toggleButton, { backgroundColor: subsidy.status === 'active' ? '#F59E0B' : '#22C55E' }]}
+            onPress={() => updateSubsidyStatus(subsidy.id, nextStatus as 'active' | 'paused' | 'expired')}
+          >
+            <Text style={styles.toggleButtonText}>{subsidy.status === 'active' ? 'Pause' : 'Activate'}</Text>
+          </TouchableOpacity>
+          {!nested && (
+            <TouchableOpacity
+              style={[styles.toggleButton, { backgroundColor: '#3B82F6' }]}
+              onPress={() => setParentSubsidyId(subsidy.id)}
+            >
+              <GitBranchPlus color="white" size={14} />
+              <Text style={styles.toggleButtonText}>Add Sub</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {!nested && subsidy.subSubsidies?.length ? (
+          <View style={styles.subList}>
+            <Text style={[styles.subListLabel, { color: tc.textSecondary }]}>Sub-subsidies</Text>
+            {subsidy.subSubsidies.map((child) => renderSubsidyCard(child, true))}
+          </View>
+        ) : null}
+      </View>
     );
   };
 
@@ -206,197 +221,120 @@ export default function SubsidiesScreen() {
     <View style={[styles.container, { backgroundColor: tc.screen }]}>
       <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
         <Text style={[styles.title, { color: tc.text }]}>Subsidy Management</Text>
-        <TouchableOpacity style={styles.addButton}>
-          <Plus color="white" size={20} />
-          <Text style={styles.addButtonText}>Add Program</Text>
-        </TouchableOpacity>
       </View>
 
-      {/* Statistics Cards */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.statsScroll, { backgroundColor: tc.headerBg }]}>
-        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalPrograms}</Text>
-          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Programs</Text>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.statValue, { color: '#22C55E' }]}>{totalStats.activePrograms}</Text>
-          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Active</Text>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.statValue, { color: tc.text }]}>{totalStats.totalApplicants.toLocaleString()}</Text>
-          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Total Applicants</Text>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-          <Text style={[styles.statValue, { fontSize: 18, color: tc.text }]}>
-            {formatCurrency(totalStats.totalDisbursed).replace('PKR', '₨')}
-          </Text>
-          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Disbursed</Text>
-        </View>
-      </ScrollView>
-
-      {/* Search and Filter */}
-      <View style={[styles.searchSection, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
-        <View style={[styles.searchContainer, { backgroundColor: tc.inputBg }]}>
-          <Search color={tc.textMuted} size={20} />
-          <TextInput
-            style={[styles.searchInput, { color: tc.text }]}
-            placeholder="Search programs..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={tc.textMuted}
-          />
-        </View>
-        
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterButton,
-                { backgroundColor: tc.inputBg, borderColor: tc.border },
-                selectedFilter === filter.id && styles.activeFilterButton
-              ]}
-              onPress={() => setSelectedFilter(filter.id)}
-            >
-              <Text style={[
-                styles.filterText,
-                { color: tc.textSecondary },
-                selectedFilter === filter.id && styles.activeFilterText
-              ]}>
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Programs List */}
       <ScrollView style={[styles.programsList, { backgroundColor: tc.screen }]} contentContainerStyle={styles.programsContent}>
-        {filteredPrograms.map((program) => {
-          const StatusIcon = getStatusIcon(program.status);
-          const approvalRate = Math.round((program.approvedApplicants / program.totalApplicants) * 100);
-          
-          return (
-            <View key={program.id} style={[styles.programCard, { backgroundColor: tc.card, borderColor: tc.border, borderWidth: 1 }]}>
-              <View style={styles.programHeader}>
-                <View style={styles.programInfo}>
-                  <Text style={[styles.programTitle, { color: tc.text }]}>{program.title}</Text>
-                  <View style={[
-                    styles.statusBadge,
-                    {
-                      backgroundColor: getStatusBgColor(program.status),
-                      borderColor: getStatusColor(program.status)
-                    }
-                  ]}>
-                    <StatusIcon color={getStatusColor(program.status)} size={12} />
-                    <Text style={[styles.statusText, { color: getStatusColor(program.status) }]}>
-                      {program.status.charAt(0).toUpperCase() + program.status.slice(1)}
-                    </Text>
-                  </View>
-                </View>
-                
-                <View style={styles.programActions}>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: tc.inputBg }]}
-                    onPress={() => handleEdit(program.id)}
-                  >
-                    <Edit3 color={tc.textMuted} size={16} />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: tc.inputBg }]}
-                    onPress={() => handleDelete(program.id)}
-                  >
-                    <Trash2 color="#EF4444" size={16} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+        <View style={[styles.createBox, { backgroundColor: tc.card, borderColor: tc.border }]}>
+          <View style={styles.createHead}>
+            <Plus color="#22C55E" size={18} />
+            <Text style={[styles.createTitle, { color: tc.text }]}>Add Program / Sub-Subsidy</Text>
+          </View>
+          <TextInput style={[styles.input, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Title" value={title} onChangeText={setTitle} placeholderTextColor={tc.textMuted} />
+          <TextInput style={[styles.input, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Description" value={description} onChangeText={setDescription} placeholderTextColor={tc.textMuted} />
+          <View style={styles.row}>
+            <TextInput style={[styles.input, styles.half, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Amount" value={amount} onChangeText={setAmount} keyboardType="numeric" placeholderTextColor={tc.textMuted} />
+            <TextInput style={[styles.input, styles.half, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Max Amount" value={maxAmount} onChangeText={setMaxAmount} keyboardType="numeric" placeholderTextColor={tc.textMuted} />
+          </View>
+          <TextInput style={[styles.input, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Deadline (YYYY-MM-DD)" value={deadline} onChangeText={setDeadline} placeholderTextColor={tc.textMuted} />
+          <TextInput style={[styles.input, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Eligibility (comma separated)" value={eligibilityText} onChangeText={setEligibilityText} placeholderTextColor={tc.textMuted} />
+          <TextInput style={[styles.input, { color: tc.text, borderColor: tc.border, backgroundColor: tc.inputBg }]} placeholder="Parent Subsidy ID (optional, for sub-subsidy)" value={parentSubsidyId} onChangeText={setParentSubsidyId} placeholderTextColor={tc.textMuted} />
+          {!!topLevelSubsidies.length && (
+            <Text style={[styles.hint, { color: tc.textMuted }]}>
+              Parent IDs: {topLevelSubsidies.slice(0, 4).map((x) => x.id).join(', ')}
+            </Text>
+          )}
+          <TouchableOpacity style={[styles.addButton, creating && { opacity: 0.7 }]} onPress={submitCreate} disabled={creating}>
+            <Text style={styles.addButtonText}>{creating ? 'Saving...' : 'Save Subsidy'}</Text>
+          </TouchableOpacity>
+        </View>
 
-              <Text style={[styles.programDescription, { color: tc.textSecondary }]}>{program.description}</Text>
+        <View style={[styles.statsBox, { backgroundColor: tc.card, borderColor: tc.border }]}>
+          <Text style={[styles.statValue, { color: tc.text }]}>{total}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Visible Programs</Text>
+        </View>
 
-              {/* Program Details */}
-              <View style={styles.programDetails}>
-                <View style={styles.detailRow}>
-                  <DollarSign color="#22C55E" size={16} />
-                  <Text style={[styles.detailText, { color: tc.textSecondary }]}>
-                    {formatCurrency(program.amount)} - {formatCurrency(program.maxAmount)}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Calendar color="#F59E0B" size={16} />
-                  <Text style={[styles.detailText, { color: tc.textSecondary }]}>
-                    Deadline: {formatDate(program.applicationDeadline)}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Users color="#3B82F6" size={16} />
-                  <Text style={[styles.detailText, { color: tc.textSecondary }]}>
-                    {program.approvedApplicants}/{program.totalApplicants} approved ({approvalRate}%)
-                  </Text>
-                </View>
-              </View>
+        <View style={[styles.statsBox, { backgroundColor: tc.card, borderColor: tc.border }]}>
+          <Text style={[styles.statValue, { color: '#F59E0B' }]}>{pendingApps.length}</Text>
+          <Text style={[styles.statLabel, { color: tc.textMuted }]}>Pending Applications</Text>
+        </View>
 
-              {/* Eligibility Criteria */}
-              <View style={[styles.criteriaSection, { backgroundColor: tc.screenSecondary }]}>
-                <Text style={[styles.criteriaTitle, { color: tc.text }]}>Eligibility Criteria:</Text>
-                {program.eligibilityCriteria.slice(0, 2).map((criteria, index) => (
-                  <Text key={index} style={[styles.criteriaText, { color: tc.textMuted }]}>• {criteria}</Text>
-                ))}
-                {program.eligibilityCriteria.length > 2 && (
-                  <Text style={[styles.moreText, { color: tc.textMuted }]}>
-                    +{program.eligibilityCriteria.length - 2} more criteria
-                  </Text>
-                )}
-              </View>
-
-              {/* Progress Bar */}
-              <View style={styles.progressSection}>
-                <View style={styles.progressHeader}>
-                  <Text style={[styles.progressLabel, { color: tc.textMuted }]}>Disbursement Progress</Text>
-                  <Text style={[styles.progressValue, { color: tc.text }]}>
-                    {formatCurrency(program.totalDisbursed)}
-                  </Text>
-                </View>
-                <View style={[styles.progressBar, { backgroundColor: tc.border }]}>
-                  <View 
-                    style={[
-                      styles.progressFill,
-                      { 
-                        width: `${Math.min((program.totalDisbursed / (program.maxAmount * program.totalApplicants)) * 100, 100)}%`,
-                        backgroundColor: getStatusColor(program.status)
-                      }
-                    ]} 
-                  />
-                </View>
-              </View>
-
-              {/* Action Buttons */}
+        <View style={[styles.createBox, { backgroundColor: tc.card, borderColor: tc.border }]}>
+          <Text style={[styles.createTitle, { color: tc.text, marginBottom: 10 }]}>Farmer Requests (Accept / Reject)</Text>
+          {appsLoading && <ActivityIndicator size="small" color="#22C55E" />}
+          {!!appsError && <Text style={{ color: '#DC2626' }}>{appsError}</Text>}
+          {!appsLoading && !appsError && pendingApps.length === 0 && (
+            <Text style={{ color: tc.textMuted }}>No pending applications right now.</Text>
+          )}
+          {!appsLoading && !appsError && pendingApps.map((app) => (
+            <View key={app.applicationId} style={[styles.requestCard, { borderColor: tc.border, backgroundColor: tc.inputBg }]}>
+              <Text style={[styles.requestTitle, { color: tc.text }]}>{app.subsidyTitle}</Text>
+              <Text style={{ color: tc.textSecondary, fontSize: 12 }}>Farmer: {app.farmerName}</Text>
+              {!!app.farmerLocation && <Text style={{ color: tc.textMuted, fontSize: 12 }}>Location: {app.farmerLocation}</Text>}
+              {!!app.applyNote && <Text style={{ color: tc.textMuted, fontSize: 12, marginTop: 4 }}>Note: {app.applyNote}</Text>}
               <View style={styles.cardActions}>
-                <TouchableOpacity 
-                  style={[
-                    styles.toggleButton,
-                    { backgroundColor: program.status === 'active' ? '#F59E0B' : '#22C55E' }
-                  ]}
-                  onPress={() => handleToggleStatus(program.id, program.status)}
+                <TouchableOpacity
+                  style={[styles.toggleButton, { backgroundColor: '#22C55E' }]}
+                  onPress={() => decideApplication(app.applicationId, 'accepted')}
                 >
-                  <Text style={styles.toggleButtonText}>
-                    {program.status === 'active' ? 'Pause' : 'Activate'}
-                  </Text>
+                  <Text style={styles.toggleButtonText}>Accept</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.viewButton, { backgroundColor: tc.inputBg, borderColor: tc.border, borderWidth: 1 }]}>
-                  <Text style={[styles.viewButtonText, { color: tc.textSecondary }]}>View Details</Text>
+                <TouchableOpacity
+                  style={[styles.toggleButton, { backgroundColor: '#EF4444' }]}
+                  onPress={() => decideApplication(app.applicationId, 'rejected')}
+                >
+                  <Text style={styles.toggleButtonText}>Reject</Text>
                 </TouchableOpacity>
               </View>
             </View>
-          );
-        })}
+          ))}
+        </View>
 
-        {filteredPrograms.length === 0 && (
+        <View style={[styles.searchSection, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
+          <View style={[styles.searchContainer, { backgroundColor: tc.inputBg }]}>
+            <Search color={tc.textMuted} size={20} />
+            <TextInput
+              style={[styles.searchInput, { color: tc.text }]}
+              placeholder="Search programs..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor={tc.textMuted}
+            />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+            {filters.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.filterButton,
+                  { backgroundColor: tc.inputBg, borderColor: tc.border },
+                  selectedFilter === filter.id && styles.activeFilterButton,
+                ]}
+                onPress={() => setSelectedFilter(filter.id as SubsidyStatus)}
+              >
+                <Text style={[styles.filterText, { color: tc.textSecondary }, selectedFilter === filter.id && styles.activeFilterText]}>
+                  {filter.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {loading && (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color="#22C55E" />
+          </View>
+        )}
+        {!!error && (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: '#DC2626' }]}>{error}</Text>
+          </View>
+        )}
+        {!loading && !error && items.map((item) => renderSubsidyCard(item))}
+        {!loading && !error && !items.length && (
           <View style={styles.emptyState}>
             <DollarSign color={tc.textMuted} size={48} />
             <Text style={[styles.emptyTitle, { color: tc.text }]}>No programs found</Text>
-            <Text style={[styles.emptyText, { color: tc.textMuted }]}>
-              {searchQuery ? 'Try adjusting your search terms' : 'No programs match the selected filter'}
-            </Text>
+            <Text style={[styles.emptyText, { color: tc.textMuted }]}>Try changing filter or add a new subsidy.</Text>
           </View>
         )}
       </ScrollView>
@@ -425,13 +363,12 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   addButton: {
-    flexDirection: 'row',
     backgroundColor: '#22C55E',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
-    gap: 4,
+    marginTop: 6,
   },
   addButtonText: {
     color: 'white',
@@ -504,6 +441,74 @@ const styles = StyleSheet.create({
   },
   programsContent: {
     padding: 16,
+  },
+  createBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  createHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  createTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 8,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  half: {
+    flex: 1,
+  },
+  hint: {
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  statsBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  requestCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  requestTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  metaId: {
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  subList: {
+    marginTop: 8,
+  },
+  subListLabel: {
+    fontWeight: '600',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  subCard: {
+    marginBottom: 8,
+    borderStyle: 'dashed',
   },
   programCard: {
     backgroundColor: 'white',

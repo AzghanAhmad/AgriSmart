@@ -1,6 +1,6 @@
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Image } from 'react-native';
-import { Users, FileText, MapPin, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock } from 'lucide-react-native';
+import { Users, FileText, MapPin, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, DollarSign } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -27,12 +27,39 @@ export default function AdminDashboardScreen() {
     return translate('adminGoodEvening', language);
   }, [language]);
 
-  const { total, items, loading: detectionsLoading, error: detectionsError } = useAdminDetections(1, 10);
+  const {
+    total,
+    items,
+    loading: detectionsLoading,
+    error: detectionsError,
+    refresh: refreshDetections,
+  } = useAdminDetections(1, 10);
   const { items: pendingAlerts, loading: alertsLoading, approveAlert, error: alertsError } = useOutbreakAlerts('pending');
-  const { data: overview, loading: overviewLoading } = useAdminDashboardOverview();
+  const { data: overview, loading: overviewLoading, refresh: refreshOverview } = useAdminDashboardOverview();
   const registrationTrend = useAdminTrend('registrations', registrationRange);
   const cropTrend = useAdminTrend('crops', cropRange);
   const alertTrend = useAdminTrend('alerts', alertRange);
+  const refreshRegistrationTrend = registrationTrend.refresh;
+  const refreshCropTrend = cropTrend.refresh;
+  const refreshAlertTrend = alertTrend.refresh;
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      refreshOverview();
+      refreshDetections();
+      refreshRegistrationTrend();
+      refreshCropTrend();
+      refreshAlertTrend();
+    }, 30000);
+
+    return () => clearInterval(id);
+  }, [
+    refreshAlertTrend,
+    refreshCropTrend,
+    refreshDetections,
+    refreshOverview,
+    refreshRegistrationTrend,
+  ]);
 
   const activityMeta = useMemo(
     () => ({
@@ -316,7 +343,11 @@ export default function AdminDashboardScreen() {
       <View style={styles.quickActionsSection}>
         <Text style={[styles.sectionTitle, { color: tc.text }]}>{translate('quickActions', language)}</Text>
         <View style={styles.actionsGrid}>
-          <TouchableOpacity style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}
+            onPress={() => router.push('/(admin)/farmers')}
+            activeOpacity={0.8}
+          >
             <Users color="#22C55E" size={32} />
             <Text style={[styles.actionText, { color: tc.textSecondary }]}>{translate('adminManageFarmers', language)}</Text>
           </TouchableOpacity>
@@ -327,11 +358,19 @@ export default function AdminDashboardScreen() {
             <MapPin color="#3B82F6" size={32} />
             <Text style={[styles.actionText, { color: tc.textSecondary }]}>{translate('adminViewHeatmap', language)}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}
+            onPress={() => router.push('/(admin)/reports')}
+            activeOpacity={0.8}
+          >
             <FileText color="#F59E0B" size={32} />
             <Text style={[styles.actionText, { color: tc.textSecondary }]}>{translate('adminReviewReports', language)}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: tc.card, borderWidth: 1, borderColor: tc.border }]}
+            onPress={() => router.push('/(admin)/subsidies')}
+            activeOpacity={0.8}
+          >
             <DollarSign color="#EF4444" size={32} />
             <Text style={[styles.actionText, { color: tc.textSecondary }]}>{translate('adminManageSubsidies', language)}</Text>
           </TouchableOpacity>

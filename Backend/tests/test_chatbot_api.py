@@ -2,7 +2,8 @@ def test_chatbot_health(client):
     r = client.get("/api/chatbot/health")
     assert r.status_code == 200
     j = r.get_json()
-    assert j["status"] == "ok"
+    # Accept legacy + current health statuses.
+    assert j["status"] in ("ok", "healthy")
     assert j["service"] == "chatbot"
 
 

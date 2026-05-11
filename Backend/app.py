@@ -2,12 +2,24 @@ from flask import Flask, request, jsonify, Response, send_file, make_response
 from flask_cors import CORS
 from werkzeug.utils import safe_join
 import os
+import sys
 import logging
 import requests
 from sqlalchemy import text
+
+# Ensure sibling packages (e.g. common/) are importable when running:
+#   cd Backend && python app.py
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 try:
     from .db import Base, engine
     from .schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401 — register tables
+    from .schemas.subsidy import SubsidyProgram  # noqa: F401 — register tables
+    from .schemas.subsidy_application import SubsidyApplication  # noqa: F401 — register tables
+    from .schemas.system_setting import SystemSetting  # noqa: F401 — register tables
     from .routes.farmer import farmer_bp
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp
@@ -35,6 +47,9 @@ except ImportError:
     # Fallback for running as a script: python Backend/app.py
     from db import Base, engine
     from schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401
+    from schemas.subsidy import SubsidyProgram  # noqa: F401
+    from schemas.subsidy_application import SubsidyApplication  # noqa: F401
+    from schemas.system_setting import SystemSetting  # noqa: F401
     from routes.farmer import farmer_bp
     from routes.admin import admin_bp
     from routes.auth import auth_bp

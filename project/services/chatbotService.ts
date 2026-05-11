@@ -3,6 +3,31 @@ import { getApiBaseUrl } from '@/utils/env';
 import { apiPost } from '@/utils/api';
 
 const SESSION_KEY = 'agri_chatbot_session_id';
+const REPLY_LANGUAGE_KEY = 'agri_chatbot_reply_language';
+
+/** Bot answer language: English or Urdu (Arabic script) only. */
+export type ChatbotReplyLanguage = 'en' | 'urdu_script';
+
+export async function getStoredReplyLanguage(): Promise<ChatbotReplyLanguage> {
+  try {
+    const v = await AsyncStorage.getItem(REPLY_LANGUAGE_KEY);
+    if (v === 'urdu_script' || v === 'en') {
+      return v;
+    }
+    // Migrate old Roman Urdu preset → Urdu script
+    if (v === 'roman_urdu') {
+      await AsyncStorage.setItem(REPLY_LANGUAGE_KEY, 'urdu_script');
+      return 'urdu_script';
+    }
+  } catch {
+    // ignore
+  }
+  return 'en';
+}
+
+export async function saveReplyLanguage(mode: ChatbotReplyLanguage): Promise<void> {
+  await AsyncStorage.setItem(REPLY_LANGUAGE_KEY, mode);
+}
 
 /** Thrown when GET/POST /api/chatbot/conversations* returns HTML 404 (old backend without these routes). */
 export class ConversationsApiMissingError extends Error {
@@ -94,6 +119,8 @@ export type ChatbotSendOptions = {
   fromVoice?: boolean;
   /** Optional DB-backed conversation id for authenticated mode */
   conversationId?: string | null;
+  /** Force assistant reply language (English or Urdu script) */
+  replyLanguage?: ChatbotReplyLanguage;
 };
 
 /**
@@ -222,16 +249,19 @@ export async function sendChatbotMessage(
   language: 'en' | 'ur' = 'en',
   options?: ChatbotSendOptions
 ): Promise<ChatbotChatResponse> {
+  const replyLang = options?.replyLanguage ?? 'en';
   const body: {
     message: string;
     language: 'en' | 'ur';
     from_voice: boolean;
+    reply_language: ChatbotReplyLanguage;
     session_id?: string;
     conversation_id?: string;
   } = {
     message,
     language: language === 'ur' ? 'ur' : 'en',
     from_voice: options?.fromVoice === true,
+    reply_language: replyLang,
   };
   if (sessionId) {
     body.session_id = sessionId;

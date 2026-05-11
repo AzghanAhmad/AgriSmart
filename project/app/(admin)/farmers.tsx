@@ -10,8 +10,8 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { Search, Users, MapPin, Phone, Mail, MoveVertical as MoreVertical, CircleCheck as CheckCircle, X } from 'lucide-react-native';
-import { apiGet } from '@/utils/api';
+import { Search, Users, MapPin, Phone, Mail, Shield, Trash2, Ban, CircleCheck as CheckCircle, X } from 'lucide-react-native';
+import { apiGet, apiPost, apiDelete } from '@/utils/api';
 import { useTheme } from '@/contexts/ThemeContext';
 
 interface Farmer {
@@ -23,6 +23,8 @@ interface Farmer {
   latitude: number | null;
   longitude: number | null;
   registrationDate: string | null;
+  restrictedUntil?: string | null;
+  restrictionReason?: string | null;
 }
 
 export default function FarmersScreen() {
@@ -32,6 +34,7 @@ export default function FarmersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actingFarmerId, setActingFarmerId] = useState<string | null>(null);
 
   // Fetch farmers from API
   const fetchFarmers = async () => {
@@ -75,6 +78,85 @@ export default function FarmersScreen() {
       return `${farmer.latitude.toFixed(4)}, ${farmer.longitude.toFixed(4)}`;
     }
     return 'Location not set';
+  };
+
+  const isFarmerRestricted = (farmer: Farmer) => {
+    if (!farmer.restrictedUntil) return false;
+    return new Date(farmer.restrictedUntil).getTime() > Date.now();
+  };
+
+  const handleRestrictFarmer = (farmer: Farmer, days: number) => {
+    Alert.alert(
+      'Restrict Farmer Account',
+      `Restrict ${farmer.name}'s account for ${days} days?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restrict',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActingFarmerId(farmer.id);
+              await apiPost(`/api/admin/farmers/${encodeURIComponent(farmer.id)}/restrict`, { days });
+              await fetchFarmers();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to restrict account');
+            } finally {
+              setActingFarmerId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUnrestrictFarmer = (farmer: Farmer) => {
+    Alert.alert(
+      'Remove Restriction',
+      `Allow ${farmer.name} to access account again?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unrestrict',
+          onPress: async () => {
+            try {
+              setActingFarmerId(farmer.id);
+              await apiPost(`/api/admin/farmers/${encodeURIComponent(farmer.id)}/unrestrict`, {});
+              await fetchFarmers();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to remove restriction');
+            } finally {
+              setActingFarmerId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteFarmer = (farmer: Farmer) => {
+    Alert.alert(
+      'Delete Farmer Account',
+      `Delete ${farmer.name}'s account and related data? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActingFarmerId(farmer.id);
+              await apiDelete(`/api/admin/farmers/${encodeURIComponent(farmer.id)}`);
+              await fetchFarmers();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to delete farmer account');
+            } finally {
+              setActingFarmerId(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -185,6 +267,55 @@ export default function FarmersScreen() {
                   </Text>
                 </View>
               )}
+
+              {isFarmerRestricted(farmer) && (
+                <View style={styles.restrictedBanner}>
+                  <Ban color="white" size={14} />
+                  <Text style={styles.restrictedText}>
+                    Restricted until {new Date(farmer.restrictedUntil as string).toLocaleString()}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.actionsRow}>
+                {isFarmerRestricted(farmer) ? (
+                  <TouchableOpacity
+                    style={styles.unrestrictButton}
+                    onPress={() => handleUnrestrictFarmer(farmer)}
+                    disabled={actingFarmerId === farmer.id}
+                  >
+                    <CheckCircle color="white" size={16} />
+                    <Text style={styles.actionButtonText}>Unrestrict</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.restrictButton}
+                      onPress={() => handleRestrictFarmer(farmer, 7)}
+                      disabled={actingFarmerId === farmer.id}
+                    >
+                      <Shield color="white" size={16} />
+                      <Text style={styles.actionButtonText}>Restrict 7d</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.restrictButton}
+                      onPress={() => handleRestrictFarmer(farmer, 30)}
+                      disabled={actingFarmerId === farmer.id}
+                    >
+                      <Ban color="white" size={16} />
+                      <Text style={styles.actionButtonText}>Restrict 30d</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => handleDeleteFarmer(farmer)}
+                  disabled={actingFarmerId === farmer.id}
+                >
+                  <Trash2 color="white" size={16} />
+                  <Text style={styles.actionButtonText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
 
@@ -394,5 +525,59 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  restrictedBanner: {
+    marginTop: 12,
+    backgroundColor: '#DC2626',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  restrictedText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  actionsRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  restrictButton: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  unrestrictButton: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deleteButton: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

@@ -214,6 +214,7 @@ def chat():
     session_id = (data.get("session_id") or "").strip() or "default"
     language_hint = (data.get("language_hint") or "").strip()
     from_voice = bool(data.get("from_voice", False))
+    reply_language = (data.get("reply_language") or data.get("replyLanguage") or "").strip()
     prior_messages = data.get("prior_messages") or []
 
     try:
@@ -221,10 +222,21 @@ def chat():
         if prior_messages:
             bot = _get_graph_bot()
             lc_prior = _message_dicts_to_lc(prior_messages)
-            response_text = bot.chat_with_prior(lc_prior, message)
+            response_text = bot.chat_with_prior(
+                lc_prior,
+                message,
+                language_hint=language_hint,
+                from_voice=from_voice,
+                reply_language=reply_language,
+            )
         else:
             bot = _get_session_bot(session_id)
-            response_text = bot.chat(message, language_hint, from_voice)
+            response_text = bot.chat(
+                message,
+                language_hint,
+                from_voice,
+                reply_language=reply_language,
+            )
         return jsonify({"response": response_text or "", "session_id": session_id})
     except Exception as exc:
         logger.exception("Chat error: %s", exc)

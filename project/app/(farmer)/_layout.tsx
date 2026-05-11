@@ -121,6 +121,7 @@ export default function FarmerTabLayout() {
       <Tabs.Screen name="timelapse-view" options={{ href: null }} />
       <Tabs.Screen name="privacy-settings" options={{ href: null }} />
       <Tabs.Screen name="help-support" options={{ href: null }} />
+      <Tabs.Screen name="subsidies" options={{ href: null }} />
       <Tabs.Screen name="cure-guidance-history" options={{ href: null }} />
       <Tabs.Screen name="cure-guidance-detail" options={{ href: null }} />
       <Tabs.Screen name="personalized-schedule" options={{ href: null }} />

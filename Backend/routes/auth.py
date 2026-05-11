@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -7,9 +8,11 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 try:
     from ..db import SessionLocal
     from ..schemas.user import User
+    from ..schemas.system_setting import SystemSetting
 except ImportError:
     from db import SessionLocal
     from schemas.user import User
+    from schemas.system_setting import SystemSetting
 
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
@@ -39,12 +42,32 @@ def _user_to_json(user: User, req) -> dict:
         'farmCropTypes': user.farm_crop_types,
         'farmHealthScore': user.farm_health_score,
         'farmMonthlyRevenue': user.farm_monthly_revenue,
+        'restrictedUntil': user.restricted_until.isoformat() if getattr(user, 'restricted_until', None) else None,
+        'restrictionReason': getattr(user, 'restriction_reason', None),
     }
+
+
+def _is_user_restricted(user: User):
+    restricted_until = getattr(user, 'restricted_until', None)
+    if not restricted_until:
+        return False, None
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    until = restricted_until.replace(tzinfo=None)
+    if until <= now:
+        return False, None
+    return True, until
 
 
 def _get_serializer():
     secret = current_app.config.get('SECRET_KEY') or 'dev-insecure'
     return URLSafeTimedSerializer(secret_key=secret, salt='auth-token')
+
+
+def _is_maintenance_mode(db) -> bool:
+    row = db.query(SystemSetting).filter(SystemSetting.key == 'systemMaintenance').first()
+    if not row or row.value is None:
+        return False
+    return str(row.value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _create_token(payload: dict) -> str:
@@ -89,6 +112,18 @@ def get_auth_user():
         user = db.query(User).filter(User.user_id == uid).first()
         if not user:
             return None, (jsonify({'error': 'User not found'}), 404)
+        if (user.role or '').lower() == 'farmer' and _is_maintenance_mode(db):
+            return None, (jsonify({'error': 'System is under maintenance. Please try again later.'}), 503)
+        is_restricted, until = _is_user_restricted(user)
+        if is_restricted:
+            return None, (
+                jsonify({
+                    'error': 'Account is restricted by admin',
+                    'restrictedUntil': until.isoformat() if until else None,
+                    'restrictionReason': getattr(user, 'restriction_reason', None),
+                }),
+                403
+            )
         db_tv = int(getattr(user, 'token_version', 0) or 0)
         if token_tv != db_tv:
             return None, (jsonify({'error': 'Session expired. Please sign in again.'}), 401)
@@ -165,6 +200,15 @@ def login():
             user = db.query(User).filter(User.email == email).first()
             if not user or not check_password_hash(user.password_hash, password):
                 return jsonify({'error': 'Invalid email or password'}), 401
+            if (user.role or '').lower() == 'farmer' and _is_maintenance_mode(db):
+                return jsonify({'error': 'System is under maintenance. Please try again later.'}), 503
+            is_restricted, until = _is_user_restricted(user)
+            if is_restricted:
+                return jsonify({
+                    'error': 'Account is restricted by admin',
+                    'restrictedUntil': until.isoformat() if until else None,
+                    'restrictionReason': getattr(user, 'restriction_reason', None),
+                }), 403
 
             token = _create_token({
                 'uid': user.user_id,
@@ -208,6 +252,8 @@ def me():
         user = db.query(User).filter(User.user_id == payload.get('uid')).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
+        if (user.role or '').lower() == 'farmer' and _is_maintenance_mode(db):
+            return jsonify({'error': 'System is under maintenance. Please try again later.'}), 503
         token_tv = int(payload.get('tv', 0) or 0)
         if token_tv != int(getattr(user, 'token_version', 0) or 0):
             return jsonify({'error': 'Session expired. Please sign in again.'}), 401

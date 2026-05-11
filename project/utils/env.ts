@@ -4,8 +4,8 @@ import Constants from 'expo-constants';
 // Single source of truth for the backend URL.
 // Android Emulator must use 10.0.2.2 to reach your laptop localhost.
 const API_BASE_URL = Platform.OS === 'android'
-  ? 'http://192.168.100.15:5000'
-  : 'http://127.0.0.1:5000';
+  ? 'http://192.168.1.21:5000'
+  : 'http://192.168.1.21:5000';
 
 /**
  * Get the backend API URL - Always uses backend server's network IP
@@ -27,7 +27,7 @@ export function getApiBaseUrl(): string {
 
   if (__DEV__) {
     if (Platform.OS === 'android') {
-      const url = 'http://192.168.100.15:5000';
+      const url = 'http://192.168.1.21:5000';
       console.warn(
         '📡 API base (Android emulator default):',
         url,
@@ -45,7 +45,7 @@ export function getApiBaseUrl(): string {
     return url;
   }
 
-  const lastResort = 'http://192.168.1.13:5000';
+  const lastResort = 'http://192.168.1.21:5000';
   console.warn('📡 API base: set extra.API_BASE_URL for production; using', lastResort);
   return lastResort;
 }
@@ -89,7 +89,7 @@ export async function testBackendConnection(): Promise<boolean> {
     console.error('');
     console.error('🔧 Troubleshooting Steps:');
     console.error('   1. Start backend: cd Backend && python app.py');
-    console.error('   2. Check backend shows "Running on http://192.168.100.15:5000"');
+    console.error('   2. Check backend shows "Running on http://192.168.1.21:5000"');
     console.error(`   3. Test in browser:  ${API_BASE_URL}/health`);
     console.error('   4. Verify IP unchanged: ipconfig | findstr IPv4');
     console.error('   5. Check Windows Firewall allows port 5000');

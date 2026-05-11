@@ -98,9 +98,11 @@ def _should_print_context_to_console() -> bool:
 class AgriState(TypedDict):
     messages: Annotated[List, add_messages]
     query: str
-    language: str        # "roman_urdu" | "urdu_script" | "english"
+    language: str        # "english" | "urdu_script" (Roman Urdu input maps to urdu_script)
     language_hint: str   # from app: "ur" | "en" | ""
     from_voice: bool     # True when message came from speech-to-text (mic)
+    # Output: "" = follow query; "en" / "english" → English; "urdu_script" / "ur" → Urdu script
+    reply_language: str
     context: str
     response: str
 
@@ -138,46 +140,6 @@ llm = ChatGroq(
     temperature=_CHATBOT_TEMP,
     max_tokens=_CHATBOT_MAX_TOKENS,
 )
-
-# ── Prompts ───────────────────────────────────────────────────────────
-ROMAN_URDU_PROMPT = """<s>[INST] Aap AgriSmart hain, Pakistani kisan bhaion ke liye ek AI zari assistant.
-Aap wheat (gandum), rice (chawal), aur cotton (kapas) ke expert hain.
-
-ZAROORI RULES:
-- HAMESHA Roman Urdu mein jawab do
-- Simple aur kisan-friendly language use karo
-- Disease puchne par: symptoms, dawaai, aur bachao tino batao
-- Short aur clear jawab do, zyada lamba mat karo
-
-Agriculture Documents se Maloomat:
-{context}
-
-Sawal: {query} [/INST]
-Roman Urdu mein jawab:"""
-
-ENGLISH_PROMPT = """<s>[INST] You are AgriSmart, an AI agricultural assistant for Pakistani farmers.
-You specialize in wheat, rice, and cotton crops in Pakistan.
-
-RULES:
-- Answer in simple, clear English
-- For disease questions: mention symptoms, treatment, and prevention
-- Keep answers practical and farmer-friendly
-- Use the context provided below
-
-Context from Agricultural Documents:
-{context}
-
-Question: {query} [/INST]
-Answer:"""
-
-URDU_SCRIPT_PROMPT = """<s>[INST] آپ AgriSmart ہیں، پاکستانی کسانوں کے لیے ایک زرعی معاون۔
-گندم، چاول اور کپاس کے ماہر ہیں۔
-
-سیاق و سباق:
-{context}
-
-سوال: {query} [/INST]
-جواب:"""
 
 # ── Language Detection ────────────────────────────────────────────────
 ROMAN_URDU_WORDS = {
@@ -286,6 +248,67 @@ def _normalize_lang_hint(raw: str) -> str:
     return base
 
 
+def _normalize_reply_language(raw: str) -> str:
+    """
+    Map client reply_language to '', 'english', or 'urdu_script'.
+    Empty / auto / follow → '' (use query-based detection).
+    Legacy 'roman_urdu' is treated as Urdu script (product: no Latin-script Urdu replies).
+    """
+    h = (raw or "").strip().lower().replace("-", "_")
+    if not h or h in ("auto", "follow", "detect", "match"):
+        return ""
+    if h in ("en", "english", "eng"):
+        return "english"
+    if h in ("roman_urdu", "romanurdu", "ur_roman", "roman"):
+        return "urdu_script"
+    if h in ("urdu_script", "urdu", "ur_script", "script", "ur"):
+        return "urdu_script"
+    return ""
+
+
+def _locked_reply_format_stanza(state: AgriState) -> str:
+    """
+    When the app sends a fixed reply_language, prior turns may still be in another script.
+    Models often mirror recent assistant text; this block breaks that.
+    """
+    forced = _normalize_reply_language(state.get("reply_language") or "")
+    if not forced:
+        return ""
+    if forced == "english":
+        desc = "English only, using Latin letters"
+    else:
+        desc = "Urdu only, using Arabic script (Nastaliq)"
+    return (
+        "\n\nLOCKED REPLY FORMAT (the farmer chose this in the app):\n"
+        f"- Your WHOLE answer must be in: {desc}.\n"
+        "- Earlier assistant messages in this chat may be in a different language or script.\n"
+        "- Ignore their script completely. Do NOT continue in the same script as the last assistant message.\n"
+        "- Follow ONLY the language rules in this system message for this reply.\n"
+    )
+
+
+def _output_script_constraints(language: str) -> str:
+    """
+    PDF chunks and chat history often contain Roman Urdu; models echo it unless told not to.
+    This block is appended last so it wins over noisy context.
+    """
+    if language == "urdu_script":
+        return (
+            "\n\nOUTPUT SCRIPT (mandatory — read last):\n"
+            "- Write the entire answer in Urdu using Arabic script only (e.g. گندم، بیماری).\n"
+            "- Do NOT use Roman Urdu (Urdu spelled with A–Z letters like gandum, ilaj, khet).\n"
+            "- Do NOT answer in plain English only; mix is not allowed — Arabic-script Urdu for all explanatory text.\n"
+            "- If the PDF lines below are in Roman Urdu or English, translate the meaning into Arabic-script Urdu.\n"
+        )
+    return (
+        "\n\nOUTPUT SCRIPT (mandatory — read last):\n"
+        "- Write the entire answer in normal English using the Latin alphabet only.\n"
+        "- Do NOT use Roman Urdu (Urdu written with English letters, e.g. 'gandum mein zang').\n"
+        "- Do NOT use Arabic script unless quoting a proper noun that must stay in Urdu.\n"
+        "- If the PDF lines below are in Roman Urdu or Urdu script, translate the facts into clear English.\n"
+    )
+
+
 def _trim_repetition_loops(text: str, min_repeat: int = 7) -> str:
     """
     LLMs sometimes degenerate into repeating the same short n-gram forever (e.g. 'ke pedon ke pedon ...').
@@ -333,22 +356,28 @@ def _prior_messages_plus_current_user(state: AgriState) -> List[Any]:
 
 def detect_language_node(state: AgriState) -> AgriState:
     query = state["query"]
-    # STRICT RULE (per product requirement):
-    # - If user types Urdu script → reply in Urdu script only.
-    # - If user types Roman Urdu → reply in Roman Urdu only.
-    # - Otherwise → reply in English only.
-    #
-    # We intentionally do NOT force language from UI hint. The reply language must follow the user's message.
+    # Default: English for Latin queries; Urdu script for Arabic script or Roman Urdu input.
     if re.search(r"[\u0600-\u06FF]", query):
-        lang = "urdu_script"
+        detected = "urdu_script"
     elif _looks_like_roman_urdu(query):
-        lang = "roman_urdu"
+        detected = "urdu_script"
     else:
+        detected = "english"
+
+    mode = _normalize_reply_language(state.get("reply_language") or "")
+    if mode == "english":
         lang = "english"
+    elif mode == "urdu_script":
+        lang = "urdu_script"
+    else:
+        lang = detected
 
     hint = _normalize_lang_hint(state.get("language_hint") or "")
     from_voice = bool(state.get("from_voice"))
-    print(f"Language detected (strict): {lang} (hint={hint!r}, from_voice={from_voice})")
+    print(
+        f"Language: detected={detected} reply_mode={mode!r} final={lang} "
+        f"(hint={hint!r}, from_voice={from_voice})"
+    )
     return {**state, "language": lang}
 
 
@@ -468,25 +497,20 @@ def generate_response_node(state: AgriState) -> AgriState:
     context  = state["context"]
     language = state["language"]
 
-    # Build system message based on language
-    if language == "roman_urdu":
-        system_msg = """Aap AgriSmart hain, Pakistani kisan bhaion ke liye ek AI zari assistant.
-Aap wheat (gandum), rice (chawal), aur cotton (kapas) ke expert hain.
-HAMESHA Roman Urdu mein jawab do — yaani Urdu words ko English letters mein likho.
-Simple, short aur kisan-friendly jawab do.
-Disease puchne par: symptoms, dawaai, aur bachao tino batao."""
-        system_msg += "\n\nZAROORI: Kabhi bhi ek hi chhoti phrase (2–4 alfaaz) ko baar baar repeat mat karo. Jawab complete ho jaye to ruk jao; ghair zaroori repetition mat karo."
-
-    elif language == "urdu_script":
+    # Build system message: English or Urdu script only (no Roman Urdu replies).
+    if language == "urdu_script":
         system_msg = """آپ AgriSmart ہیں، پاکستانی کسانوں کے لیے ایک زرعی معاون۔
-گندم، چاول اور کپاس کے ماہر ہیں۔ اردو میں جواب دیں۔
+گندم، چاول اور کپاس کے ماہر ہیں۔
+پورا جواب اردو رسم الخط (عربی حروف) میں دیں — رومن اردو (انگریزی حروف) میں نہ لکھیں۔
 ایک ہی مختصر جملے کو بار بار دہرائیں نہیں؛ جواب مکمل ہو جائے تو رک جائیں۔"""
 
     else:
         system_msg = """You are AgriSmart, an expert agricultural assistant for farmers in Pakistan.
 Focus on wheat, rice, and cotton (local practices, seasons, and common problems).
 
-Answer only in clear, simple English. Use short sentences and bullet points when listing steps.
+Answer only in clear, simple English using standard Latin letters.
+Do NOT answer in Roman Urdu (Urdu spelled with English letters).
+Use short sentences and bullet points when listing steps.
 Be practical: say what to do, roughly when, and what to watch for.
 For diseases or pests: symptoms first, then treatment or spray options, then prevention.
 Stay concise; avoid jargon unless you explain it in one line."""
@@ -499,10 +523,13 @@ Stay concise; avoid jargon unless you explain it in one line."""
         "- If the answer is not explicitly supported by the context, say you don't have it in the PDFs and ask a clarifying question.\n"
         "- Do NOT use general world knowledge, guesses, or training data.\n"
         "- If the user asks something unrelated to agriculture, politely refuse and ask an agriculture-related question.\n"
+        "- The PDF text may be in English, Urdu script, or Roman Urdu; still follow OUTPUT SCRIPT rules — do not copy Roman Urdu style when English is required, and do not answer in Roman Urdu when Urdu script is required.\n"
     )
 
     # Add context to system message
     system_msg += f"\n\nPDF Context (only source you may use):\n{context}"
+    system_msg += _locked_reply_format_stanza(state)
+    system_msg += _output_script_constraints(language)
 
     if _should_print_context_to_console():
         print("\n" + "=" * 72)
@@ -522,9 +549,7 @@ Stay concise; avoid jargon unless you explain it in one line."""
 
     except Exception as e:
         print(f"LLM Error: {e}")
-        if language == "roman_urdu":
-            response_text = "Maafi chahta hun, abhi jawab dene mein masla aa gaya. Thodi der baad dobara try karein."
-        elif language == "urdu_script":
+        if language == "urdu_script":
             response_text = "معذرت، ابھی جواب دینے میں مسئلہ آگیا۔ دوبارہ کوشش کریں۔"
         else:
             response_text = "Sorry, I encountered an error. Please try again."
@@ -549,25 +574,22 @@ def direct_response_node(state: AgriState) -> AgriState:
     lang  = state["language"]
     query = state["query"]
 
-    if lang == "roman_urdu":
-        system = (
-            "Aap AgriSmart hain, Pakistani kisan bhaion ke liye ek zari assistant.\n"
-            "Roman Urdu mein short, friendly jawab do.\n"
-            "Agar sawal zaraat/farming se related NAHI hai, to politely refuse karo aur kaho ke main sirf zaraat se related sawalat ka jawab deta hun.\n"
-            "Phir user ko guide karo ke wheat/rice/cotton, disease, keere, khad, paani/abpashi, ya soil ke bare mein puchein."
-        )
-    elif lang == "urdu_script":
+    if lang == "urdu_script":
         system = (
             "آپ AgriSmart ہیں۔ مختصر اور دوستانہ جواب دیں۔\n"
+            "صرف اردو رسم الخط میں لکھیں — رومن اردو استعمال نہ کریں۔\n"
             "اگر سوال زراعت سے متعلق نہیں ہے تو مؤدبانہ انکار کریں اور بتائیں کہ آپ صرف زراعت سے متعلق سوالات کے جواب دیتے ہیں۔\n"
             "پھر صارف کو گندم/چاول/کپاس، بیماری، کیڑے، کھاد، آبپاشی، یا مٹی کے بارے میں سوال کرنے کو کہیں۔"
         )
     else:
         system = """You are AgriSmart, a farming assistant for Pakistan.
-Reply only in clear English. Keep answers short.
+Reply only in clear English (Latin letters). Do not use Roman Urdu. Keep answers short.
 If the question is not about agriculture, politely refuse and say you can only help with crops/soil/irrigation/pests/diseases/fertilizer.
 Then ask the user to rephrase their question in that scope.
 """
+
+    system += _locked_reply_format_stanza(state)
+    system += _output_script_constraints(lang)
 
     try:
         response_text = _invoke_generation_model(
@@ -579,7 +601,10 @@ Then ask the user to rephrase their question in that scope.
         response_text = _trim_repetition_loops(response_text)
     except Exception as e:
         print(f"LLM Error: {e}")
-        response_text = "Hello! Main AgriSmart hun. Apni fasal ke baare mein kuch puchein!"
+        if lang == "urdu_script":
+            response_text = "سلام! میں AgriSmart ہوں — فصل کے بارے میں پوچھیں۔"
+        else:
+            response_text = "Hello! I'm AgriSmart — ask me about your crops."
 
     messages = list(state.get("messages", []))
     updated = messages + [
@@ -624,13 +649,20 @@ class AgriSmartChatbot:
         self.graph   = build_graph()
         self.history = []
 
-    def chat(self, user_input: str, language_hint: str = "", from_voice: bool = False) -> str:
+    def chat(
+        self,
+        user_input: str,
+        language_hint: str = "",
+        from_voice: bool = False,
+        reply_language: str = "",
+    ) -> str:
         state = AgriState(
             messages=self.history,
             query=user_input,
             language="english",
             language_hint=language_hint or "",
             from_voice=from_voice,
+            reply_language=reply_language or "",
             context="",
             response="",
         )
@@ -638,7 +670,14 @@ class AgriSmartChatbot:
         self.history = result["messages"]
         return result["response"]
 
-    def chat_with_prior(self, prior_messages: List, user_input: str) -> str:
+    def chat_with_prior(
+        self,
+        prior_messages: List,
+        user_input: str,
+        language_hint: str = "",
+        from_voice: bool = False,
+        reply_language: str = "",
+    ) -> str:
         """
         Run one turn using prior LangChain messages (caller trims to last N, e.g. 20).
         Does not mutate self.history — for DB-backed threads.
@@ -647,8 +686,11 @@ class AgriSmartChatbot:
             messages=list(prior_messages),
             query=user_input,
             language="english",
+            language_hint=language_hint or "",
+            from_voice=from_voice,
+            reply_language=reply_language or "",
             context="",
-            response=""
+            response="",
         )
         result = self.graph.invoke(state)
         return result["response"]

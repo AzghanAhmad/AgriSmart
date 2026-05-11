@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator, ImageBackground } from 'react-native';
-import { Camera, Shield, Calendar, MapPin, MessageCircle, Sun, Droplets, Wind, Sparkles } from 'lucide-react-native';
+import { Camera, Shield, Calendar, MapPin, MessageCircle, Sun, Droplets, Wind, Sparkles, Briefcase } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -147,6 +147,7 @@ export default function FarmerHomeScreen() {
     { title: translate('cureGuidance', language), icon: Shield, color: '#3B82F6', route: '/cure-guidance-history' },
     { title: translate('farmingSchedule', language), icon: Calendar, color: '#F59E0B', route: '/schedule' },
     { title: translate('diseaseHeatmap', language), icon: MapPin, color: '#EF4444', route: '/heatmap' },
+    { title: translate('viewAvailableSubsidiesNav', language), icon: Briefcase, color: '#14B8A6', route: '/subsidies' },
     { title: translate('chatbot', language), icon: MessageCircle, color: '#8B5CF6', route: '/chatbot' },
   ];
 
