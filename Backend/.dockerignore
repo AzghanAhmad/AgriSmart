@@ -1,0 +1,10 @@
+models/
+datasets/
+*.pt
+*.pth
+*.bin
+*.safetensors
+**/__pycache__/
+venv/
+.venv/
+node_modules/

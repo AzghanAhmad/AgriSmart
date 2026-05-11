@@ -1,0 +1,13 @@
+flask
+flask-cors
+SQLAlchemy
+python-dotenv
+requests
+psycopg2-binary>=2.9
+
+# timelapse + preprocessing
+numpy
+pillow
+opencv-python
+scikit-learn
+pandas

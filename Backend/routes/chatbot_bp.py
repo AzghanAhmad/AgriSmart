@@ -6,10 +6,12 @@ HTTP API for the LangGraph + Chroma + Groq chatbot (Backend/chatbot/chatbot.py).
 - Legacy: `session_id` only (no Bearer token) keeps in-memory bot sessions.
 """
 import importlib.util
+import logging
 import os
 import sys
 import threading
 import uuid
+import requests
 from collections import OrderedDict
 from datetime import datetime
 
@@ -18,9 +20,19 @@ from flask import Blueprint, jsonify, request
 try:
     from ..db import SessionLocal
     from ..schemas.chat_conversation import ChatConversation, ChatMessage
+    from ..config import (
+        get_chatbot_service_url,
+        get_enable_local_chatbot_fallback,
+        get_internal_http_timeout,
+    )
 except ImportError:
     from db import SessionLocal
     from schemas.chat_conversation import ChatConversation, ChatMessage
+    from config import (
+        get_chatbot_service_url,
+        get_enable_local_chatbot_fallback,
+        get_internal_http_timeout,
+    )
 
 chatbot_bp = Blueprint("chatbot", __name__, url_prefix="/api/chatbot")
 
@@ -34,6 +46,10 @@ MAX_SESSIONS = 150
 
 # Last N LangChain messages passed into the graph (full history stays in DB)
 MESSAGE_WINDOW = 20
+CHATBOT_SERVICE_URL = get_chatbot_service_url().rstrip("/")
+INTERNAL_HTTP_TIMEOUT = get_internal_http_timeout()
+ENABLE_LOCAL_CHATBOT_FALLBACK = get_enable_local_chatbot_fallback()
+logger = logging.getLogger(__name__)
 
 
 def _load_chatbot_module():
@@ -101,6 +117,44 @@ def _rows_to_lc_messages(rows):
         elif r.role == "assistant":
             lc.append(AIMessage(content=r.content))
     return lc
+
+
+def _rows_to_message_dicts(rows):
+    payload = []
+    for r in rows:
+        if r.role in ("user", "assistant"):
+            payload.append({"role": r.role, "content": r.content})
+    return payload
+
+
+def _chatbot_service_chat(message: str, session_id: str, language_hint: str, from_voice: bool, prior_messages=None):
+    body = {
+        "message": message,
+        "session_id": session_id,
+        "language_hint": language_hint,
+        "from_voice": from_voice,
+    }
+    if prior_messages is not None:
+        body["prior_messages"] = prior_messages
+    return requests.post(
+        f"{CHATBOT_SERVICE_URL}/chat",
+        json=body,
+        timeout=INTERNAL_HTTP_TIMEOUT,
+    )
+
+
+def _strict_chatbot_unavailable_response():
+    return (
+        jsonify(
+            {
+                "status": "degraded",
+                "service": "backend",
+                "upstream": "chatbot-service",
+                "error": "chatbot-service unavailable",
+            }
+        ),
+        503,
+    )
 
 
 def _get_bot_for_session(session_id: str):
@@ -267,8 +321,32 @@ def chat():
             lc_full = _rows_to_lc_messages(rows)
             window = lc_full[-MESSAGE_WINDOW:] if len(lc_full) > MESSAGE_WINDOW else lc_full
 
-            bot = _get_graph_bot()
-            response_text = bot.chat_with_prior(window, message)
+            if CHATBOT_SERVICE_URL:
+                window_rows = rows[-MESSAGE_WINDOW:] if len(rows) > MESSAGE_WINDOW else rows
+                try:
+                    upstream = _chatbot_service_chat(
+                        message=message,
+                        session_id=session_id,
+                        language_hint=language_hint,
+                        from_voice=from_voice,
+                        prior_messages=_rows_to_message_dicts(window_rows),
+                    )
+                    data = upstream.json()
+                    if upstream.status_code >= 400:
+                        return jsonify({"error": data.get("error", "chatbot service error")}), upstream.status_code
+                    response_text = data.get("response", "")
+                except requests.RequestException as exc:
+                    logger.error("chatbot-service unavailable: %s", exc)
+                    if not ENABLE_LOCAL_CHATBOT_FALLBACK:
+                        return _strict_chatbot_unavailable_response()
+                    logger.warning("Triggering local chatbot fallback for conversation flow")
+                    bot = _get_graph_bot()
+                    response_text = bot.chat_with_prior(window, message)
+            else:
+                if not ENABLE_LOCAL_CHATBOT_FALLBACK:
+                    return _strict_chatbot_unavailable_response()
+                bot = _get_graph_bot()
+                response_text = bot.chat_with_prior(window, message)
             if response_text is None:
                 response_text = ""
             elif not isinstance(response_text, str):
@@ -311,8 +389,30 @@ def chat():
 
     # —— Legacy in-memory session (no auth / no conversation_id) ——
     try:
-        bot = _get_bot_for_session(session_id)
-        response_text = bot.chat(message, language_hint, from_voice)
+        if CHATBOT_SERVICE_URL:
+            try:
+                upstream = _chatbot_service_chat(
+                    message=message,
+                    session_id=session_id,
+                    language_hint=language_hint,
+                    from_voice=from_voice,
+                )
+                data = upstream.json()
+                if upstream.status_code >= 400:
+                    return jsonify({"error": data.get("error", "chatbot service error")}), upstream.status_code
+                response_text = data.get("response", "")
+            except requests.RequestException as exc:
+                logger.error("chatbot-service unavailable: %s", exc)
+                if not ENABLE_LOCAL_CHATBOT_FALLBACK:
+                    return _strict_chatbot_unavailable_response()
+                logger.warning("Triggering local chatbot fallback for legacy session flow")
+                bot = _get_bot_for_session(session_id)
+                response_text = bot.chat(message, language_hint, from_voice)
+        else:
+            if not ENABLE_LOCAL_CHATBOT_FALLBACK:
+                return _strict_chatbot_unavailable_response()
+            bot = _get_bot_for_session(session_id)
+            response_text = bot.chat(message, language_hint, from_voice)
         if response_text is None:
             response_text = ""
         elif not isinstance(response_text, str):
@@ -332,13 +432,25 @@ def reset():
     if not session_id:
         return jsonify({"error": "session_id is required"}), 400
 
-    with _lock:
-        bot = _sessions.pop(session_id, None)
-        if bot is not None and hasattr(bot, "reset"):
-            try:
-                bot.reset()
-            except Exception:
-                pass
+    if CHATBOT_SERVICE_URL:
+        try:
+            requests.post(
+                f"{CHATBOT_SERVICE_URL}/reset",
+                json={"session_id": session_id},
+                timeout=INTERNAL_HTTP_TIMEOUT,
+            )
+        except Exception:
+            pass
+    else:
+        if not ENABLE_LOCAL_CHATBOT_FALLBACK:
+            return jsonify({"ok": True, "session_id": session_id}), 200
+        with _lock:
+            bot = _sessions.pop(session_id, None)
+            if bot is not None and hasattr(bot, "reset"):
+                try:
+                    bot.reset()
+                except Exception:
+                    pass
 
     return jsonify({"ok": True, "session_id": session_id})
 
@@ -346,7 +458,7 @@ def reset():
 @chatbot_bp.route("/health", methods=["GET"])
 def chatbot_health():
     """Lightweight check that the route is registered (does not load Chroma)."""
-    return jsonify({"status": "ok", "service": "chatbot"})
+    return jsonify({"status": "healthy", "service": "chatbot"})
 
 
 @chatbot_bp.route("/warmup", methods=["POST", "GET"])
@@ -356,6 +468,16 @@ def warmup():
     /chat message does not pay the full load cost.
     """
     try:
+        if CHATBOT_SERVICE_URL:
+            try:
+                resp = requests.get(f"{CHATBOT_SERVICE_URL}/warmup", timeout=INTERNAL_HTTP_TIMEOUT)
+                return jsonify(resp.json()), resp.status_code
+            except requests.RequestException:
+                if not ENABLE_LOCAL_CHATBOT_FALLBACK:
+                    return _strict_chatbot_unavailable_response()
+                logger.warning("Triggering local chatbot fallback for warmup")
+        if not ENABLE_LOCAL_CHATBOT_FALLBACK and not CHATBOT_SERVICE_URL:
+            return _strict_chatbot_unavailable_response()
         _load_chatbot_module()
         return jsonify({"status": "ready", "chromadb": "loaded"})
     except Exception as e:

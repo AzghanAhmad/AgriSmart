@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: agrismart-postgres
+    restart: "no"
+    environment:
+      POSTGRES_DB: agrismart
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agrismart"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  yolo-service:
+    build:
+      context: .
+      dockerfile: docker/yolo.Dockerfile
+    container_name: agrismart-yolo
+    restart: "no"
+    environment:
+      YOLO_SERVICE_PORT: 8001
+      MODEL_DIR: /models
+      LOG_LEVEL: INFO
+      PYTHONPATH: /app
+      MODEL_DOWNLOAD_URL_WHEAT: ${MODEL_DOWNLOAD_URL_WHEAT:-}
+      MODEL_DOWNLOAD_URL_RICE: ${MODEL_DOWNLOAD_URL_RICE:-}
+      MODEL_DOWNLOAD_URL_COTTON: ${MODEL_DOWNLOAD_URL_COTTON:-}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  chatbot-service:
+    build:
+      context: .
+      dockerfile: docker/chatbot.Dockerfile
+    container_name: agrismart-chatbot
+    restart: "no"
+    environment:
+      CHATBOT_SERVICE_PORT: 8002
+      CHATBOT_MODULE_PATH: /app/Backend/chatbot/chatbot.py
+      LOG_LEVEL: INFO
+      PYTHONPATH: /app
+      HF_HOME: /models/hf-home
+      TRANSFORMERS_CACHE: /models/hf-cache
+      SENTENCE_TRANSFORMERS_HOME: /models/st-cache
+    ports:
+      - "8002:8002"
+    volumes:
+      - chroma_data:/app/Backend/chatbot/wheat_cotton_rice_db
+      - ./models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8002/ready"]
+      interval: 20s
+      timeout: 8s
+      retries: 15
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: agrismart-backend
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      yolo-service:
+        condition: service_healthy
+      chatbot-service:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/agrismart
+      ALLOWED_ORIGINS: "*"
+      SECRET_KEY: change-me
+      YOLO_SERVICE_URL: http://yolo-service:8001
+      CHATBOT_SERVICE_URL: http://chatbot-service:8002
+      ENABLE_LOCAL_YOLO_FALLBACK: "false"
+      ENABLE_LOCAL_CHATBOT_FALLBACK: "false"
+      INTERNAL_HTTP_TIMEOUT: 10
+      MODEL_DIR: /models
+      UPLOAD_ROOT: /app/Backend/static/uploads
+      LOG_LEVEL: INFO
+      PYTHONPATH: /app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./models:/models
+      - uploads_data:/app/Backend/static/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  chroma_data:
+  uploads_data:

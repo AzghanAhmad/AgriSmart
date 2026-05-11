@@ -1,7 +1,13 @@
 import os
 from dotenv import load_dotenv
+try:
+    from common.env import load_service_env
+except ImportError:
+    load_service_env = None
 
 load_dotenv()
+if load_service_env is not None:
+    load_service_env(os.path.dirname(__file__))
 
 def get_database_url() -> str:
     db_url = os.getenv('DATABASE_URL')
@@ -38,4 +44,37 @@ def get_gemini_api_key() -> str:
 def get_gemini_model() -> str:
     """Model id for google.generativeai (e.g. gemini-1.5-flash). gemini-pro is retired."""
     return os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
+
+
+def get_yolo_service_url() -> str:
+    return os.getenv('YOLO_SERVICE_URL', '').strip()
+
+
+def get_chatbot_service_url() -> str:
+    return os.getenv('CHATBOT_SERVICE_URL', '').strip()
+
+
+def get_internal_http_timeout() -> float:
+    raw = os.getenv('INTERNAL_HTTP_TIMEOUT', '60').strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return 60.0
+
+
+def get_backend_model_root() -> str:
+    return os.getenv('MODEL_DIR', os.path.join(os.path.dirname(__file__), 'models'))
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name, 'true' if default else 'false').strip().lower()
+    return raw in ('1', 'true', 'yes', 'on')
+
+
+def get_enable_local_yolo_fallback() -> bool:
+    return _bool_env('ENABLE_LOCAL_YOLO_FALLBACK', True)
+
+
+def get_enable_local_chatbot_fallback() -> bool:
+    return _bool_env('ENABLE_LOCAL_CHATBOT_FALLBACK', True)
 

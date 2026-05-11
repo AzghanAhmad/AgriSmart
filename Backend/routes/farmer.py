@@ -3,6 +3,7 @@ import uuid
 import datetime
 import math
 import io
+import logging
 from flask import Blueprint, request, jsonify, current_app, url_for, send_file
 from PIL import Image
 from sqlalchemy import func
@@ -11,7 +12,7 @@ try:
     from ..db import SessionLocal
     from ..schemas.detection import Detection, OutbreakAlert
     from ..schemas.guidance import DiseaseGuidance
-    from ..core.yolo import get_model_for_crop
+    from ..services.yolo_client import UpstreamServiceError, UpstreamUnavailableError, predict_from_bytes
     from ..core.outbreak_config import (
         cluster_sensitivity_percent,
         should_raise_outbreak_alert,
@@ -22,7 +23,7 @@ except ImportError:
     from db import SessionLocal
     from schemas.detection import Detection, OutbreakAlert
     from schemas.guidance import DiseaseGuidance
-    from core.yolo import get_model_for_crop
+    from services.yolo_client import UpstreamServiceError, UpstreamUnavailableError, predict_from_bytes
     from core.outbreak_config import (
         cluster_sensitivity_percent,
         should_raise_outbreak_alert,
@@ -30,6 +31,7 @@ except ImportError:
     )
 
 farmer_bp = Blueprint('farmer', __name__, url_prefix='/api/farmer')
+logger = logging.getLogger(__name__)
 
 @farmer_bp.route('/detections', methods=['POST'])
 def create_detection():
@@ -49,28 +51,12 @@ def create_detection():
         if not farmer_id:
             return jsonify({'error': 'Missing farmerId'}), 400
 
-        # Run prediction
-        model = get_model_for_crop(crop_type)
         image_bytes = file.read()
+        prediction = predict_from_bytes(image_bytes=image_bytes, crop_type=crop_type)
+        disease_name = prediction.get('disease', 'Healthy Crop')
+        confidence = float(prediction.get('confidence', 100.0) or 0)
+
         image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        results = model.predict(image)
-        detections = results[0]
-
-        prediction_list = []
-        for box in detections.boxes:
-            cls_id = int(box.cls)
-            conf = float(box.conf)
-            label = detections.names[cls_id]
-            confidence_pct = round(conf * 100, 2)
-            prediction_list.append({'label': label, 'confidence': confidence_pct})
-
-        if prediction_list:
-            top_pred = prediction_list[0]
-            disease_name = top_pred['label']
-            confidence = top_pred['confidence']
-        else:
-            disease_name = 'Healthy Crop'
-            confidence = 100.0
 
         # Persist detection
         detection_id = str(uuid.uuid4())
@@ -250,7 +236,16 @@ def create_detection():
         }), 201
 
     except Exception as e:
-        print('❌ Error creating detection:', str(e))
+        if isinstance(e, UpstreamUnavailableError):
+            return jsonify({
+                "status": "degraded",
+                "service": "backend",
+                "upstream": "yolo-service",
+                "error": "yolo-service unavailable",
+            }), 503
+        if isinstance(e, UpstreamServiceError):
+            return jsonify(e.payload), e.status_code
+        logger.exception('Error creating detection: %s', str(e))
         return jsonify({'error': 'Failed to create detection'}), 500
 
 
