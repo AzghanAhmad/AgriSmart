@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbot-service
+  namespace: agrismart
+spec:
+  type: ClusterIP
+  selector:
+    app: chatbot-service
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002

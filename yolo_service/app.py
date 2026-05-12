@@ -1,6 +1,8 @@
 import datetime
 import io
 import logging
+import os
+import time
 
 from flask import Flask, jsonify, request
 from PIL import Image
@@ -10,12 +12,31 @@ try:
     from .config import get_service_port
     from common.logging_utils import configure_logging
 except ImportError:
-    from core.yolo import get_model_for_crop, validate_dvc_model_paths
-    from config import get_service_port
+    from yolo_service.core.yolo import get_model_for_crop, validate_dvc_model_paths
+    from yolo_service.config import get_service_port
     from common.logging_utils import configure_logging
 
 app = Flask(__name__)
 logger = configure_logging("yolo-service")
+
+try:
+    from common.observability import register_flask_observability
+
+    register_flask_observability(app, "yolo-service", logger)
+except Exception as obs_exc:
+    logger.warning("Observability not fully enabled: %s", obs_exc)
+
+try:
+    from prometheus_client import Histogram
+
+    yolo_inference_seconds = Histogram(
+        "yolo_inference_duration_seconds",
+        "YOLO model.predict wall time (seconds)",
+        ["crop"],
+        buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+    )
+except ImportError:
+    yolo_inference_seconds = None
 
 
 @app.route("/health", methods=["GET"])
@@ -59,7 +80,13 @@ def predict(path_crop=None):
         file = request.files["file"]
         model = get_model_for_crop(crop_type)
         image = Image.open(io.BytesIO(file.read())).convert("RGB")
+        _t0 = time.perf_counter()
         detections = model.predict(image)[0]
+        if yolo_inference_seconds is not None:
+            try:
+                yolo_inference_seconds.labels(crop_type).observe(time.perf_counter() - _t0)
+            except Exception:
+                pass
 
         prediction_list = []
         for box in detections.boxes:
@@ -93,7 +120,11 @@ def predict(path_crop=None):
                 "timestamp": datetime.datetime.now().isoformat(),
             }
 
-        return jsonify(response)
+        model_version = (os.getenv("YOLO_MODEL_VERSION") or "unspecified").strip()
+        response["model_version"] = model_version
+        out = jsonify(response)
+        out.headers["X-Model-Version"] = model_version
+        return out
     except (ValueError, FileNotFoundError) as exc:
         logger.warning("Predict client error: %s", exc)
         return jsonify({"error": str(exc)}), 400

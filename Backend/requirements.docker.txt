@@ -1,5 +1,7 @@
 flask
 flask-cors
+flask-limiter>=3.8.0
+prometheus-client>=0.20.0
 SQLAlchemy
 python-dotenv
 requests
@@ -8,6 +10,6 @@ psycopg2-binary>=2.9
 # timelapse + preprocessing
 numpy
 pillow
-opencv-python
+opencv-python-headless
 scikit-learn
 pandas

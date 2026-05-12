@@ -4,7 +4,9 @@ from werkzeug.utils import safe_join
 import os
 import sys
 import logging
+import time
 import requests
+from requests.exceptions import RequestException, Timeout
 from sqlalchemy import text
 
 # Ensure sibling packages (e.g. common/) are importable when running:
@@ -43,8 +45,11 @@ try:
     from .core.seed_guidance import seed_guidance_if_needed
     from .core.seed_schedules import seed_schedules_if_needed
     from common.logging_utils import configure_logging
-except ImportError:
-    # Fallback for running as a script: python Backend/app.py
+except ImportError as exc:
+    # Fallback only when app is executed directly as `python Backend/app.py`.
+    # Do not swallow unrelated import errors (e.g. missing shared libs for cv2).
+    if __package__ not in (None, ""):
+        raise
     from db import Base, engine
     from schemas.chat_conversation import ChatConversation, ChatMessage  # noqa: F401
     from schemas.subsidy import SubsidyProgram  # noqa: F401
@@ -77,6 +82,32 @@ except ImportError:
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 logger = configure_logging("backend")
 logger.info("Backend service starting")
+
+
+def _http_get_with_retries(url: str, timeout: float, attempts: int = 3, delay_s: float = 0.5):
+    """
+    Best-effort retries for dependency probes (transient DNS / slow upstream on compose startup).
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return requests.get(url, timeout=timeout)
+        except Timeout as exc:
+            last_exc = exc
+            logger.warning(
+                "Dependency GET timed out (attempt %s/%s, timeout=%ss): %s",
+                attempt, attempts, timeout, url,
+            )
+        except RequestException as exc:
+            last_exc = exc
+            logger.warning(
+                "Dependency GET failed (attempt %s/%s): %s — %s",
+                attempt, attempts, url, exc,
+            )
+        if attempt < attempts:
+            time.sleep(delay_s)
+    assert last_exc is not None
+    raise last_exc
 # Timelapse JSON uploads send multiple base64 images; allow a generous body size
 app.config['MAX_CONTENT_LENGTH'] = 48 * 1024 * 1024
 # Configure CORS via env; default to permissive in dev
@@ -85,6 +116,34 @@ if allowed_origins == '*':
     CORS(app)
 else:
     CORS(app, resources={r"/*": {"origins": [o.strip() for o in allowed_origins.split(',') if o.strip()]}})
+
+try:
+    from common.observability import register_flask_observability
+
+    register_flask_observability(app, "backend", logger)
+except Exception as obs_exc:
+    logger.warning("Observability not fully enabled: %s", obs_exc)
+
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+
+    def _rate_limit_exempt():
+        p = (request.path or "")
+        return p in ("/health", "/ready", "/metrics") or p.startswith("/health/")
+
+    Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=[os.getenv("RATE_LIMIT_DEFAULT", "200 per minute")],
+        storage_uri=os.getenv("RATE_LIMIT_STORAGE_URI", "memory://"),
+        headers_enabled=True,
+        exempt_when=_rate_limit_exempt,
+    )
+except ImportError:
+    logger.warning("flask-limiter not installed; API rate limiting disabled")
+except Exception as rl_exc:
+    logger.warning("Rate limiting not configured: %s", rl_exc)
 
 # Static uploads (served under /static/uploads/...)
 # Note: static_folder is set in Flask() constructor above
@@ -247,8 +306,8 @@ def dependency_health():
     yolo_url = os.getenv("YOLO_SERVICE_URL", "").strip().rstrip("/")
     if yolo_url:
         try:
-            live_resp = requests.get(f"{yolo_url}/health", timeout=internal_http_timeout)
-            ready_resp = requests.get(f"{yolo_url}/ready", timeout=internal_http_timeout)
+            live_resp = _http_get_with_retries(f"{yolo_url}/health", internal_http_timeout)
+            ready_resp = _http_get_with_retries(f"{yolo_url}/ready", internal_http_timeout)
             ready_payload = ready_resp.json() if ready_resp.headers.get("content-type", "").startswith("application/json") else {}
             deps["yolo_service"] = {
                 "liveness": "healthy" if live_resp.status_code < 400 else "unhealthy",
@@ -258,6 +317,7 @@ def dependency_health():
             if ready_payload.get("error"):
                 deps["yolo_service"]["error"] = ready_payload.get("error")
         except Exception as exc:
+            logger.error("yolo_service dependency check failed: %s", exc)
             deps["yolo_service"] = {"status": "unhealthy", "error": str(exc)}
     else:
         deps["yolo_service"] = {
@@ -267,8 +327,8 @@ def dependency_health():
     # Chatbot service check
     if chatbot_service_url:
         try:
-            live_resp = requests.get(f"{chatbot_service_url}/health", timeout=internal_http_timeout)
-            ready_resp = requests.get(f"{chatbot_service_url}/ready", timeout=internal_http_timeout)
+            live_resp = _http_get_with_retries(f"{chatbot_service_url}/health", internal_http_timeout)
+            ready_resp = _http_get_with_retries(f"{chatbot_service_url}/ready", internal_http_timeout)
             ready_payload = ready_resp.json() if ready_resp.headers.get("content-type", "").startswith("application/json") else {}
             deps["chatbot_service"] = {
                 "liveness": "healthy" if live_resp.status_code < 400 else "unhealthy",
@@ -278,6 +338,7 @@ def dependency_health():
             if ready_payload.get("error"):
                 deps["chatbot_service"]["error"] = ready_payload.get("error")
         except Exception as exc:
+            logger.error("chatbot_service dependency check failed: %s", exc)
             deps["chatbot_service"] = {"status": "unhealthy", "error": str(exc)}
     else:
         deps["chatbot_service"] = {
@@ -293,6 +354,12 @@ def dependency_health():
         "service": "backend",
         "dependencies": deps,
     }), (200 if overall == "healthy" else 503)
+
+
+@app.route('/ready')
+def ready():
+    """Kubernetes readiness: backend is ready only when critical dependencies are healthy."""
+    return dependency_health()
 
 
 @app.route('/predict', methods=['POST'])

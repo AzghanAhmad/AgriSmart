@@ -18,6 +18,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 app = Flask(__name__)
 logger = configure_logging("chatbot-service")
+try:
+    from common.observability import register_flask_observability
+
+    register_flask_observability(app, "chatbot-service", logger)
+except Exception as obs_exc:
+    logger.warning("Observability not fully enabled: %s", obs_exc)
 _lock = threading.Lock()
 _sessions: "OrderedDict[str, object]" = OrderedDict()
 MAX_SESSIONS = get_max_sessions()

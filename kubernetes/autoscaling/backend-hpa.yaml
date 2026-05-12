@@ -1,0 +1,22 @@
+# Optional: horizontal scale backend. Requires metrics-server in cluster.
+# Validate: kubectl top pods -n agrismart
+# Note: chatbot/yolo often stay at replicas:1 while sharing RWO PVCs (single-node attachment).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: agrismart
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

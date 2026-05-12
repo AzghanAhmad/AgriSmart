@@ -1,0 +1,45 @@
+# Voluntary evictions (node drain) respect minAvailable during disruptions.
+# With replicas: 1, minAvailable: 1 blocks eviction unless a replacement is ready (rolling strategy).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: agrismart
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: yolo-service-pdb
+  namespace: agrismart
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: yolo-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: chatbot-service-pdb
+  namespace: agrismart
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: chatbot-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: agrismart
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres

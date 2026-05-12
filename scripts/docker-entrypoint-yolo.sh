@@ -6,6 +6,11 @@ echo "[yolo-service] startup"
 MODEL_DIR="${MODEL_DIR:-/models}"
 mkdir -p "$MODEL_DIR/wheat" "$MODEL_DIR/rice" "$MODEL_DIR/cotton"
 
+# Writable Ultralytics settings (avoids /root/.config warnings in read-only images)
+export YOLO_CONFIG_DIR="${YOLO_CONFIG_DIR:-/models/ultralytics-settings}"
+# Ultralytics writes under $YOLO_CONFIG_DIR/Ultralytics; ensure it exists and is writable.
+mkdir -p "$YOLO_CONFIG_DIR/Ultralytics"
+
 _download_if_missing() {
   crop="$1"
   url="$2"

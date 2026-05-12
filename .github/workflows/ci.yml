@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax check (compileall)
+        run: |
+          python -m compileall -q common Backend chatbot_service yolo_service ml_training
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [validate-python]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images (no push)
+        run: |
+          docker build -f docker/backend.Dockerfile -t agrismart-backend:ci .
+          docker build -f docker/chatbot.Dockerfile -t agrismart-chatbot:ci .
+          docker build -f docker/yolo.Dockerfile -t agrismart-yolo:ci .
+
+  kubernetes-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Kustomize build (base)
+        run: kubectl kustomize kubernetes/ > /tmp/base.yaml && test -s /tmp/base.yaml
+
+      - name: Kustomize build (production overlay)
+        run: kubectl kustomize kubernetes/overlays/production > /tmp/prod.yaml && test -s /tmp/prod.yaml
+
+      - name: kubectl apply dry-run (client)
+        run: |
+          kubectl apply --dry-run=client -k kubernetes/
+          kubectl apply --dry-run=client -k kubernetes/overlays/production/

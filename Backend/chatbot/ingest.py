@@ -1,5 +1,7 @@
 import os
+import shutil
 import sys
+import time
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PDF_DIR = os.path.join(_THIS_DIR, "pdfs")
@@ -92,11 +94,34 @@ def split_documents(documents):
     print(f"Total chunks created: {len(chunks)}")
     return chunks
 
+def _reset_chroma_persist_dir() -> None:
+    """Remove persisted Chroma data so a new index matches the installed chromadb client."""
+    if os.path.isdir(CHROMA_PATH):
+        shutil.rmtree(CHROMA_PATH)
+    os.makedirs(CHROMA_PATH, exist_ok=True)
+
+
+def _chroma_persistent_client():
+    """Use PersistentClient — LangChain's default chromadb.Client(Settings) is brittle on 0.5.x."""
+    import chromadb
+    from chromadb.config import Settings
+
+    return chromadb.PersistentClient(
+        path=CHROMA_PATH,
+        settings=Settings(anonymized_telemetry=False),
+    )
+
+
 def build_vectorstore(chunks):
     from langchain_huggingface import HuggingFaceEmbeddings  # updated import
     from langchain_community.vectorstores import Chroma
     import warnings
     warnings.filterwarnings("ignore")
+
+    # A prior Chroma version can leave sysdb rows without `_type`; opening the path then
+    # fails even for `from_documents`. Full ingest always rebuilds from PDFs, so start clean.
+    print("Preparing empty Chroma persist directory (removes any incompatible prior index)...")
+    _reset_chroma_persist_dir()
 
     print("\nLoading multilingual embedding model...")
     print("Please wait...\n")
@@ -106,6 +131,8 @@ def build_vectorstore(chunks):
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True}
     )
+
+    chroma_client = _chroma_persistent_client()
 
     print("Building ChromaDB vectorstore...")
 
@@ -123,7 +150,7 @@ def build_vectorstore(chunks):
                 documents=batch,
                 embedding=embeddings,
                 collection_name=COLLECTION_NAME,
-                persist_directory=CHROMA_PATH
+                client=chroma_client,
             )
         else:
             vectorstore.add_documents(batch)
@@ -142,16 +169,57 @@ def load_vectorstore():
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True}
     )
-    return Chroma(
-        collection_name=COLLECTION_NAME,
-        embedding_function=embeddings,
-        persist_directory=CHROMA_PATH
-    )
+    chroma_client = _chroma_persistent_client()
+    try:
+        return Chroma(
+            collection_name=COLLECTION_NAME,
+            embedding_function=embeddings,
+            client=chroma_client,
+        )
+    except KeyError as exc:
+        if exc.args and exc.args[0] == "_type":
+            raise RuntimeError(
+                "ChromaDB on-disk metadata is incompatible with this chromadb client "
+                "(KeyError '_type' in collection configuration). This usually means the "
+                "vector store was built with a different ChromaDB version than the one "
+                "in the chatbot container.\n\n"
+                "Fix: back up then remove the contents of this folder, rebuild the index "
+                "from PDFs, and restart chatbot-service:\n"
+                f"  - Persist path: {CHROMA_PATH}\n"
+                "  - Host: python Backend/chatbot/ingest.py\n"
+                "  - Docker (avoids PowerShell empty --entrypoint issues): "
+                "docker compose run --rm --entrypoint python chatbot-service "
+                "Backend/chatbot/ingest.py\n"
+            ) from exc
+        raise
 
 if __name__ == "__main__":
     print("=== AgriSmart PDF Ingestion ===\n")
+    _t0 = time.perf_counter()
     docs = load_all_pdfs()
     chunks = split_documents(docs)
     build_vectorstore(chunks)
+    _elapsed = time.perf_counter() - _t0
     print("\nDone! ChromaDB is ready.")
     print("Next: python chatbot.py")
+
+    # Optional MLflow / DagsHub (host or dev image with ml_training deps). Never required for production inference.
+    if os.getenv("MLFLOW_TRACK_CHATBOT_INGEST", "").strip().lower() in ("1", "true", "yes", "on"):
+        _repo_root = os.path.abspath(os.path.join(_THIS_DIR, "..", ".."))
+        if _repo_root not in sys.path:
+            sys.path.insert(0, _repo_root)
+        try:
+            from common.mlflow_utils import log_chatbot_ingest_run
+
+            log_chatbot_ingest_run(
+                experiment_name=os.getenv("MLFLOW_CHATBOT_EXPERIMENT", "agrismart-chatbot"),
+                num_documents=len(docs),
+                num_chunks=len(chunks),
+                duration_sec=_elapsed,
+                extra_params={
+                    "retrieval_top_k": os.getenv("AGRISMART_RAG_TOP_K", ""),
+                    "collection_name": COLLECTION_NAME,
+                },
+            )
+        except Exception as exc:
+            print(f"(optional) MLflow ingest logging skipped: {exc}")

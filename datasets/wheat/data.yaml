@@ -1,0 +1,7 @@
+# Ultralytics YOLO layout: paths are relative to this file's directory.
+# Put images under images/train and images/val; one YOLO .txt label per image under labels/...
+train: images/train
+val: images/val
+nc: 1
+names:
+  0: target

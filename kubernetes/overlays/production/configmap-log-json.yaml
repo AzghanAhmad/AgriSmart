@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agrismart-config
+  namespace: agrismart
+data:
+  AGRISMART_LOG_FORMAT: "json"
