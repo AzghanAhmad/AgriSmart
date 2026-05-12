@@ -1,4 +1,9 @@
 [core]
-    remote = localstorage
+    remote = origin
 ['remote "localstorage"']
     url = ../data/dvc-storage
+['remote "origin"']
+    url = https://dagshub.com/mfaisal4355/AgriSmart.dvc
+    auth = basic
+    user = mfaisal4355
+    password = b5c4ebfa19010167bf3c9d0e2f02281e2b4fc10e

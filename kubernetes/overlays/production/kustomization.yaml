@@ -1,0 +1,16 @@
+# Example production overlay: pin image tags and JSON logs.
+# Build: kubectl kustomize kubernetes/overlays/production | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../kustomization.yaml
+  - ../../policies/poddisruptionbudgets.yaml
+patches:
+  - path: configmap-log-json.yaml
+images:
+  - name: agrismart-backend
+    newTag: v1.0.0
+  - name: agrismart-yolo
+    newTag: v1.0.0
+  - name: agrismart-chatbot
+    newTag: v1.0.0

@@ -11,7 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY yolo_service/requirements.txt /app/yolo_service/requirements.txt
-RUN pip install --no-cache-dir -r /app/yolo_service/requirements.txt
+# ultralytics may pull opencv-python (GUI), which replaces headless; reinstall headless last so cv2 exists.
+RUN pip install --no-cache-dir -r /app/yolo_service/requirements.txt && \
+    pip uninstall -y opencv-python 2>/dev/null || true && \
+    pip install --no-cache-dir --force-reinstall "opencv-python-headless==4.10.0.84"
 
 COPY yolo_service/ /app/yolo_service/
 COPY common/ /app/common/

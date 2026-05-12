@@ -18,6 +18,7 @@ services:
       retries: 10
 
   yolo-service:
+    image: agrismart-yolo:latest
     build:
       context: .
       dockerfile: docker/yolo.Dockerfile
@@ -31,6 +32,7 @@ services:
       MODEL_DOWNLOAD_URL_WHEAT: ${MODEL_DOWNLOAD_URL_WHEAT:-}
       MODEL_DOWNLOAD_URL_RICE: ${MODEL_DOWNLOAD_URL_RICE:-}
       MODEL_DOWNLOAD_URL_COTTON: ${MODEL_DOWNLOAD_URL_COTTON:-}
+      YOLO_CONFIG_DIR: /models/ultralytics-settings
     ports:
       - "8001:8001"
     volumes:
@@ -42,6 +44,7 @@ services:
       retries: 10
 
   chatbot-service:
+    image: agrismart-chatbot:latest
     build:
       context: .
       dockerfile: docker/chatbot.Dockerfile
@@ -52,13 +55,16 @@ services:
       CHATBOT_MODULE_PATH: /app/Backend/chatbot/chatbot.py
       LOG_LEVEL: INFO
       PYTHONPATH: /app
+      ANONYMIZED_TELEMETRY: "false"
       HF_HOME: /models/hf-home
       TRANSFORMERS_CACHE: /models/hf-cache
       SENTENCE_TRANSFORMERS_HOME: /models/st-cache
     ports:
       - "8002:8002"
     volumes:
-      - chroma_data:/app/Backend/chatbot/wheat_cotton_rice_db
+      # Mount full chatbot package from the host so ingest/chatbot code updates apply without rebuild.
+      # Rebuild index: docker compose run --rm --entrypoint python chatbot-service Backend/chatbot/ingest.py
+      - ./Backend/chatbot:/app/Backend/chatbot
       - ./models:/models
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8002/ready"]
@@ -67,6 +73,7 @@ services:
       retries: 15
 
   backend:
+    image: agrismart-backend:latest
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
@@ -105,5 +112,4 @@ services:
 
 volumes:
   postgres_data:
-  chroma_data:
   uploads_data:

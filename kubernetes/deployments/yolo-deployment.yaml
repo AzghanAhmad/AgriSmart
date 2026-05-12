@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo-service
+  namespace: agrismart
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo-service
+  template:
+    metadata:
+      labels:
+        app: yolo-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: yolo-service
+          image: agrismart-yolo:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
+          ports:
+            - containerPort: 8001
+              name: http
+          envFrom:
+            - configMapRef:
+                name: agrismart-config
+          env:
+            - name: MODEL_DOWNLOAD_URL_WHEAT
+              value: ""
+            - name: MODEL_DOWNLOAD_URL_RICE
+              value: ""
+            - name: MODEL_DOWNLOAD_URL_COTTON
+              value: ""
+          volumeMounts:
+            - name: models-data
+              mountPath: /models
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            failureThreshold: 60
+            periodSeconds: 5
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+      volumes:
+        - name: models-data
+          persistentVolumeClaim:
+            claimName: models-data-pvc

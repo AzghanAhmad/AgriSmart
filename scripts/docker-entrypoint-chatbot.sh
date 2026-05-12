@@ -3,6 +3,9 @@ set -e
 
 echo "[chatbot-service] startup"
 
+# Avoid Chroma/posthog telemetry version skew and noisy outbound calls in containers
+export ANONYMIZED_TELEMETRY="${ANONYMIZED_TELEMETRY:-false}"
+
 # Persist HuggingFace/SentenceTransformers caches on the mounted /models volume
 export HF_HOME="${HF_HOME:-/models/hf-home}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-/models/hf-cache}"

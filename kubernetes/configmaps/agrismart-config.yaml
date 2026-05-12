@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agrismart-config
+  namespace: agrismart
+data:
+  LOG_LEVEL: "INFO"
+  PYTHONPATH: "/app"
+  ALLOWED_ORIGINS: "*"
+  INTERNAL_HTTP_TIMEOUT: "10"
+  ENABLE_LOCAL_YOLO_FALLBACK: "false"
+  ENABLE_LOCAL_CHATBOT_FALLBACK: "false"
+  MODEL_DIR: "/models"
+  UPLOAD_ROOT: "/app/Backend/static/uploads"
+  YOLO_SERVICE_PORT: "8001"
+  CHATBOT_SERVICE_PORT: "8002"
+  CHATBOT_MODULE_PATH: "/app/Backend/chatbot/chatbot.py"
+  YOLO_SERVICE_URL: "http://yolo-service:8001"
+  CHATBOT_SERVICE_URL: "http://chatbot-service:8002"
+  ANONYMIZED_TELEMETRY: "false"
+  HF_HOME: "/models/hf-home"
+  TRANSFORMERS_CACHE: "/models/hf-cache"
+  SENTENCE_TRANSFORMERS_HOME: "/models/st-cache"
+  YOLO_CONFIG_DIR: "/models/ultralytics-settings"
+  # text | json — json lines for Loki/ELK-style aggregators
+  AGRISMART_LOG_FORMAT: "text"
+  YOLO_MODEL_VERSION: "1.0.0"
+  RATE_LIMIT_DEFAULT: "200 per minute"
+  # MLflow/DagsHub: off in inference pods; enable only for Jobs or dev shells that run training/ingest with deps installed
+  MLFLOW_TRACKING_ENABLED: "0"
+  MLFLOW_TRACK_CHATBOT_INGEST: "0"

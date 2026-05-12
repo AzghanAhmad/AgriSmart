@@ -1,0 +1,344 @@
+﻿=== AgriSmart Compose Runtime Validation ===
+Repo: C:\Users\WALEED TRADERS\OneDrive\Desktop\AgriSmart
+Started: 2026-05-12T14:19:59.1590868+05:00
+
+--- PHASE 1: Container runtime ---
+ Container agrismart-chatbot  Running
+ Container agrismart-postgres  Running
+ Container agrismart-yolo  Running
+ Container agrismart-backend  Running
+ Container agrismart-yolo  Waiting
+ Container agrismart-chatbot  Waiting
+ Container agrismart-postgres  Waiting
+ Container agrismart-chatbot  Healthy
+ Container agrismart-postgres  Healthy
+ Container agrismart-yolo  Healthy
+NAMES                STATUS                    PORTS
+agrismart-backend    Up 11 minutes (healthy)   0.0.0.0:5000->5000/tcp
+agrismart-postgres   Up 20 minutes (healthy)   0.0.0.0:5432->5432/tcp
+agrismart-yolo       Up 12 minutes (healthy)   0.0.0.0:8001->8001/tcp
+agrismart-chatbot    Up 20 minutes (healthy)   0.0.0.0:8002->8002/tcp
+
+-- logs (tail 35): agrismart-postgres --
+
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+
+docker : 2026-05-12 08:59:20.576 UTC [1] LOG:  starting PostgreSQL 16.13 (Debian 
+16.13-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+At C:\Users\WALEED TRADERS\OneDrive\Desktop\AgriSmart\scripts\compose-runtime-validation.ps1:78 
+char:13
++     Report (docker logs $c --tail 35 2>&1 | Out-String)
++             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-05-12 08:5... 14.2.0, 64-bit:String) [], Remo 
+   teException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-05-12 08:59:20.576 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-05-12 08:59:20.576 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-05-12 08:59:20.671 UTC [1] LOG:  listening on Unix socket 
+"/var/run/postgresql/.s.PGSQL.5432"
+2026-05-12 08:59:20.748 UTC [28] LOG:  database system was interrupted; last known up at 
+2026-05-12 08:57:21 UTC
+2026-05-12 08:59:27.663 UTC [28] LOG:  database system was not properly shut down; automatic 
+recovery in progress
+2026-05-12 08:59:27.687 UTC [28] LOG:  redo starts at 0/1947780
+2026-05-12 08:59:27.692 UTC [28] LOG:  invalid record length at 0/19D94E8: expected at least 
+24, got 0
+2026-05-12 08:59:27.692 UTC [28] LOG:  redo done at 0/19D94B0 system usage: CPU: user: 0.00 s, 
+system: 0.00 s, elapsed: 0.00 s
+2026-05-12 08:59:27.702 UTC [26] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-05-12 08:59:28.111 UTC [26] LOG:  checkpoint complete: wrote 143 buffers (0.9%); 0 WAL 
+file(s) added, 0 removed, 0 recycled; write=0.018 s, sync=0.287 s, total=0.413 s; sync 
+files=100, longest=0.023 s, average=0.003 s; distance=583 kB, estimate=583 kB; lsn=0/19D94E8, 
+redo lsn=0/19D94E8
+2026-05-12 08:59:28.133 UTC [1] LOG:  database system is ready to accept connections
+
+-- logs (tail 35): agrismart-yolo --
+docker : 2026-05-12 09:15:43,289 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:15:43] "GET /ready HTTP/1.1" 200 -
+At C:\Users\WALEED TRADERS\OneDrive\Desktop\AgriSmart\scripts\compose-runtime-validation.ps1:78 
+char:13
++     Report (docker logs $c --tail 35 2>&1 | Out-String)
++             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-05-12 09:1...HTTP/1.1" 200 -:String) [], Remo 
+   teException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-05-12 09:15:58,331 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:15:58,332 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:15:58] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:13,397 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:16:13,397 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:13] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:28,439 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:16:28,439 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:28] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:43,483 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:16:43,484 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:43] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:58,553 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:16:58,553 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:58] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:13,605 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:17:13,605 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:13] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:28,662 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:17:28,663 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:28] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:43,726 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:17:43,726 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:43] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:58,778 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:17:58,778 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:58] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:13,845 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:18:13,846 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:13] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:28,890 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:18:28,890 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:28] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:43,940 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:18:43,940 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:43] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:59,002 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:18:59,003 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:59] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:14,056 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:19:14,056 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:14] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:29,152 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:19:29,152 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:29] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:44,196 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:19:44,197 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:44] 
+"GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:59,265 | INFO | yolo-service | yolo_service.core.yolo | All DVC-managed model 
+files are present under MODEL_DIR
+2026-05-12 09:19:59,265 | INFO | yolo-service | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:59] 
+"GET /ready HTTP/1.1" 200 -
+
+-- logs (tail 35): agrismart-chatbot --
+docker : 2026-05-12 09:08:42,843 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - 
+[12/May/2026 09:08:42] "GET /ready HTTP/1.1" 200 -
+At C:\Users\WALEED TRADERS\OneDrive\Desktop\AgriSmart\scripts\compose-runtime-validation.ps1:78 
+char:13
++     Report (docker logs $c --tail 35 2>&1 | Out-String)
++             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-05-12 09:0...HTTP/1.1" 200 -:String) [], Remo 
+   teException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-05-12 09:09:02,885 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:09:02] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:09:22,964 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:09:22] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:09:43,021 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:09:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:10:03,139 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:10:03] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:10:23,214 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:10:23] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:10:43,265 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:10:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:11:03,305 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:11:03] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:11:23,364 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:11:23] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:11:43,421 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:11:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:12:03,476 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:12:03] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:12:23,516 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:12:23] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:12:43,575 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:12:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:13:03,620 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:13:03] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:13:23,653 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:13:23] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:13:43,692 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:13:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:14:03,749 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:14:03] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:14:23,791 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:14:23] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:14:43,834 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:14:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:15:03,883 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:15:03] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:15:23,924 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:15:23] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:15:43,967 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:15:43] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:04,005 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:16:04] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:24,042 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:16:24] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:16:44,082 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:16:44] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:04,122 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:17:04] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:24,158 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:17:24] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:17:44,220 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:17:44] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:04,259 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:18:04] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:24,301 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:18:24] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:18:44,344 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:18:44] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:04,381 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:19:04] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:24,422 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:19:24] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:19:44,484 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:19:44] "GET /ready HTTP/1.1" 200 -
+2026-05-12 09:20:04,522 | INFO | chatbot-service | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:20:04] "GET /ready HTTP/1.1" 200 -
+
+-- logs (tail 35): agrismart-backend --
+docker : 2026-05-12 09:11:28,564 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 
+09:11:28] "GET /health HTTP/1.1" 200 -
+At C:\Users\WALEED TRADERS\OneDrive\Desktop\AgriSmart\scripts\compose-runtime-validation.ps1:78 
+char:13
++     Report (docker logs $c --tail 35 2>&1 | Out-String)
++             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-05-12 09:1...HTTP/1.1" 200 -:String) [], Remo 
+   teException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-05-12 09:11:43,605 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:11:43] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:11:58,644 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:11:58] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:12:13,686 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:12:13] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:12:28,738 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:12:28] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:12:43,789 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:12:43] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:12:58,827 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:12:58] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:13:13,869 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:13:13] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:13:28,909 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:13:28] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:13:43,960 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:13:43] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:13:59,028 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:13:59] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:14:14,073 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:14:14] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:14:29,113 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:14:29] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:14:44,167 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:14:44] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:14:59,210 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:14:59] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:15:14,261 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:15:14] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:15:29,302 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:15:29] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:15:44,343 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:15:44] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:15:59,381 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:15:59] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:16:14,429 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:14] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:16:29,471 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:29] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:16:44,512 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:44] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:16:59,559 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:16:59] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:17:14,598 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:14] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:17:29,635 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:29] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:17:44,680 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:44] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:17:59,721 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:17:59] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:18:14,763 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:14] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:18:29,804 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:29] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:18:44,842 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:44] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:18:59,887 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:18:59] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:19:14,927 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:14] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:19:30,009 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:30] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:19:45,052 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:19:45] "GET 
+/health HTTP/1.1" 200 -
+2026-05-12 09:20:00,120 | INFO | backend | werkzeug | 127.0.0.1 - - [12/May/2026 09:20:00] "GET 
+/health HTTP/1.1" 200 -
+
+
+--- PHASE 2: Service communication (from backend container) ---
+backend -> yolo-service:8001 /health HTTP 200
+backend -> yolo-service:8001 /ready HTTP 200
+backend -> chatbot-service:8002 /health HTTP 200
+backend -> chatbot-service:8002 /ready HTTP 200
+backend -> postgres DNS: 172.18.0.2      postgres
+backend -> postgres:5432 tcp_ok
+Note: compose healthchecks use 127.0.0.1 inside the same container only.
+
+--- PHASE 3: Health and readiness (host -> backend) ---
+/health -> HTTP 200
+/health/dependencies -> HTTP 200
+{"dependencies":{"chatbot_service":{"liveness":"healthy","readiness":"ready","status":"healthy"},"database":{"status":"healthy"},"yolo_service":{"liveness":"healthy","readiness":"ready","status":"healthy"}},"service":"backend","status":"healthy"}
+
+
+--- PHASE 4: Endpoint smoke ---
+
+/predict (via loopback inside backend):
+{"confidence":50.5,"cropType":"wheat","disease":"Leaf_Blast","prevention":["Use resistant crop variety","Avoid overwatering","Ensure balanced fertilization"],"severity":"Medium","symptoms":["Lesions or discoloration detected on leaves","Possible fungal or bacterial infection"],"timestamp":"2026-05-12T09:20:17.538524","treatment":"Apply recommended pesticide/fungicide as per NARC or FAO guidelines."}
+
+HTTP_CODE:200
+/api/chatbot/warmup -> HTTP 200
+/api/auth/login (no body) -> HTTP 400 (expect 4xx without JSON)
+
+--- PHASE 5: Failure simulation ---
+agrismart-yolo
+/predict with yolo stopped:
+{"error":"yolo-service unavailable","service":"backend","status":"degraded","upstream":"yolo-service"}
+
+HTTP_CODE:503
+/health/dependencies with yolo down -> HTTP 503
+agrismart-yolo
+yolo /ready recovered: HTTP 200
+
+--- PHASE 6: Persistence (uploads volume) ---
+marker before backend restart: compose-marker-20260512142052
+agrismart-backend
+marker after backend restart: compose-marker-20260512142052
+Postgres persists in volume postgres_data.
+Chroma persists in bind mount ./Backend/chatbot/wheat_cotton_rice_db.
+Models persist in bind mount ./models.
+
+--- PHASE 7: Hardening ---
+Backend dependency probes use _http_get_with_retries (Backend/app.py).
+
+--- PHASE 8: Kubernetes ---
+Do not deploy to Kubernetes until this script passes expected checks.
+Finished: 2026-05-12T14:21:14.6638618+05:00
