@@ -18,7 +18,8 @@ def generate_schedule(
     lat: Optional[float] = None,
     lon: Optional[float] = None,
     previous_week_progress: Optional[Dict] = None,
-    disease_name: Optional[str] = None
+    disease_name: Optional[str] = None,
+    start_date: Optional[str] = None
 ) -> List[Dict]:
     """
     Generate personalized farming schedule combining:
@@ -37,7 +38,10 @@ def generate_schedule(
         disease_name: Name of the disease (if known from detection)
     """
     tasks = []
-    today = datetime.now().date()
+    try:
+        today = date.fromisoformat(start_date) if start_date else datetime.now().date()
+    except (TypeError, ValueError):
+        today = datetime.now().date()
     
     # Validate inputs
     if not crop_type or not isinstance(crop_type, str):
@@ -102,6 +106,8 @@ def generate_schedule(
 
             active_diseases = []
             for det in recent_detections:
+                if (getattr(det, "status", None) or "").strip().lower() == "rejected":
+                    continue
                 if not _det_matches_crop(det):
                     continue
                 if not (det.status == "pending" or (det.confidence_score and det.confidence_score > 50)):

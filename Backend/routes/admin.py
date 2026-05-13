@@ -52,6 +52,13 @@ DEFAULT_SYSTEM_SETTINGS = {
     'debugMode': False,
 }
 
+DETECTION_STATUSES = {'pending', 'verified', 'rejected', 'resolved'}
+DETECTION_STATUS_ALIASES = {
+    'reviewed': 'verified',
+    'approved': 'verified',
+    'invalid': 'rejected',
+}
+
 
 def _to_bool(value):
     if isinstance(value, bool):
@@ -144,6 +151,22 @@ def _safe_float(value, default=0.0):
         return float(value)
     except Exception:
         return default
+
+
+def _normalize_detection_status(value):
+    status = (value or 'pending').strip().lower()
+    status = DETECTION_STATUS_ALIASES.get(status, status)
+    return status if status in DETECTION_STATUSES else 'pending'
+
+
+def _verification_message(status):
+    if status == 'verified':
+        return 'Verified by admin review'
+    if status == 'rejected':
+        return 'Rejected after admin review'
+    if status == 'resolved':
+        return 'Verified and marked resolved'
+    return 'Pending admin verification'
 
 
 def _serialize_subsidy(row):
@@ -458,19 +481,26 @@ def list_detections():
     try:
         total = db.query(Detection).count()
         rows = db.query(Detection).order_by(Detection.timestamp.desc()).offset(offset).limit(page_size).all()
-        data = [{
-            'detectionId': r.detection_id,
-            'farmerId': r.farmer_id,
-            'landId': r.land_id,
-            'diseaseId': r.disease_id,
-            'imageUrl': r.image_ref,
-            'confidence': r.confidence_score,
-            'status': r.status,
-            'timestamp': r.timestamp.isoformat() if r.timestamp else None,
-            'latitude': getattr(r, 'latitude', None),
-            'longitude': getattr(r, 'longitude', None),
-            'alertGenerated': getattr(r, 'alert_generated', None),
-        } for r in rows]
+        data = []
+        for r in rows:
+            status = _normalize_detection_status(r.status)
+            data.append({
+                'detectionId': r.detection_id,
+                'farmerId': r.farmer_id,
+                'landId': r.land_id,
+                'diseaseId': r.disease_id,
+                'diseaseName': r.disease_name or r.disease_id or 'Unknown disease',
+                'cropType': r.crop_type,
+                'imageUrl': r.image_ref,
+                'confidence': r.confidence_score,
+                'status': status,
+                'verificationStatus': status,
+                'verificationMessage': _verification_message(status),
+                'timestamp': r.timestamp.isoformat() if r.timestamp else None,
+                'latitude': getattr(r, 'latitude', None),
+                'longitude': getattr(r, 'longitude', None),
+                'alertGenerated': getattr(r, 'alert_generated', None),
+            })
         return jsonify({'total': total, 'page': page, 'pageSize': page_size, 'items': data})
     except Exception as e:
         print('❌ Error fetching admin detections:', str(e))
@@ -514,11 +544,13 @@ def list_reports():
                 'diseaseName': r.disease_name or r.disease_id or 'Unknown disease',
                 'cropType': (r.crop_type or 'unknown').title(),
                 'location': location or 'Unknown location',
-                'status': (r.status or 'pending').lower(),
+                'status': _normalize_detection_status(r.status),
+                'verificationStatus': _normalize_detection_status(r.status),
+                'verificationMessage': _verification_message(_normalize_detection_status(r.status)),
                 'imageUrl': r.image_ref,
                 'confidence': int(round(r.confidence_score or 0)),
                 'submittedAt': r.timestamp.isoformat() if r.timestamp else None,
-                'reviewedAt': r.timestamp.isoformat() if (r.status or '').lower() in ('reviewed', 'resolved') and r.timestamp else None,
+                'reviewedAt': r.timestamp.isoformat() if _normalize_detection_status(r.status) in ('verified', 'rejected', 'resolved') and r.timestamp else None,
             }
             items.append(report)
 
@@ -550,8 +582,9 @@ def update_report_status(report_id):
     try:
         payload = request.get_json(silent=True) or {}
         new_status = (payload.get('status') or '').strip().lower()
-        if new_status not in ('pending', 'reviewed', 'resolved'):
-            return jsonify({'error': 'status must be pending, reviewed, or resolved'}), 400
+        new_status = DETECTION_STATUS_ALIASES.get(new_status, new_status)
+        if new_status not in DETECTION_STATUSES:
+            return jsonify({'error': 'status must be pending, verified, rejected, or resolved'}), 400
 
         row = db.query(Detection).filter(Detection.detection_id == report_id).first()
         if not row:
@@ -559,7 +592,13 @@ def update_report_status(report_id):
 
         row.status = new_status
         db.commit()
-        return jsonify({'success': True, 'id': report_id, 'status': new_status})
+        return jsonify({
+            'success': True,
+            'id': report_id,
+            'status': new_status,
+            'verificationStatus': new_status,
+            'verificationMessage': _verification_message(new_status),
+        })
     except Exception as e:
         db.rollback()
         print('❌ Error updating report status:', str(e))

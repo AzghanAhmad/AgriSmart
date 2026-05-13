@@ -29,6 +29,43 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function formatLocalDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getTaskDateKey(dueDate?: string): string {
+  if (!dueDate) return '';
+  const datePart = dueDate.split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return datePart;
+  }
+  const parsed = new Date(dueDate);
+  return Number.isNaN(parsed.getTime()) ? datePart : formatLocalDateKey(parsed);
+}
+
+function parseLocalDateKey(dateKey: string): Date {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
+function getDateKeyOffset(daysFromToday: number): string {
+  const today = new Date();
+  return formatLocalDateKey(
+    new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysFromToday)
+  );
+}
+
+function daysBetweenDateKeys(dateKey: string, baseDateKey: string): number {
+  return Math.round(
+    (parseLocalDateKey(dateKey).getTime() - parseLocalDateKey(baseDateKey).getTime()) / DAY_MS
+  );
+}
+
 interface ScheduleTask {
   id: string;
   title: string;
@@ -88,12 +125,12 @@ export default function ScheduleScreen() {
     // Check if it's a new day - reset progress if needed
     try {
       const lastReset = await AsyncStorage.getItem('schedule_last_reset');
-      const today = new Date().toISOString().split('T')[0];
+      const today = formatLocalDateKey();
       
       if (lastReset !== today) {
         // Reset all tasks for today
         setTasks(prev => prev.map(task => {
-          const taskDate = task.dueDate.split('T')[0];
+          const taskDate = getTaskDateKey(task.dueDate);
           if (taskDate === today) {
             return { ...task, completed: false };
           }
@@ -107,8 +144,8 @@ export default function ScheduleScreen() {
   };
 
   const calculateDailyProgress = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const todayTasks = tasks.filter(t => t.dueDate.split('T')[0] === today);
+    const today = formatLocalDateKey();
+    const todayTasks = tasks.filter(t => getTaskDateKey(t.dueDate) === today);
     if (todayTasks.length === 0) {
       setDailyProgress(0);
       return;
@@ -123,7 +160,7 @@ export default function ScheduleScreen() {
     setIsLoading(true);
     try {
       const API_BASE_URL = getApiBaseUrl();
-      const today = new Date().toISOString().split('T')[0];
+      const today = formatLocalDateKey();
       
       // Get current week's schedule
       const response = await fetch(
@@ -138,10 +175,8 @@ export default function ScheduleScreen() {
           ...task,
           cropType: task.cropType || 'wheat', // Default to wheat if not specified
         })).filter((task: ScheduleTask) => {
-          const taskDate = task.dueDate.split('T')[0];
-          const daysDiff = Math.floor(
-            (new Date(taskDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24)
-          );
+          const taskDate = getTaskDateKey(task.dueDate);
+          const daysDiff = daysBetweenDateKeys(taskDate, today);
           return daysDiff >= 0 && daysDiff < 7;
         });
         setTasks(weekTasks);
@@ -201,21 +236,20 @@ export default function ScheduleScreen() {
           latitude: user.latitude,
           longitude: user.longitude,
           weekNumber: 'week1',
+          startDate: formatLocalDateKey(),
           diseaseName: diseaseName,
         }),
       });
       
       if (response.ok) {
         const data = await response.json();
-        const today = new Date().toISOString().split('T')[0];
+        const today = formatLocalDateKey();
         const weekTasks = (data.tasks || []).map((task: ScheduleTask) => ({
           ...task,
           cropType: crop, // Add crop type to each task
         })).filter((task: ScheduleTask) => {
-          const taskDate = task.dueDate.split('T')[0];
-          const daysDiff = Math.floor(
-            (new Date(taskDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24)
-          );
+          const taskDate = getTaskDateKey(task.dueDate);
+          const daysDiff = daysBetweenDateKeys(taskDate, today);
           return daysDiff >= 0 && daysDiff < 7;
         });
         setTasks(weekTasks);
@@ -281,16 +315,14 @@ export default function ScheduleScreen() {
 
   const getWeekDays = (): DayTasks[] => {
     const days: DayTasks[] = [];
-    const today = new Date();
     
     // Start from tomorrow (day after today)
     for (let i = 1; i <= 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = getDateKeyOffset(i);
+      const date = parseLocalDateKey(dateStr);
       const dayName = date.toLocaleDateString(dateLocale, { weekday: 'long' });
       
-      const dayTasks = tasks.filter(t => t.dueDate.split('T')[0] === dateStr);
+      const dayTasks = tasks.filter(t => getTaskDateKey(t.dueDate) === dateStr);
       days.push({
         date: dateStr,
         dayName,
@@ -302,7 +334,7 @@ export default function ScheduleScreen() {
   };
 
   const filterTasks = (taskList: ScheduleTask[]) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDateKey();
     let filtered = taskList;
     
     // Filter by crop type (always filter since selectedCrop is never null now)
@@ -313,10 +345,10 @@ export default function ScheduleScreen() {
     // Filter by tab
     switch (selectedTab) {
       case 'today':
-        return filtered.filter(task => task.dueDate.split('T')[0] === today);
+        return filtered.filter(task => getTaskDateKey(task.dueDate) === today);
       case 'upcoming':
         return filtered.filter(task => {
-          const taskDate = task.dueDate.split('T')[0];
+          const taskDate = getTaskDateKey(task.dueDate);
           return taskDate > today && !task.completed;
         });
       case 'completed':
@@ -506,7 +538,7 @@ export default function ScheduleScreen() {
             <View style={styles.daysGrid}>
               {weekDays.map((day, index) => {
                 const allTasksCompleted = day.tasks.length > 0 && day.tasks.every(t => t.completed);
-                const dayDate = new Date(day.date);
+                const dayDate = parseLocalDateKey(day.date);
                 const month = dayDate.toLocaleDateString(dateLocale, { month: 'short' });
                 const dayNum = dayDate.getDate();
                 

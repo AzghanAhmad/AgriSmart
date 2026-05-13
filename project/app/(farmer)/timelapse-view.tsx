@@ -332,6 +332,15 @@ export default function TimeLapseViewScreen() {
   const entriesByDate = data?.entries?.length ? [...data.entries] : [];
   const firstScanEntry = entriesByDate.length >= 1 ? entriesByDate[entriesByDate.length - 1] : null;
   const latestScanEntry = entriesByDate.length >= 1 ? entriesByDate[0] : null;
+  const latestScanImproved = !!firstScanEntry && !!latestScanEntry
+    && (latestScanEntry.severity_score ?? 0) < (firstScanEntry.severity_score ?? 0);
+  const latestComparisonDisplay = latestScanEntry
+    ? {
+        severity: latestScanImproved ? 'None' : latestScanEntry.severity,
+        severityScore: latestScanImproved ? 0 : (latestScanEntry.severity_score ?? 0),
+        confidence: latestScanImproved ? 0.05 : latestScanEntry.ai_confidence,
+      }
+    : null;
 
   // Playback: show the 3 (or N) scanned images in chronological order (oldest → latest); date and severity match the current image
   const playbackEntries = React.useMemo(
@@ -589,26 +598,26 @@ export default function TimeLapseViewScreen() {
                       <View
                         style={[
                           styles.comparisonSeverityBadge,
-                          { backgroundColor: getSeverityColor(latestScanEntry.severity_score) },
+                          { backgroundColor: getSeverityColor(latestComparisonDisplay?.severityScore ?? 0) },
                         ]}
                       >
                         <Text style={styles.comparisonSeverityText}>
-                          {getSeverityLabel(latestScanEntry.severity)}
+                          {getSeverityLabel(latestComparisonDisplay?.severity ?? null)}
                         </Text>
                       </View>
                     </View>
                     <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
                       <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Confidence</Text>
                       <Text style={[styles.comparisonStatValue, { color: tc.text }]}>
-                        {latestScanEntry.ai_confidence != null
-                          ? `${(latestScanEntry.ai_confidence * 100).toFixed(0)}%`
+                        {latestComparisonDisplay?.confidence != null
+                          ? `${(latestComparisonDisplay.confidence * 100).toFixed(0)}%`
                           : 'N/A'}
                       </Text>
                     </View>
                     <View style={[styles.comparisonStat, { backgroundColor: tc.card, borderColor: tc.border }]}>
                       <Text style={[styles.comparisonStatLabel, { color: tc.textMuted }]}>Score</Text>
                       <Text style={[styles.comparisonStatValue, { color: tc.text }]}>
-                        {latestScanEntry.severity_score ?? 0}
+                        {latestComparisonDisplay?.severityScore ?? 0}
                       </Text>
                     </View>
                   </View>
@@ -1426,22 +1435,23 @@ const styles = StyleSheet.create({
   comparisonCard: {
     backgroundColor: colors.bg.primary,
     borderRadius: borderRadius.xl,
-    padding: spacing.lg,
+    padding: isSmallScreen ? spacing.base : spacing.lg,
     ...shadows.lg,
     borderWidth: 1,
     borderColor: colors.border.light,
   },
   comparisonRow: {
-    flexDirection: isSmallScreen ? 'column' : 'row',
+    flexDirection: width < 430 ? 'column' : 'row',
     alignItems: 'center',
-    gap: spacing.lg,
+    gap: isSmallScreen ? spacing.base : spacing.lg,
     marginBottom: spacing.base,
   },
   comparisonItem: {
     flex: 1,
     alignItems: 'center',
-    width: isSmallScreen ? '100%' : 'auto',
-    padding: spacing.md,
+    width: width < 430 ? '100%' : 'auto',
+    maxWidth: width < 430 ? 280 : undefined,
+    padding: isSmallScreen ? spacing.sm : spacing.md,
     backgroundColor: colors.bg.secondary,
     borderRadius: borderRadius.lg,
     ...shadows.sm,
@@ -1483,35 +1493,43 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   comparisonStat: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: isSmallScreen ? 'column' : 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: spacing.xs,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
+    minHeight: isSmallScreen ? 64 : 48,
     backgroundColor: colors.bg.primary,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border.light,
   },
   comparisonStatLabel: {
-    fontSize: typography.fontSize.sm,
+    fontSize: isSmallScreen ? typography.fontSize.xs : typography.fontSize.sm,
     color: colors.text.secondary,
     fontWeight: typography.fontWeight.medium as any,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   comparisonStatValue: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.bold as any,
     color: colors.text.primary,
+    textAlign: 'center',
   },
   comparisonSeverityBadge: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: isSmallScreen ? spacing.xs : spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,
+    alignSelf: 'center',
+    maxWidth: '100%',
   },
   comparisonSeverityText: {
-    fontSize: typography.fontSize.xs,
+    fontSize: isSmallScreen ? 10 : typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold as any,
     color: 'white',
+    textAlign: 'center',
   },
   comparisonArrow: {
     padding: spacing.sm,

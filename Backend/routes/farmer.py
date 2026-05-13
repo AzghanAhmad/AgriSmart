@@ -37,6 +37,28 @@ except ImportError:
 farmer_bp = Blueprint('farmer', __name__, url_prefix='/api/farmer')
 logger = logging.getLogger(__name__)
 
+DETECTION_STATUS_ALIASES = {
+    'reviewed': 'verified',
+    'approved': 'verified',
+    'invalid': 'rejected',
+}
+
+
+def _verification_status(value):
+    status = (value or 'pending').strip().lower()
+    status = DETECTION_STATUS_ALIASES.get(status, status)
+    return status if status in ('pending', 'verified', 'rejected', 'resolved') else 'pending'
+
+
+def _verification_message(status):
+    if status == 'verified':
+        return 'This AI detection has been verified by the admin team.'
+    if status == 'rejected':
+        return 'This AI detection was rejected after review. Please rescan if symptoms remain visible.'
+    if status == 'resolved':
+        return 'This detection was verified and marked resolved.'
+    return 'This AI detection is pending admin verification.'
+
 
 def _serialize_subsidy_item(row):
     import json as _json
@@ -252,12 +274,16 @@ def create_detection():
                 prevention_list = [s.strip() for s in guidance.cultural_controls.replace(' and ', ';').replace(',', ';').split(';') if s.strip()]
 
         severity = 'High' if confidence > 80 else ('Medium' if confidence > 50 else 'Low')
+        verification_status = _verification_status(det.status)
         return jsonify({
             'detectionId': detection_id,
             'cropType': crop_type,
             'disease': disease_name,
             'confidence': confidence,
             'severity': severity,
+            'status': verification_status,
+            'verificationStatus': verification_status,
+            'verificationMessage': _verification_message(verification_status),
             'imageUrl': image_url,
             'treatment': treatment or 'Follow integrated management: monitor regularly; use resistant varieties; apply labeled products as needed.',
             'symptoms': symptoms_list or ['Lesions or discoloration detected on leaves'],
@@ -288,20 +314,26 @@ def recent_detections():
     db = SessionLocal()
     try:
         rows = db.query(Detection).filter(Detection.farmer_id == farmer_id).order_by(Detection.timestamp.desc()).limit(20).all()
-        data = [{
-            'id': r.detection_id,
-            'name': getattr(r, 'disease_name', None) or r.disease_id or 'Unknown Disease',
-            # Alias for clients that expect camelCase (e.g. farming schedule)
-            'diseaseName': getattr(r, 'disease_name', None) or r.disease_id or 'Unknown Disease',
-            'severity': 'high' if (r.confidence_score or 0) > 80 else ('medium' if (r.confidence_score or 0) > 50 else 'low'),
-            'treatment': '',
-            'imageUrl': r.image_ref,
-            'detectedAt': r.timestamp.isoformat() if r.timestamp else None,
-            'confidence': r.confidence_score or 0,
-            'cropType': getattr(r, 'crop_type', 'wheat'),  # Default to wheat if not stored
-            'latitude': getattr(r, 'latitude', None),
-            'longitude': getattr(r, 'longitude', None),
-        } for r in rows]
+        data = []
+        for r in rows:
+            verification_status = _verification_status(getattr(r, 'status', None))
+            data.append({
+                'id': r.detection_id,
+                'name': getattr(r, 'disease_name', None) or r.disease_id or 'Unknown Disease',
+                # Alias for clients that expect camelCase (e.g. farming schedule)
+                'diseaseName': getattr(r, 'disease_name', None) or r.disease_id or 'Unknown Disease',
+                'severity': 'high' if (r.confidence_score or 0) > 80 else ('medium' if (r.confidence_score or 0) > 50 else 'low'),
+                'treatment': '',
+                'imageUrl': r.image_ref,
+                'detectedAt': r.timestamp.isoformat() if r.timestamp else None,
+                'confidence': r.confidence_score or 0,
+                'cropType': getattr(r, 'crop_type', 'wheat'),  # Default to wheat if not stored
+                'status': verification_status,
+                'verificationStatus': verification_status,
+                'verificationMessage': _verification_message(verification_status),
+                'latitude': getattr(r, 'latitude', None),
+                'longitude': getattr(r, 'longitude', None),
+            })
         return jsonify({'detections': data})
     except Exception as e:
         print('❌ Error fetching recent detections:', str(e))
@@ -366,6 +398,7 @@ def get_detection_detail(detection_id):
         crop_type = (getattr(det, 'crop_type', None) or '').strip().lower()
         confidence = float(getattr(det, 'confidence_score', 0) or 0)
         severity = 'high' if confidence > 80 else ('medium' if confidence > 50 else 'low')
+        verification_status = _verification_status(getattr(det, 'status', None))
 
         treatment = None
         symptoms_list = None
@@ -402,6 +435,9 @@ def get_detection_detail(detection_id):
             'detectedAt': det.timestamp.isoformat() if det.timestamp else None,
             'confidence': confidence,
             'severity': severity,
+            'status': verification_status,
+            'verificationStatus': verification_status,
+            'verificationMessage': _verification_message(verification_status),
             'treatment': treatment or 'Follow integrated disease management and monitor crop daily.',
             'steps': [
                 'Inspect affected area and remove heavily infected leaves/parts.',
@@ -429,7 +465,10 @@ def crop_health_stats():
     db = SessionLocal()
     try:
         # Get all detections for the farmer
-        detections = db.query(Detection).filter(Detection.farmer_id == farmer_id).all()
+        detections = db.query(Detection).filter(
+            Detection.farmer_id == farmer_id,
+            Detection.status != 'rejected',
+        ).all()
         
         total = len(detections)
         if total == 0:

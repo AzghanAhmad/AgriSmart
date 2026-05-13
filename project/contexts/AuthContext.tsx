@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContextType, User, SignupData } from '@/types';
-import { apiGet, apiPost, apiPut, apiDelete, apiUploadProfilePhoto } from '@/utils/api';
+import { apiGet, apiPost, apiPut, apiDelete, apiUploadProfilePhoto, setUnauthorizedHandler } from '@/utils/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -23,6 +23,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     checkAuthState();
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(async () => {
+      setUser(null);
+      setIsLoading(false);
+    });
+
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   const checkAuthState = async () => {

@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 import time
+import socket
 import requests
 from requests.exceptions import RequestException, Timeout
 from sqlalchemy import text
@@ -108,6 +109,29 @@ def _http_get_with_retries(url: str, timeout: float, attempts: int = 3, delay_s:
             time.sleep(delay_s)
     assert last_exc is not None
     raise last_exc
+
+
+def _get_lan_ip() -> str:
+    """Best-effort LAN IP for mobile devices on the same network."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+
+
+def _log_startup_urls(host: str, port: int) -> None:
+    lan_ip = _get_lan_ip()
+    print("\n========================================")
+    print("  AgriSmart Backend is running at:")
+    print(f"  - Local:   http://localhost:{port}")
+    print(f"  - Network: http://{lan_ip}:{port}")
+    print("========================================\n")
+    logger.info("Backend URLs | local=http://localhost:%s | network=http://%s:%s", port, lan_ip, port)
 # Timelapse JSON uploads send multiple base64 images; allow a generous body size
 app.config['MAX_CONTENT_LENGTH'] = 48 * 1024 * 1024
 # Configure CORS via env; default to permissive in dev
@@ -476,4 +500,7 @@ def serve_static(filename):
 
 if __name__ == '__main__':
     # ⚠️ For production, use gunicorn or waitress
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    _host = '0.0.0.0'
+    _port = int(os.getenv('PORT', '5000'))
+    _log_startup_urls(_host, _port)
+    app.run(host=_host, port=_port, debug=False)

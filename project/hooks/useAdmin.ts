@@ -9,6 +9,8 @@ export interface AdminDetectionItem {
   imageUrl: string | null;
   confidence: number | null;
   status: string | null;
+  verificationStatus?: string | null;
+  verificationMessage?: string | null;
   timestamp: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -68,7 +70,9 @@ export interface AdminReportItem {
   diseaseName: string;
   cropType: string;
   location: string;
-  status: 'pending' | 'reviewed' | 'resolved' | string;
+  status: 'pending' | 'verified' | 'rejected' | 'resolved' | string;
+  verificationStatus?: 'pending' | 'verified' | 'rejected' | 'resolved' | string;
+  verificationMessage?: string;
   imageUrl: string | null;
   confidence: number;
   submittedAt: string | null;
@@ -313,7 +317,10 @@ export function useAdminReports(page: number = 1, pageSize: number = 20, status:
     refresh();
   }, [refresh]);
 
-  const updateStatus = useCallback(async (reportId: string, nextStatus: 'pending' | 'reviewed' | 'resolved') => {
+  const updateStatus = useCallback(async (
+    reportId: string,
+    nextStatus: 'pending' | 'verified' | 'rejected' | 'resolved',
+  ) => {
     await apiPost(`/api/admin/reports/${encodeURIComponent(reportId)}/status`, { status: nextStatus });
     await refresh();
   }, [refresh]);

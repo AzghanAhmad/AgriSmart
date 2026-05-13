@@ -362,6 +362,26 @@ export default function DiseaseDetectionScreen() {
     }
   };
 
+  const getVerificationColor = (status?: string) => {
+    switch ((status || 'pending').toLowerCase()) {
+      case 'verified':
+      case 'resolved':
+        return '#22C55E';
+      case 'rejected':
+        return '#EF4444';
+      default:
+        return '#F59E0B';
+    }
+  };
+
+  const getVerificationLabel = (status?: string) => {
+    const normalized = (status || 'pending').toLowerCase();
+    if (normalized === 'verified') return 'Admin verified';
+    if (normalized === 'resolved') return 'Verified and resolved';
+    if (normalized === 'rejected') return 'Rejected after review';
+    return 'Pending admin verification';
+  };
+
   const handleDeleteScan = (id: string) => {
     Alert.alert(translate('detectDeleteScanTitle', language), translate('detectDeleteScanBody', language), [
       { text: translate('cancel', language), style: 'cancel' },
@@ -504,6 +524,26 @@ export default function DiseaseDetectionScreen() {
                     result.severity === 'Medium' ? '#F59E0B' : '#22C55E' }
                 ]}>
                   <Text style={styles.severityText}>{severityLabel(result.severity)}</Text>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.verificationBanner,
+                  {
+                    borderColor: getVerificationColor(result.verificationStatus || result.status),
+                    backgroundColor: getVerificationColor(result.verificationStatus || result.status) + '12',
+                  },
+                ]}
+              >
+                <CheckCircle color={getVerificationColor(result.verificationStatus || result.status)} size={16} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.verificationTitle, { color: getVerificationColor(result.verificationStatus || result.status) }]}>
+                    {getVerificationLabel(result.verificationStatus || result.status)}
+                  </Text>
+                  <Text style={[styles.verificationText, { color: tc.textMuted }]}>
+                    {result.verificationMessage || 'AI results are reviewed by the admin team for verification.'}
+                  </Text>
                 </View>
               </View>
 
@@ -852,6 +892,24 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: '600',
+  },
+  verificationBanner: {
+    flexDirection: 'row',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  verificationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  verificationText: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   section: {
     marginBottom: 16,

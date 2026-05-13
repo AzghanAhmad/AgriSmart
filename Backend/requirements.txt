@@ -1,5 +1,7 @@
 flask
 flask-cors
+flask-limiter>=3.8.0
+prometheus-client>=0.20.0
 torch
 ultralytics
 pillow

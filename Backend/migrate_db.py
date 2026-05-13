@@ -20,6 +20,10 @@ def table_exists(inspector, table_name):
     except Exception:
         return False
 
+def datetime_sql_type(engine):
+    """Return a portable datetime type for raw ALTER TABLE migrations."""
+    return 'TIMESTAMP' if engine.dialect.name == 'postgresql' else 'DATETIME'
+
 def run_migrations(engine):
     """
     Add new columns to existing tables and create new tables if needed.
@@ -27,6 +31,7 @@ def run_migrations(engine):
     """
     try:
         inspector = inspect(engine)
+        datetime_type = datetime_sql_type(engine)
         
         with engine.connect() as conn:
             # Check if Detections table exists
@@ -141,7 +146,7 @@ def run_migrations(engine):
 
                 if not column_exists(inspector, 'Users', 'restricted_until'):
                     print("    ➕ Adding 'restricted_until' column...")
-                    conn.execute(text('ALTER TABLE "Users" ADD COLUMN restricted_until DATETIME'))
+                    conn.execute(text(f'ALTER TABLE "Users" ADD COLUMN restricted_until {datetime_type}'))
                     conn.commit()
                     print("    ✅ Added 'restricted_until' column to Users")
 

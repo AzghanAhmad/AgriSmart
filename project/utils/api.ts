@@ -2,6 +2,27 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from './env';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+type UnauthorizedHandler = (message: string) => void | Promise<void>;
+
+class ApiAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApiAuthError';
+  }
+}
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler;
+}
+
+async function clearStoredSession(message: string) {
+  await AsyncStorage.multiRemove(['authToken', 'user']);
+  if (unauthorizedHandler) {
+    await unauthorizedHandler(message);
+  }
+}
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const token = await AsyncStorage.getItem('authToken');
@@ -38,11 +59,10 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
     }
     
     if (!res.ok) {
-      // Handle 401 Unauthorized - clear invalid token
       if (res.status === 401) {
-        // Clear invalid token from storage
-        AsyncStorage.removeItem('authToken').catch(() => {});
-        AsyncStorage.removeItem('user').catch(() => {});
+        const message = typeof data?.error === 'string' ? data.error : 'Session expired. Please login again.';
+        await clearStoredSession(message);
+        throw new ApiAuthError(message);
       }
       const plainText = (text || '').trim();
       const fallback = plainText ? plainText.slice(0, 240) : `Request failed (${res.status})`;
@@ -64,6 +84,11 @@ export async function apiJson<T = any>(path: string, options: { method?: HttpMet
     
     return data as T;
   } catch (error: any) {
+    if (error instanceof ApiAuthError) {
+      console.warn(`🔐 Session expired. Redirecting to login.`);
+      throw error;
+    }
+
     console.error(`❌ API Error:`, error);
     
     // Handle network errors (connection refused, timeout, etc.)
@@ -151,8 +176,9 @@ export async function apiUploadProfilePhoto(localUri: string): Promise<unknown> 
 
   if (!res.ok) {
     if (res.status === 401) {
-      AsyncStorage.removeItem('authToken').catch(() => {});
-      AsyncStorage.removeItem('user').catch(() => {});
+      const message = typeof data?.error === 'string' ? data.error : 'Session expired. Please login again.';
+      await clearStoredSession(message);
+      throw new ApiAuthError(message);
     }
     const message = typeof data?.error === 'string' ? data.error : `Request failed (${res.status})`;
     throw new Error(message);

@@ -22,7 +22,7 @@ def validate_dvc_model_paths(required_crops=None) -> list[str]:
     if not os.path.exists(model_path):
       missing.append(model_path)
   if missing:
-    logger.error("DVC-managed model files missing: %s", missing)
+    logger.warning("DVC-managed local model files missing: %s", missing)
   else:
     logger.info("All DVC-managed local model files are present under MODEL_DIR")
   return missing

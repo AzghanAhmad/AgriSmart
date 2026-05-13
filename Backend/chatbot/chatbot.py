@@ -108,13 +108,18 @@ class AgriState(TypedDict):
 
 # ── Load ChromaDB ─────────────────────────────────────────────────────
 print("Loading ChromaDB...")
-vectorstore = load_vectorstore()
-retriever = vectorstore.as_retriever(
-    search_type="similarity",
-    # We'll retrieve a wider set, then rerank down to the final top-4.
-    search_kwargs={"k": int(os.getenv("AGRISMART_RETRIEVE_K", "12"))}
-)
-print("ChromaDB ready!")
+vectorstore = None
+retriever = None
+try:
+    vectorstore = load_vectorstore()
+    retriever = vectorstore.as_retriever(
+        search_type="similarity",
+        # We'll retrieve a wider set, then rerank down to the final top-4.
+        search_kwargs={"k": int(os.getenv("AGRISMART_RETRIEVE_K", "12"))}
+    )
+    print("ChromaDB ready!")
+except Exception as e:
+    print(f"WARNING: ChromaDB/embedding load failed; chatbot will run without PDF RAG. err={e}")
 
 # ── Groq LLM (HF_TOKEN optional; only needed for some HuggingFace hub downloads)
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -309,6 +314,87 @@ def _output_script_constraints(language: str) -> str:
     )
 
 
+def _contains_urdu_script(text: str) -> bool:
+    return bool(re.search(r"[\u0600-\u06FF]", text or ""))
+
+
+def _forced_language_query(query: str, forced: str) -> str:
+    if forced == "english":
+        return (
+            f"{query}\n\n"
+            "[Reply language selected in the app: English. Answer this turn in English only. "
+            "Do not use Urdu, Arabic script, or Roman Urdu.]"
+        )
+    if forced == "urdu_script":
+        return (
+            f"{query}\n\n"
+            "[Reply language selected in the app: Urdu. Answer this turn only in Urdu written "
+            "with Arabic script. Do not use English or Roman Urdu.]"
+        )
+    return query
+
+
+def _history_for_generation(state: AgriState) -> List[Any]:
+    forced = _normalize_reply_language(state.get("reply_language") or "")
+    prior = list(state.get("messages") or [])
+    if not forced:
+        return prior + [HumanMessage(content=state["query"])]
+
+    cleaned = []
+    for message in prior:
+        content = str(getattr(message, "content", "") or "")
+        if isinstance(message, AIMessage):
+            has_urdu_script = _contains_urdu_script(content)
+            if forced == "english" and has_urdu_script:
+                continue
+            if forced == "urdu_script" and not has_urdu_script and re.search(r"[A-Za-z]", content):
+                continue
+        cleaned.append(message)
+
+    return cleaned + [HumanMessage(content=_forced_language_query(state["query"], forced))]
+
+
+def _violates_forced_script(response_text: str, language: str, forced: str) -> bool:
+    if not forced or not response_text.strip():
+        return False
+    has_urdu_script = _contains_urdu_script(response_text)
+    if language == "urdu_script":
+        return not has_urdu_script
+    return has_urdu_script
+
+
+def _invoke_generation_with_language_lock(
+    system_text: str,
+    state: AgriState,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    forced = _normalize_reply_language(state.get("reply_language") or "")
+    response_text = _invoke_generation_model(
+        system_text=system_text,
+        lc_history_plus_user=_history_for_generation(state),
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    response_text = _trim_repetition_loops(response_text)
+
+    if _violates_forced_script(response_text, state["language"], forced):
+        retry_system = (
+            system_text
+            + "\n\nRETRY LANGUAGE FIX:\n"
+            + "The previous draft used the wrong language or script. Rewrite from scratch and obey the selected reply language exactly."
+        )
+        response_text = _invoke_generation_model(
+            system_text=retry_system,
+            lc_history_plus_user=[HumanMessage(content=_forced_language_query(state["query"], forced))],
+            temperature=0.0,
+            max_tokens=max_tokens,
+        )
+        response_text = _trim_repetition_loops(response_text)
+
+    return response_text
+
+
 def _trim_repetition_loops(text: str, min_repeat: int = 7) -> str:
     """
     LLMs sometimes degenerate into repeating the same short n-gram forever (e.g. 'ke pedon ke pedon ...').
@@ -383,6 +469,12 @@ def detect_language_node(state: AgriState) -> AgriState:
 
 def retrieve_context_node(state: AgriState) -> AgriState:
     query = state["query"]
+
+    if retriever is None:
+        return {
+            **state,
+            "context": "The PDF knowledge base is currently unavailable.",
+        }
 
     # Stage 1 (pre-retrieval): rewrite/expand query with Grok (best-effort).
     # If Grok isn't configured, we fall back to a lightweight Roman Urdu → English rewrite.
@@ -539,13 +631,12 @@ Stay concise; avoid jargon unless you explain it in one line."""
         print("=" * 72 + "\n")
 
     try:
-        response_text = _invoke_generation_model(
+        response_text = _invoke_generation_with_language_lock(
             system_text=system_msg,
-            lc_history_plus_user=_prior_messages_plus_current_user(state),
+            state=state,
             temperature=_CHATBOT_TEMP,
             max_tokens=_CHATBOT_MAX_TOKENS,
         )
-        response_text = _trim_repetition_loops(response_text)
 
     except Exception as e:
         print(f"LLM Error: {e}")
@@ -564,6 +655,8 @@ Stay concise; avoid jargon unless you explain it in one line."""
 
 
 def is_agri_related(state: AgriState) -> str:
+    if retriever is None:
+        return "direct"
     query = state["query"].lower()
     if any(w in query for w in AGRI_WORDS):
         return "retrieve"
@@ -592,13 +685,12 @@ Then ask the user to rephrase their question in that scope.
     system += _output_script_constraints(lang)
 
     try:
-        response_text = _invoke_generation_model(
+        response_text = _invoke_generation_with_language_lock(
             system_text=system,
-            lc_history_plus_user=_prior_messages_plus_current_user(state),
+            state=state,
             temperature=_CHATBOT_TEMP,
             max_tokens=_CHATBOT_MAX_TOKENS,
         )
-        response_text = _trim_repetition_loops(response_text)
     except Exception as e:
         print(f"LLM Error: {e}")
         if lang == "urdu_script":

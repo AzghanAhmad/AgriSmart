@@ -26,6 +26,7 @@ def generate_farming_schedule():
         lon = data.get('longitude')
         week_number = data.get('weekNumber', 'week1')
         disease_name = data.get('diseaseName')  # Get disease name if provided
+        start_date = data.get('startDate') or data.get('start_date')
         
         if not farmer_id:
             return jsonify({'error': 'Missing farmerId'}), 400
@@ -142,7 +143,8 @@ def generate_farming_schedule():
             lat=lat_float,
             lon=lon_float,
             previous_week_progress=previous_progress,
-            disease_name=disease_name
+            disease_name=disease_name,
+            start_date=start_date if isinstance(start_date, str) else None
         )
         
         # Save schedule to database

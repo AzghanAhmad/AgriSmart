@@ -72,7 +72,9 @@ def _bool_env(name: str, default: bool) -> bool:
 
 
 def get_enable_local_yolo_fallback() -> bool:
-    return _bool_env('ENABLE_LOCAL_YOLO_FALLBACK', True)
+    # Keep the main backend memory-light by default. Set this to true only when
+    # running YOLO inside the backend process instead of the separate yolo-service.
+    return _bool_env('ENABLE_LOCAL_YOLO_FALLBACK', False)
 
 
 def get_enable_local_chatbot_fallback() -> bool:

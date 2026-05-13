@@ -13,6 +13,8 @@ type DetectionDetail = {
   imageUrl?: string;
   detectedAt?: string;
   severity: 'low' | 'medium' | 'high' | string;
+  verificationStatus?: 'pending' | 'verified' | 'rejected' | 'resolved' | string;
+  verificationMessage?: string;
   treatment: string;
   steps: string[];
   prevention: string[];
@@ -50,6 +52,18 @@ export default function CureGuidanceDetailScreen() {
     void load();
   }, [scanId, user?.id]);
 
+  const verificationColor = (status?: string) => {
+    switch ((status || 'pending').toLowerCase()) {
+      case 'verified':
+      case 'resolved':
+        return '#22C55E';
+      case 'rejected':
+        return '#EF4444';
+      default:
+        return '#F59E0B';
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: tc.screen }]}>
       <View style={[styles.header, { backgroundColor: tc.headerBg, borderBottomColor: tc.border }]}>
@@ -80,6 +94,12 @@ export default function CureGuidanceDetailScreen() {
                 <Text style={[styles.disease, { color: tc.textSecondary }]}>{detail.diseaseName}</Text>
                 <View style={[styles.badge, { backgroundColor: detail.severity === 'high' ? '#EF4444' : detail.severity === 'medium' ? '#F59E0B' : '#22C55E' }]}>
                   <Text style={styles.badgeTxt}>{String(detail.severity).toUpperCase()}</Text>
+                </View>
+                <View style={[styles.verifyBox, { borderColor: verificationColor(detail.verificationStatus), backgroundColor: verificationColor(detail.verificationStatus) + '12' }]}>
+                  <ShieldCheck color={verificationColor(detail.verificationStatus)} size={16} />
+                  <Text style={[styles.verifyText, { color: verificationColor(detail.verificationStatus) }]}>
+                    {detail.verificationMessage || 'Pending admin verification'}
+                  </Text>
                 </View>
               </View>
 
@@ -125,6 +145,8 @@ const styles = StyleSheet.create({
   disease: { fontSize: 14, marginTop: 4 },
   badge: { marginTop: 8, alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   badgeTxt: { color: 'white', fontSize: 11, fontWeight: '700' },
+  verifyBox: { marginTop: 10, borderWidth: 1, borderRadius: 10, padding: 10, flexDirection: 'row', gap: 8, alignItems: 'center' },
+  verifyText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   secTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
   subHead: { fontSize: 14, fontWeight: '700', marginTop: 8, marginBottom: 4 },
   li: { fontSize: 13, lineHeight: 19, marginBottom: 2 },

@@ -12,7 +12,7 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { Search, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, Eye, MapPin, Calendar } from 'lucide-react-native';
+import { Search, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, Clock, MapPin, Calendar, ShieldCheck, XCircle } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdminReports } from '@/hooks/useAdmin';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -22,20 +22,22 @@ export default function ReportsScreen() {
   const { colors: tc } = useTheme();
   const { width } = useWindowDimensions();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'pending' | 'reviewed' | 'resolved'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'pending' | 'verified' | 'rejected' | 'resolved'>('all');
   const { items, total, loading, error, updateStatus, refresh } = useAdminReports(1, 50, selectedFilter, searchQuery);
 
   const filters = [
     { id: 'all', label: 'All Reports' },
-    { id: 'pending', label: 'Pending Review' },
-    { id: 'reviewed', label: 'Reviewed' },
-    { id: 'resolved', label: 'Resolved' }
+    { id: 'pending', label: 'Pending Verification' },
+    { id: 'verified', label: 'Verified' },
+    { id: 'rejected', label: 'Rejected' },
+    { id: 'resolved', label: 'Resolved' },
   ];
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return '#F59E0B';
-      case 'reviewed': return '#3B82F6';
+      case 'verified': return '#3B82F6';
+      case 'rejected': return '#EF4444';
       case 'resolved': return '#22C55E';
       default: return '#6B7280';
     }
@@ -44,7 +46,8 @@ export default function ReportsScreen() {
   const getStatusBgColor = (status: string) => {
     switch (status) {
       case 'pending': return '#FFFBEB';
-      case 'reviewed': return '#EFF6FF';
+      case 'verified': return '#EFF6FF';
+      case 'rejected': return '#FEF2F2';
       case 'resolved': return '#F0FDF4';
       default: return '#F3F4F6';
     }
@@ -53,7 +56,8 @@ export default function ReportsScreen() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending': return Clock;
-      case 'reviewed': return Eye;
+      case 'verified': return ShieldCheck;
+      case 'rejected': return XCircle;
       case 'resolved': return CheckCircle;
       default: return AlertTriangle;
     }
@@ -61,12 +65,14 @@ export default function ReportsScreen() {
 
   const statsData = useMemo(() => {
     const pending = items.filter((r) => r.status === 'pending').length;
-    const reviewed = items.filter((r) => r.status === 'reviewed').length;
+    const verified = items.filter((r) => r.status === 'verified').length;
+    const rejected = items.filter((r) => r.status === 'rejected').length;
     const resolved = items.filter((r) => r.status === 'resolved').length;
     return [
       { label: 'Total Reports', value: String(total), color: '#22C55E' },
       { label: 'Pending', value: String(pending), color: '#F59E0B' },
-      { label: 'Reviewed', value: String(reviewed), color: '#3B82F6' },
+      { label: 'Verified', value: String(verified), color: '#3B82F6' },
+      { label: 'Rejected', value: String(rejected), color: '#EF4444' },
       { label: 'Resolved', value: String(resolved), color: '#10B981' },
     ];
   }, [items, total]);
@@ -259,7 +265,9 @@ export default function ReportsScreen() {
                   ]}>
                     <StatusIcon color={getStatusColor(report.status)} size={12} />
                     <Text style={[styles.statusText, { color: getStatusColor(report.status) }]}>
-                      {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                      {report.status === 'pending'
+                        ? 'Pending Verification'
+                        : report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                     </Text>
                   </View>
                   <Text style={[styles.confidenceText, { color: tc.textMuted }]}>{report.confidence}% confidence</Text>
@@ -280,6 +288,11 @@ export default function ReportsScreen() {
               <Text style={[styles.description, { color: tc.textSecondary }]}>
                 Detection ID: {report.detectionId}
               </Text>
+              {!!report.verificationMessage && (
+                <Text style={[styles.description, { color: getStatusColor(report.status) }]}>
+                  {report.verificationMessage}
+                </Text>
+              )}
 
               {report.status === 'pending' && (
                 <View style={styles.actionButtons}>
@@ -287,29 +300,30 @@ export default function ReportsScreen() {
                     style={styles.reviewButton}
                     onPress={async () => {
                       try {
-                        await updateStatus(report.id, 'reviewed');
+                        await updateStatus(report.id, 'verified');
                       } catch (e: any) {
                         Alert.alert('Error', e?.message || 'Failed to update report');
                       }
                     }}
                   >
-                    <Text style={styles.reviewButtonText}>Review Report</Text>
+                    <Text style={styles.reviewButtonText}>Verify Detection</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.viewDetailsButton, { backgroundColor: tc.inputBg }]}
+                    style={[styles.rejectButton, { backgroundColor: '#FEF2F2' }]}
                     onPress={async () => {
                       try {
-                        await updateStatus(report.id, 'resolved');
+                        await updateStatus(report.id, 'rejected');
                       } catch (e: any) {
                         Alert.alert('Error', e?.message || 'Failed to update report');
                       }
                     }}
                   >
-                    <Eye color={tc.textMuted} size={16} />
+                    <XCircle color="#EF4444" size={16} />
+                    <Text style={styles.rejectButtonText}>Reject</Text>
                   </TouchableOpacity>
                 </View>
               )}
-              {report.status === 'reviewed' && (
+              {report.status === 'verified' && (
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
                     style={styles.reviewButton}
@@ -328,7 +342,7 @@ export default function ReportsScreen() {
 
               {report.reviewedAt && (
                 <Text style={[styles.reviewedText, { color: tc.textMuted }]}>
-                  Reviewed on {formatDate(report.reviewedAt)}
+                  Verification updated on {formatDate(report.reviewedAt)}
                 </Text>
               )}
             </TouchableOpacity>
@@ -587,6 +601,20 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
+  },
+  rejectButton: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  rejectButtonText: {
+    color: '#EF4444',
+    fontWeight: '600',
+    fontSize: 14,
   },
   reviewedText: {
     fontSize: 12,

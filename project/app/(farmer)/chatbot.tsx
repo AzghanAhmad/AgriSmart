@@ -42,6 +42,20 @@ function welcomeText(language: 'en' | 'ur'): string {
   return "Hello! I'm AgriSmart — ask me about wheat, rice, cotton, pests, or farming in Pakistan.";
 }
 
+function renderMessageText(text: string, baseStyle: any) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    const isBold = part.startsWith('**') && part.endsWith('**') && part.length > 4;
+    const cleanText = isBold ? part.slice(2, -2) : part;
+    if (!cleanText) return null;
+    return (
+      <Text key={`${index}-${cleanText.slice(0, 8)}`} style={isBold ? [baseStyle, styles.inlineBold] : baseStyle}>
+        {cleanText}
+      </Text>
+    );
+  });
+}
+
 export default function ChatbotScreen() {
   const { language } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -56,6 +70,7 @@ export default function ChatbotScreen() {
   const [useUrduVoice, setUseUrduVoice] = useState(language === 'ur');
   /** Assistant reply language (independent of app UI language). */
   const [replyLanguage, setReplyLanguage] = useState<ChatbotReplyLanguage>('en');
+  const replyLanguageRef = useRef<ChatbotReplyLanguage>('en');
   const scrollViewRef = useRef<ScrollView>(null);
 
   const voiceLocale: VoiceLocale = useUrduVoice ? 'ur-PK' : 'en-US';
@@ -84,6 +99,7 @@ export default function ChatbotScreen() {
         getStoredReplyLanguage(),
       ]);
       if (!cancelled) {
+        replyLanguageRef.current = storedReplyLang;
         setReplyLanguage(storedReplyLang);
         setSessionId(stored);
         setMessages([
@@ -140,13 +156,14 @@ export default function ChatbotScreen() {
       setInputText('');
 
       try {
+        const selectedReplyLanguage = replyLanguageRef.current;
         const chatLang: 'en' | 'ur' =
-          opts?.fromVoice ? (useUrduVoice ? 'ur' : 'en') : language === 'ur' ? 'ur' : 'en';
+          opts?.fromVoice ? (useUrduVoice ? 'ur' : 'en') : selectedReplyLanguage === 'urdu_script' ? 'ur' : 'en';
         const { response, session_id } = await sendChatbotMessage(
           text.trim(),
           sessionId,
           chatLang,
-          { fromVoice: opts?.fromVoice, replyLanguage }
+          { fromVoice: opts?.fromVoice, replyLanguage: selectedReplyLanguage }
         );
         setSessionId(session_id);
         await saveChatbotSessionId(session_id);
@@ -181,6 +198,7 @@ export default function ChatbotScreen() {
   );
 
   const setReplyLanguagePersisted = useCallback((mode: ChatbotReplyLanguage) => {
+    replyLanguageRef.current = mode;
     setReplyLanguage(mode);
     void saveReplyLanguage(mode);
   }, []);
@@ -458,7 +476,10 @@ export default function ChatbotScreen() {
                   message.isUser ? styles.userMessageText : styles.botMessageText,
                 ]}
               >
-                {message.text}
+                {renderMessageText(
+                  message.text,
+                  message.isUser ? styles.userMessageText : styles.botMessageText,
+                )}
               </Text>
               <Text style={styles.messageTime}>
                 {message.timestamp.toLocaleTimeString([], {
@@ -733,6 +754,9 @@ const styles = StyleSheet.create({
   },
   botMessageText: {
     color: '#374151',
+  },
+  inlineBold: {
+    fontWeight: '700',
   },
   messageTime: {
     fontSize: 11,
