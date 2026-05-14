@@ -1,0 +1,6 @@
+outs:
+- md5: b2a3156d16e147977d3ab9cdb073de94.dir
+  size: 228
+  nfiles: 5
+  hash: md5
+  path: wheat
