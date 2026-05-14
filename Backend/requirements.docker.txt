@@ -13,3 +13,6 @@ pillow
 opencv-python-headless
 scikit-learn
 pandas
+
+# Voice endpoints (/api/voice/stt and /api/voice/tts)
+-r requirements-voice.txt

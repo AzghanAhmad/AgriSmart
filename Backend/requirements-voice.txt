@@ -1,0 +1,6 @@
+# Backend voice features used by /api/voice/stt and /api/voice/tts.
+# Kept separate so the Docker image can opt into voice without mixing these
+# heavier packages into every minimal dependency list.
+openai-whisper>=20231117
+imageio-ffmpeg>=0.5.1
+gTTS>=2.5.0

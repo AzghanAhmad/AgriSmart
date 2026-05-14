@@ -8,9 +8,11 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Backend/requirements.docker.txt /app/Backend/requirements.docker.txt
+COPY Backend/requirements-voice.txt /app/Backend/requirements-voice.txt
 RUN pip install --no-cache-dir -r /app/Backend/requirements.docker.txt
 
 COPY Backend/ /app/Backend/
